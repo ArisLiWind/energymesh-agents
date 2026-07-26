@@ -3,10 +3,10 @@ import { createCampus3D } from "/static/campus3d.js";
 const state = { scenario: null, task: null, selectedAgent: null, campus3d: null };
 
 const agentInfo = {
-  perception: { name: "感知Agent", icon: "◎", role: "核验负荷、光伏、SOC、设备状态与生产计划" },
-  dispatch: { name: "调度Agent", icon: "◔", role: "调用优化工具生成下一调度周期候选策略" },
-  audit: { name: "审核Agent", icon: "◆", role: "独立复算安全约束，并验证方案是否优于基线" },
-  execute: { name: "执行Agent", icon: "▷", role: "在审批门禁后模拟下发，并持续核对计划与实际" },
+  perception: { name: "感知Agent", icon: "◎", avatar: "perception", role: "核验负荷、光伏、SOC、设备状态与生产计划" },
+  dispatch: { name: "调度Agent", icon: "◔", avatar: "dispatch", role: "调用优化工具生成下一调度周期候选策略" },
+  audit: { name: "审核Agent", icon: "◆", avatar: "audit", role: "独立复算安全约束，并验证方案是否优于基线" },
+  execute: { name: "执行Agent", icon: "▷", avatar: "execute", role: "在审批门禁后模拟下发，并持续核对计划与实际" },
 };
 
 const actionNames = {
@@ -101,7 +101,7 @@ function setImpactRow(key, before, after, unit, higherIsBetter = false) {
   const delta = higherIsBetter ? after - before : before - after;
   const ratio = Math.abs(delta) / Math.max(before, .01) * 100;
   row.querySelector("em").textContent = `${delta >= 0 ? (higherIsBetter ? "↑" : "↓") : (higherIsBetter ? "↓" : "↑")} ${ratio.toFixed(1)}%`;
-  row.querySelector("em").style.color = delta >= 0 ? "var(--green)" : "var(--red)";
+  row.querySelector("em").style.color = delta >= 0 ? "var(--accent)" : "var(--danger)";
 }
 
 function renderImpact() {
@@ -134,10 +134,10 @@ function renderTrendChart() {
   const forecast = state.scenario.forecast;
   const plan = selectedPlan();
   const series = [
-    { color: "#17202b", values: forecast.map((point) => point.load_kw) },
-    { color: "#19966c", values: forecast.map((point) => point.pv_kw) },
+    { color: "#dbe0dd", values: forecast.map((point) => point.load_kw) },
+    { color: "#67d9cf", values: forecast.map((point) => point.pv_kw) },
     {
-      color: "#286fc3",
+      color: "#f2bd5b",
       values: plan
         ? plan.points.map((point) => point.grid_import_kw)
         : forecast.map((point) => Math.max(0, point.load_kw - point.pv_kw)),
@@ -153,12 +153,12 @@ function renderTrendChart() {
   context.font = "7px Inter, sans-serif";
   for (let row = 0; row <= 3; row += 1) {
     const y = inset.top + plotHeight * row / 3;
-    context.strokeStyle = "#e6eaed";
+    context.strokeStyle = "#343b38";
     context.beginPath();
     context.moveTo(inset.left, y);
     context.lineTo(width - inset.right, y);
     context.stroke();
-    context.fillStyle = "#8a969f";
+    context.fillStyle = "#7f8a84";
     context.fillText(`${Math.round(max * (1 - row / 3))}`, 1, y + 2);
   }
   series.forEach((item) => {
@@ -179,7 +179,7 @@ function renderTrendChart() {
       const y = inset.top + plotHeight * (1 - value / 100);
       if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
     });
-    context.strokeStyle = "#d19b18";
+    context.strokeStyle = "#ef776f";
     context.lineWidth = 1.35;
     context.setLineDash([3, 2]);
     context.stroke();
@@ -187,11 +187,17 @@ function renderTrendChart() {
   }
 }
 
+function avatarMarkup(agentKey, user = false) {
+  if (user) return `<span class="message-avatar user-avatar">人</span>`;
+  const avatar = agentInfo[agentKey]?.avatar || "perception";
+  return `<span class="message-avatar agent-avatar avatar-${avatar}" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span>`;
+}
+
 function addMessage(agentKey, text, user = false) {
   const info = user ? { name: "你", icon: "人" } : agentInfo[agentKey];
   const message = document.createElement("div");
   message.className = `message${user ? " user" : ""}`;
-  message.innerHTML = `<span class="message-avatar">${info.icon}</span><div class="message-body"><span class="message-meta">${info.name}</span>${text}</div>`;
+  message.innerHTML = `${avatarMarkup(agentKey, user)}<div class="message-body"><span class="message-meta">${info.name}</span>${text}</div>`;
   $("#messages").append(message);
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
@@ -209,7 +215,7 @@ function selectAgent(agentKey) {
   $("#collaboration-mode").classList.remove("active");
   $("#clear-selection").hidden = false;
   const info = agentInfo[agentKey];
-  $("#conversation-icon").textContent = info.icon;
+  $("#conversation-icon").innerHTML = avatarMarkup(agentKey);
   $("#conversation-title").textContent = `与${info.name}单独对话`;
   $("#conversation-subtitle").textContent = info.role;
   $("#chat-input").placeholder = `发送消息给${info.name}`;

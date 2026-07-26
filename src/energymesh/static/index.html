@@ -3,172 +3,132 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f7f8f8" />
-    <title>EnergyMesh Agents · 自主协同能源调度</title>
+    <meta name="theme-color" content="#151918" />
+    <title>EnergyMesh Agents · 园区能源控制台</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <a class="brand" href="/" aria-label="EnergyMesh Agents 首页">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><strong>EnergyMesh Agents</strong><small>自主协同能源调度平台</small></span>
+        <span class="brand-mark" aria-hidden="true"><b>E</b><i>M</i></span>
+        <span><strong>EnergyMesh</strong><small>AGENTS</small></span>
       </a>
-      <nav class="primary-nav" aria-label="主导航">
-        <button class="nav-item active" type="button"><span>▦</span>总览</button>
-        <button class="nav-item" type="button"><span>◉</span>运行监控</button>
-        <button class="nav-item" type="button"><span>◇</span>策略管理</button>
-        <button class="nav-item" type="button"><span>▣</span>历史分析</button>
-      </nav>
-      <div class="runtime">
-        <span class="runtime-dot"></span>
-        <span><strong>模拟沙盘</strong><small>生产写入已关闭</small></span>
+      <div class="site-heading">
+        <span class="site-kicker">PARK CONTROL / SIMULATION</span>
+        <strong id="scenario-name">正在载入园区</strong>
+      </div>
+      <div class="header-actions">
+        <span class="runtime"><i></i><span><strong>本地沙盘</strong><small>生产写入关闭</small></span></span>
+        <button id="reoptimize-button" class="command-button ghost" type="button" hidden>注入变化</button>
+        <button id="run-button" class="command-button primary" type="button"><span>▶</span>运行调度</button>
       </div>
     </header>
 
-    <main class="dashboard">
-      <section class="overview">
-        <div class="campus-panel">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">园区能源数字沙盘</p>
-              <h1 id="scenario-name">正在载入园区</h1>
-            </div>
-            <div class="heading-actions">
-              <span class="updated"><i></i>数据已核验 · 15分钟粒度</span>
-              <button id="reoptimize-button" class="button secondary" type="button" hidden>注入变化</button>
-              <button id="run-button" class="button primary" type="button"><span>▶</span>运行智能调度</button>
-            </div>
+    <main class="app-shell">
+      <nav class="tool-rail" aria-label="控制台工具">
+        <button class="rail-tool active" type="button" title="园区总览"><span>▦</span><small>总览</small></button>
+        <button class="rail-tool" type="button" title="设备监控"><span>◉</span><small>监控</small></button>
+        <button class="rail-tool" type="button" title="调度策略"><span>◇</span><small>策略</small></button>
+        <button class="rail-tool" type="button" title="审计记录"><span>▤</span><small>审计</small></button>
+        <span class="rail-spacer"></span>
+        <button class="rail-tool" type="button" title="安全设置"><span>⚙</span><small>设置</small></button>
+      </nav>
+
+      <section class="scene-panel">
+        <div class="panel-bar">
+          <div>
+            <span class="panel-index">01</span>
+            <strong>园区能源数字沙盘</strong>
+            <small id="scenario-description">光伏、储能、负荷与电网协同状态</small>
           </div>
-
-          <div class="campus" aria-label="可交互的光伏、储能、厂房、电网、充电设施与算力中心三维园区">
-            <canvas id="campus-3d" aria-label="可拖拽旋转和缩放的三维园区"></canvas>
-            <button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button>
-
-            <article class="asset asset-factory">
-              <div class="asset-label"><span>生产车间</span><strong id="factory-power">-- kW</strong></div>
-            </article>
-            <article class="asset asset-solar">
-              <div class="asset-label"><span>屋顶光伏</span><strong id="solar-power">-- kW</strong></div>
-            </article>
-            <article class="asset asset-storage">
-              <div class="asset-label"><span>储能系统</span><strong id="storage-power">SOC --</strong></div>
-            </article>
-            <article class="asset asset-grid">
-              <div class="asset-label"><span>公共电网</span><strong id="grid-power">-- kW</strong></div>
-            </article>
-            <article class="asset asset-charge">
-              <div class="asset-label"><span>充电设施</span><strong id="charge-power">-- kW</strong></div>
-            </article>
-            <article class="asset asset-compute">
-              <div class="asset-label"><span>算力中心</span><strong id="compute-power">-- kW</strong></div>
-            </article>
-
-            <div class="flow-legend"><span><i class="energy"></i>能量流向</span><span><i class="data"></i>设备数据</span></div>
-            <p id="scenario-description" class="campus-caption"></p>
-          </div>
+          <div class="scene-status"><span><i></i>96点数据已核验</span><span>15分钟粒度</span></div>
         </div>
+        <div class="campus">
+          <canvas id="campus-3d" aria-label="可拖拽旋转和缩放的园区三维场景"></canvas>
+          <button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button>
+          <div class="scene-hint">拖拽旋转 · 滚轮缩放</div>
 
-        <aside class="data-rail">
-          <div class="rail-heading">
-            <div><p class="eyebrow">实时数据</p><h2>园区电力指标</h2></div>
-            <span id="task-state" class="status-pill idle">待运行</span>
-          </div>
-          <div class="live-sections">
-            <section class="live-group">
-              <div class="group-title"><span class="metric-icon battery">▥</span><strong>储能</strong></div>
-              <div class="live-values">
-                <div><span>实时功率</span><strong id="battery-live">0 kW</strong></div>
-                <div><span>SOC</span><strong id="soc-live">--</strong></div>
-                <div><span>可用容量</span><strong id="capacity-live">--</strong></div>
-              </div>
-            </section>
-            <section class="live-group">
-              <div class="group-title"><span class="metric-icon solar">☼</span><strong>光伏</strong></div>
-              <div class="live-values">
-                <div><span>实时出力</span><strong id="pv-live">--</strong></div>
-                <div><span>今日发电</span><strong id="pv-energy">--</strong></div>
-                <div><span>自用率</span><strong id="self-use-live">--</strong></div>
-              </div>
-            </section>
-            <section class="live-group">
-              <div class="group-title"><span class="metric-icon grid">⌁</span><strong>电网与负荷</strong></div>
-              <div class="live-values">
-                <div><span>购电功率</span><strong id="import-live">--</strong></div>
-                <div><span>园区负荷</span><strong id="load-live">--</strong></div>
-                <div><span>峰值预测</span><strong id="peak-live">--</strong></div>
-              </div>
-            </section>
-          </div>
+          <article class="asset asset-factory"><span>生产车间</span><strong id="factory-power">-- kW</strong></article>
+          <article class="asset asset-solar"><span>屋顶光伏</span><strong id="solar-power">-- kW</strong></article>
+          <article class="asset asset-storage"><span>储能系统</span><strong id="storage-power">SOC --</strong></article>
+          <article class="asset asset-grid"><span>公共电网</span><strong id="grid-power">-- kW</strong></article>
+          <article class="asset asset-charge"><span>充电设施</span><strong id="charge-power">-- kW</strong></article>
+          <article class="asset asset-compute"><span>算力中心</span><strong id="compute-power">-- kW</strong></article>
 
-          <section class="constraint-section">
-            <div class="rail-subheading"><strong>约束状态</strong><span>全部独立复核</span></div>
-            <div class="constraints" id="constraints">
-              <div><span>变压器容量</span><strong>67%</strong><i style="--value:67%"></i></div>
-              <div><span>电池SOC</span><strong>48%</strong><i style="--value:48%"></i></div>
-              <div><span>并网功率</span><strong>53%</strong><i style="--value:53%"></i></div>
-            </div>
-          </section>
-
-          <section class="trend-section">
-            <div class="rail-subheading"><strong>今日实时趋势</strong><span>96点 · 15分钟</span></div>
-            <div class="trend-legend"><span><i class="load"></i>负荷</span><span><i class="pv"></i>光伏</span><span><i class="grid"></i>购电</span><span><i class="soc"></i>SOC</span></div>
-            <canvas id="realtime-chart" aria-label="负荷、光伏、购电和储能SOC实时折线统计图"></canvas>
-            <div class="trend-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-          </section>
-
-          <section class="impact-section">
-            <div class="rail-subheading"><strong>优化成效</strong><span id="impact-badge" class="impact-badge">等待方案</span></div>
-            <div class="compare-legend"><span><i class="before"></i>优化前</span><span><i class="after"></i>优化后</span></div>
-            <div id="impact-bars" class="impact-bars">
-              <div class="impact-row" data-key="cost"><div><strong>调度总成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-              <div class="impact-row" data-key="peak"><div><strong>峰值购电</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-              <div class="impact-row" data-key="solar"><div><strong>光伏自用率</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-              <div class="impact-row" data-key="efficiency"><div><strong>单位供能成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-            </div>
-          </section>
-        </aside>
+          <div class="flow-legend"><span><i></i>动态能量流</span><span><b></b>模拟设备</span></div>
+        </div>
       </section>
 
-      <section class="agents-workbench">
-        <div class="agents-strip" id="agents-strip">
-          <button class="agent-card" type="button" data-agent="perception">
-            <span class="agent-symbol">◎</span><span><strong>感知Agent</strong><small>数据收集与异常核验</small></span><i></i>
-          </button>
-          <span class="agent-link">⇄</span>
-          <button class="agent-card" type="button" data-agent="dispatch">
-            <span class="agent-symbol">◔</span><span><strong>调度Agent</strong><small>候选策略生成与计算</small></span><i></i>
-          </button>
-          <span class="agent-link">⇄</span>
-          <button class="agent-card" type="button" data-agent="audit">
-            <span class="agent-symbol">◆</span><span><strong>审核Agent</strong><small>约束复算与收益审计</small></span><i></i>
-          </button>
-          <span class="agent-link">⇄</span>
-          <button class="agent-card" type="button" data-agent="execute">
-            <span class="agent-symbol">▷</span><span><strong>执行Agent</strong><small>受控下发与结果验证</small></span><i></i>
-          </button>
-          <button id="collaboration-mode" class="mode-button active" type="button" title="取消单独对话，恢复多智能体自动协同">
-            <span>✣</span><strong>自动协同</strong><small>未选中任何Agent</small>
-          </button>
+      <aside class="telemetry-panel">
+        <div class="panel-bar compact">
+          <div><span class="panel-index">02</span><strong>实时运行面板</strong></div>
+          <span id="task-state" class="status-pill idle">待运行</span>
         </div>
 
-        <div class="workbench-body">
+        <section class="quick-metrics">
+          <div><span>园区负荷</span><strong id="load-live">--</strong></div>
+          <div><span>电网购电</span><strong id="import-live">--</strong></div>
+          <div><span>光伏出力</span><strong id="pv-live">--</strong></div>
+          <div><span>储能功率</span><strong id="battery-live">0 kW</strong></div>
+          <div><span>电池 SOC</span><strong id="soc-live">--</strong></div>
+          <div><span>可用容量</span><strong id="capacity-live">--</strong></div>
+          <span id="pv-energy" hidden></span><span id="self-use-live" hidden></span><span id="peak-live" hidden></span>
+        </section>
+
+        <section class="trend-section">
+          <div class="subhead"><strong>今日功率趋势</strong><span>00:00 - 24:00</span></div>
+          <div class="trend-legend"><span><i class="load"></i>负荷</span><span><i class="pv"></i>光伏</span><span><i class="grid"></i>购电</span><span><i class="soc"></i>SOC</span></div>
+          <canvas id="realtime-chart" aria-label="负荷、光伏、购电和SOC折线统计"></canvas>
+          <div class="trend-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+        </section>
+
+        <section class="constraint-section">
+          <div class="subhead"><strong>约束余量</strong><span>独立审计</span></div>
+          <div class="constraints" id="constraints">
+            <div><span>变压器</span><strong>--</strong><i style="--value:0%"></i></div>
+            <div><span>电池 SOC</span><strong>--</strong><i style="--value:0%"></i></div>
+            <div><span>并网功率</span><strong>--</strong><i style="--value:0%"></i></div>
+          </div>
+        </section>
+
+        <section class="impact-section">
+          <div class="subhead"><strong>优化前后</strong><span id="impact-badge" class="impact-badge">等待方案</span></div>
+          <div class="compare-legend"><span><i class="before"></i>基线</span><span><i class="after"></i>优化</span></div>
+          <div id="impact-bars" class="impact-bars">
+            <div class="impact-row" data-key="cost"><div><strong>调度成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
+            <div class="impact-row" data-key="peak"><div><strong>峰值购电</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
+            <div class="impact-row" data-key="solar"><div><strong>光伏自用</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
+            <div class="impact-row" data-key="efficiency"><div><strong>供能成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="agent-console">
+        <div class="agents-strip" id="agents-strip">
+          <div class="agents-label"><span class="panel-index">03</span><strong>Agent 协作席</strong><small>点击单聊 · 取消选择自动协同</small></div>
+          <button class="agent-card" type="button" data-agent="perception"><span class="agent-avatar avatar-perception" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>感知Agent</strong><small>数据核验</small></span><i></i></button>
+          <button class="agent-card" type="button" data-agent="dispatch"><span class="agent-avatar avatar-dispatch" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>调度Agent</strong><small>策略生成</small></span><i></i></button>
+          <button class="agent-card" type="button" data-agent="audit"><span class="agent-avatar avatar-audit" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>审核Agent</strong><small>约束审计</small></span><i></i></button>
+          <button class="agent-card" type="button" data-agent="execute"><span class="agent-avatar avatar-execute" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>执行Agent</strong><small>受控执行</small></span><i></i></button>
+          <button id="collaboration-mode" class="mode-button active" type="button" title="恢复多智能体自动协同"><span>✣</span><strong>自动协同</strong><small>四Agent共享上下文</small></button>
+        </div>
+
+        <div class="console-body">
           <section class="conversation">
             <div class="conversation-heading">
-              <div><span id="conversation-icon">✣</span><strong id="conversation-title">多智能体协同会话</strong><small id="conversation-subtitle">四类Agent正在共享上下文并协商策略</small></div>
+              <div><span id="conversation-icon">✣</span><strong id="conversation-title">多智能体协同会话</strong><small id="conversation-subtitle">四类Agent共享上下文并自动协商</small></div>
               <button id="clear-selection" class="text-button" type="button" hidden>退出单聊</button>
             </div>
             <div id="messages" class="messages" aria-live="polite"></div>
             <form id="chat-form" class="chat-composer">
-              <input id="chat-input" aria-label="对话消息" placeholder="未选中Agent：发送后由多智能体协同处理" autocomplete="off" />
+              <input id="chat-input" aria-label="对话消息" placeholder="描述你的调度目标或询问当前决策..." autocomplete="off" />
               <button type="submit" title="发送消息" aria-label="发送消息">➤</button>
             </form>
           </section>
 
           <aside class="decision-panel">
-            <div class="decision-heading"><span>当前决策摘要</span><strong id="decision-status">等待运行</strong></div>
-            <div id="decision-summary" class="decision-summary">
-              <p>运行智能调度后，这里将显示被选方案、审核结论和执行门禁。</p>
-            </div>
+            <div class="decision-heading"><span>当前决策</span><strong id="decision-status">等待运行</strong></div>
+            <div id="decision-summary" class="decision-summary"><p>运行后显示选定方案、审核结论和执行门禁。</p></div>
             <div class="mini-trace">
               <div class="mini-heading"><strong>协作轨迹</strong><span id="trace-count">0 项</span></div>
               <div id="trace" class="trace-list"><p>尚无任务轨迹</p></div>
@@ -180,11 +140,11 @@
 
     <dialog id="approval-dialog">
       <form method="dialog" id="approval-form">
-        <div class="dialog-heading"><div><p class="eyebrow">人工审批门禁</p><h2>确认柔性负荷响应</h2></div><button id="close-dialog" class="icon-button" type="button" aria-label="关闭">×</button></div>
+        <div class="dialog-heading"><div><span class="panel-index">APPROVAL GATE</span><h2>确认柔性负荷响应</h2></div><button id="close-dialog" class="icon-button" type="button" aria-label="关闭">×</button></div>
         <p id="approval-summary" class="dialog-copy"></p>
         <label>审批人<input id="approver" value="演示审批员" required minlength="2" /></label>
         <label>审批理由<textarea id="approval-reason" required minlength="2">演示环境中确认安全约束与影响范围。</textarea></label>
-        <div class="dialog-actions"><button id="reject-button" class="button secondary danger" type="button">拒绝</button><button class="button primary" type="submit">批准并模拟执行</button></div>
+        <div class="dialog-actions"><button id="reject-button" class="command-button ghost danger" type="button">拒绝</button><button class="command-button primary" type="submit">批准并模拟执行</button></div>
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>

@@ -5,10 +5,10 @@ const side = new THREE.MeshStandardMaterial({ color: 0xd9e0e4, roughness: 0.8 })
 const dark = new THREE.MeshStandardMaterial({ color: 0x91a0aa, roughness: 0.6 });
 const glass = new THREE.MeshStandardMaterial({ color: 0x92afc0, roughness: 0.3, metalness: 0.15 });
 const solar = new THREE.MeshStandardMaterial({ color: 0x365a72, roughness: 0.45, metalness: 0.1 });
-const yellow = new THREE.MeshStandardMaterial({
-  color: 0xf2c94c,
-  emissive: 0x9b7400,
-  emissiveIntensity: 0.35,
+const energyGreen = new THREE.MeshStandardMaterial({
+  color: 0x69e66e,
+  emissive: 0x1f8f48,
+  emissiveIntensity: 0.45,
 });
 
 function box(group, size, position, material = white) {
@@ -112,10 +112,10 @@ function energyPath(scene, from, to, particles) {
     new THREE.Vector3(mid.x, .12, mid.z),
     new THREE.Vector3(...to),
   ]);
-  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 28, .035, 7, false), yellow);
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 28, .035, 7, false), energyGreen);
   scene.add(tube);
   for (let index = 0; index < 3; index += 1) {
-    const particle = new THREE.Mesh(new THREE.SphereGeometry(.11, 12, 12), yellow);
+    const particle = new THREE.Mesh(new THREE.SphereGeometry(.11, 12, 12), energyGreen);
     particle.userData = { curve, offset: index / 3 + particles.length * .11 };
     particles.push(particle);
     scene.add(particle);
@@ -167,7 +167,7 @@ export function createCampus3D(canvas) {
   chargers(scene);
   grid(scene);
 
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .12, 24), yellow);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .12, 24), energyGreen);
   hub.position.set(0, .08, 0);
   scene.add(hub);
   const particles = [];
