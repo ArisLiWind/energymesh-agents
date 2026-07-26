@@ -1,0 +1,46 @@
+{
+  "scenario_id": "pv-drop-hot-battery-peak-tariff",
+  "name": "紧急生产、光伏偏差与设备热风险协同调度",
+  "description": "园区新增紧急生产任务，光伏低于预测，变压器与储能出现热风险，并即将进入峰值电价窗口。",
+  "start": "2026-07-27T00:00:00",
+  "alerts": [
+    "EMERGENCY_PRODUCTION_ORDER",
+    "PV_ACTUAL_BELOW_FORECAST",
+    "TRANSFORMER_TEMPERATURE_RISK",
+    "BATTERY_TEMPERATURE_DERATE",
+    "PEAK_TARIFF_APPROACHING"
+  ],
+  "site": {
+    "site_id": "demo-park-01",
+    "interval_minutes": 15,
+    "transformer_capacity_kw": 1250,
+    "transformer_temperature_limit_c": 75,
+    "transformer_hot_derate_factor": 0.68,
+    "grid_interconnection_limit_kw": 1100,
+    "battery_capacity_kwh": 800,
+    "battery_charge_max_kw": 320,
+    "battery_discharge_max_kw": 320,
+    "battery_efficiency_charge": 0.95,
+    "battery_efficiency_discharge": 0.95,
+    "initial_soc": 0.55,
+    "safety_min_soc": 0.2,
+    "safety_max_soc": 0.9,
+    "demand_charge_yuan_per_kw": 8,
+    "degradation_yuan_per_kwh": 0.08,
+    "flexible_load_kw": 120,
+    "alarm_discharge_derate": 0.35
+  },
+  "device_status": {
+    "meter": "available",
+    "pv": "available",
+    "battery": "derated",
+    "transformer": "available",
+    "production_line_a": "available"
+  },
+  "production_plan": {
+    "plan_id": "production-plan-2026-07-27-r2",
+    "emergency_order": true,
+    "deferrable": false,
+    "priority": "critical"
+  }
+}

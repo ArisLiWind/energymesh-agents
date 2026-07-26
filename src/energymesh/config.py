@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class Settings:
+    simulation_mode: bool
+    allow_production_write: bool
+    db_path: Path
+    evidence_dir: Path
+    host: str
+    port: int
+
+    @classmethod
+    def from_env(cls) -> Settings:
+        return cls(
+            simulation_mode=_bool_env("SIMULATION_MODE", True),
+            allow_production_write=_bool_env("ALLOW_PRODUCTION_WRITE", False),
+            db_path=Path(os.getenv("ENERGYMESH_DB_PATH", "./var/energymesh.db")),
+            evidence_dir=Path(os.getenv("ENERGYMESH_EVIDENCE_DIR", "./runs")),
+            host=os.getenv("ENERGYMESH_HOST", "0.0.0.0"),
+            port=int(os.getenv("ENERGYMESH_PORT", "8000")),
+        )
+
+    def assert_safe_runtime(self) -> None:
+        if not self.simulation_mode:
+            raise RuntimeError("SIMULATION_MODE must remain true in the community MVP")
+        if self.allow_production_write:
+            raise RuntimeError("ALLOW_PRODUCTION_WRITE must remain false in the community MVP")
