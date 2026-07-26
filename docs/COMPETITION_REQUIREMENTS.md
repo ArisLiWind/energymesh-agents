@@ -4,7 +4,7 @@
 
 赛道要求聚焦企业级复杂任务下的多 Agent 基础设施与协同系统，推动 Agent 从 Demo 走向 Production。
 
-GridMind 的对应定位：
+EnergyMesh Agency 的对应定位：
 
 - 企业场景：园区微电网与储能调度。
 - 复杂任务：多源数据、设备约束、客户策略、经济目标、安全边界、审批审计。
@@ -15,7 +15,7 @@ GridMind 的对应定位：
 
 ### 至少 3 个不同职能 Agent
 
-GridMind 设计 3 个核心 Agent：
+EnergyMesh Agency 设计 3 个核心 Agent：
 
 - 数据感知 Agent
 - 调度行动 Agent
@@ -36,7 +36,7 @@ AgentTeams 用于：
 
 ### 端到端任务闭环
 
-GridMind 闭环：
+EnergyMesh Agency 闭环：
 
 1. 微电网事件输入
 2. 数据感知与异常识别
@@ -85,7 +85,7 @@ GridMind 闭环：
 
 比赛要求从 Agent 记忆存储、知识库 RAG、共享状态管理、轨迹可观测中至少实现 2 项。
 
-GridMind 初期建议实现：
+EnergyMesh Agency 初期建议实现：
 
 - 共享状态管理：保存事件包、策略、仿真结果、审批状态和执行状态。
 - 轨迹可观测：保存 Agent Trace、工具 Log 和关键 Metrics。

@@ -1,4 +1,4 @@
-# GridMind Agent Infra
+# EnergyMesh Agency
 
 面向园区微电网的多 Agent 策略生成、调度验证与安全执行基础设施。
 
