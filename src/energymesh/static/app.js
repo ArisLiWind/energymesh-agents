@@ -28,6 +28,8 @@ function $(selector) { return document.querySelector(selector); }
 function $$(selector) { return [...document.querySelectorAll(selector)]; }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
+function appShell() { return $(".app-shell"); }
+
 function toast(message) {
   $("#toast").textContent = message;
   $("#toast").classList.add("visible");
@@ -218,7 +220,16 @@ function resetConversation() {
   addMessage("audit", "所有候选方案必须通过SOC、功率、变压器、并网和能量守恒复算。");
 }
 
+function setChatOpen(open) {
+  appShell().classList.toggle("chat-open", open);
+  window.requestAnimationFrame(() => {
+    renderTrendChart();
+    state.campus3d?.resize?.();
+  });
+}
+
 function selectAgent(agentKey) {
+  setChatOpen(true);
   state.selectedAgent = agentKey;
   $$(".agent-card").forEach((card) => card.classList.toggle("selected", card.dataset.agent === agentKey));
   $("#collaboration-mode").classList.remove("active");
@@ -232,7 +243,8 @@ function selectAgent(agentKey) {
   addMessage(agentKey, `已进入单独对话。我只从${info.name}的职责边界回答；涉及其他Agent的动作不会自动执行。`);
 }
 
-function enableCollaboration() {
+function enableCollaboration(openChat = true) {
+  setChatOpen(openChat);
   state.selectedAgent = null;
   $$(".agent-card").forEach((card) => card.classList.remove("selected"));
   $("#collaboration-mode").classList.add("active");
@@ -246,9 +258,123 @@ function enableCollaboration() {
 
 function activatePanel(panel) {
   $$(".panel-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.panel === panel));
-  $$(".ops-view").forEach((view) => view.classList.toggle("active", view.dataset.view === panel));
-  if (panel === "metrics") renderTrendChart();
+  $(".operations-panel").classList.toggle("audit-focus", panel === "audit");
+  renderTrendChart();
   state.campus3d?.resize?.();
+}
+
+function reorderCard(source, target, clientY) {
+  if (!source || !target || source === target) return;
+  const rect = target.getBoundingClientRect();
+  const before = clientY < rect.top + rect.height / 2;
+  target.classList.remove("drop-before", "drop-after");
+  target.parentNode.insertBefore(source, before ? target : target.nextSibling);
+  window.requestAnimationFrame(() => {
+    renderTrendChart();
+    state.campus3d?.resize?.();
+  });
+}
+
+function setupCardSorting() {
+  let dragged = null;
+  let targetCard = null;
+
+  function visibleCards() {
+    return $$(".ops-card").filter((card) => card !== dragged && getComputedStyle(card).display !== "none");
+  }
+
+  function clearDropState() {
+    $$(".ops-card").forEach((card) => card.classList.remove("drop-before", "drop-after"));
+  }
+
+  function updateDropTarget(clientY) {
+    clearDropState();
+    const cards = visibleCards();
+    targetCard = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return clientY >= rect.top && clientY <= rect.bottom;
+    });
+    if (!targetCard && cards.length) {
+      const firstRect = cards[0].getBoundingClientRect();
+      targetCard = clientY < firstRect.top ? cards[0] : cards.at(-1);
+    }
+    if (!targetCard) return;
+    const rect = targetCard.getBoundingClientRect();
+    const before = clientY < rect.top + rect.height / 2;
+    targetCard.classList.toggle("drop-before", before);
+    targetCard.classList.toggle("drop-after", !before);
+  }
+
+  function endSort(event) {
+    if (dragged && targetCard) {
+      reorderCard(dragged, targetCard, event.clientY);
+    }
+    dragged?.classList.remove("dragging-card");
+    dragged = null;
+    targetCard = null;
+    clearDropState();
+    document.body.classList.remove("sorting-cards");
+    window.removeEventListener("pointermove", moveSort);
+    window.removeEventListener("pointerup", endSort);
+    window.removeEventListener("pointercancel", endSort);
+  }
+
+  function moveSort(event) {
+    if (!dragged) return;
+    event.preventDefault();
+    updateDropTarget(event.clientY);
+  }
+
+  $$("[data-drag-handle]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      dragged = handle.closest(".ops-card");
+      if (!dragged) return;
+      event.preventDefault();
+      dragged.classList.add("dragging-card");
+      document.body.classList.add("sorting-cards");
+      updateDropTarget(event.clientY);
+      window.addEventListener("pointermove", moveSort);
+      window.addEventListener("pointerup", endSort);
+      window.addEventListener("pointercancel", endSort);
+    });
+  });
+}
+
+function startResize(splitter, event) {
+  event.preventDefault();
+  const mode = splitter.dataset.resize;
+  const shell = appShell();
+  const startX = event.clientX;
+  const rect = shell.getBoundingClientRect();
+  const initialSidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width"));
+  const initialOps = $(".operations-panel").getBoundingClientRect().width;
+  splitter.classList.add("dragging");
+  document.body.classList.add("resizing");
+  splitter.setPointerCapture(event.pointerId);
+
+  function move(pointerEvent) {
+    if (mode === "sidebar") {
+      const next = clamp(initialSidebar + pointerEvent.clientX - startX, 220, Math.min(380, rect.width * .36));
+      document.documentElement.style.setProperty("--sidebar-width", `${next}px`);
+    } else {
+      const next = clamp(initialOps - (pointerEvent.clientX - startX), 520, Math.max(540, rect.width - 360));
+      document.documentElement.style.setProperty("--ops-width", `${next}px`);
+      setChatOpen(true);
+    }
+    renderTrendChart();
+    state.campus3d?.resize?.();
+  }
+
+  function end() {
+    splitter.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+  }
+
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
 }
 
 function agentReply(agentKey, input) {
@@ -353,7 +479,7 @@ async function runDemo() {
   button.innerHTML = "<span>•••</span>Agent协商中";
   try {
     state.task = await request("/api/demo/run", { method: "POST" });
-    enableCollaboration();
+    enableCollaboration(true);
     renderTask();
     if (state.task.state === "awaiting_approval") {
       const plan = selectedPlan();
@@ -393,7 +519,7 @@ async function reoptimize() {
         transformer_redundant_temperature_c: 82, emergency_production: true,
       }),
     });
-    enableCollaboration();
+    enableCollaboration(true);
     renderTask();
     if (state.task.state === "human_handoff") { toast("数据冲突无法自动消解，已交还工程师"); return; }
     openApproval(`变化已创建新任务${state.task.task_id}。旧审批不会复用，新策略必须重新审批。`);
@@ -411,13 +537,13 @@ async function initialize() {
     $("#scenario-description").textContent = scenario.description;
     renderLiveData();
     renderTrendChart();
-    enableCollaboration();
+    enableCollaboration(false);
   } catch (error) { toast(error.message); }
 }
 
 $$(".agent-card").forEach((card) => card.addEventListener("click", () => selectAgent(card.dataset.agent)));
-$("#collaboration-mode").addEventListener("click", enableCollaboration);
-$("#clear-selection").addEventListener("click", enableCollaboration);
+$("#collaboration-mode").addEventListener("click", () => enableCollaboration(true));
+$("#clear-selection").addEventListener("click", () => enableCollaboration(false));
 $("#chat-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const input = $("#chat-input").value.trim();
@@ -434,6 +560,8 @@ $("#reject-button").addEventListener("click", () => submitApproval(false));
 $("#close-dialog").addEventListener("click", () => $("#approval-dialog").close());
 $("#reset-camera").addEventListener("click", () => state.campus3d?.reset());
 $$(".panel-tab").forEach((tab) => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
+$$(".splitter").forEach((splitter) => splitter.addEventListener("pointerdown", (event) => startResize(splitter, event)));
+setupCardSorting();
 window.addEventListener("resize", renderTrendChart);
 state.campus3d = createCampus3D($("#campus-3d"), updateAssetLabels);
 initialize();

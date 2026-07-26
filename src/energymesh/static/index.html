@@ -45,6 +45,7 @@
           <small>本地模拟 · 生产写入关闭</small>
         </div>
       </aside>
+      <div class="splitter" data-resize="sidebar" role="separator" aria-orientation="vertical" aria-label="调整会话列表宽度"></div>
 
       <section class="conversation">
         <div class="conversation-heading">
@@ -57,16 +58,16 @@
           <button type="submit" title="发送消息" aria-label="发送消息">➤</button>
         </form>
       </section>
+      <div class="splitter" data-resize="operations" role="separator" aria-orientation="vertical" aria-label="调整可视化面板宽度"></div>
 
       <aside class="operations-panel">
         <div class="ops-tabs" aria-label="可视化管理面板">
           <button class="panel-tab active" type="button" data-panel="scene">沙盘</button>
-          <button class="panel-tab" type="button" data-panel="metrics">指标</button>
           <button class="panel-tab" type="button" data-panel="audit">审计</button>
         </div>
 
-        <section class="scene-panel ops-view active" data-view="scene">
-          <div class="panel-bar">
+        <section class="scene-panel ops-view ops-card" data-view="scene" data-card="scene">
+          <div class="panel-bar" data-drag-handle aria-label="拖移沙盘卡片">
             <div>
               <span class="panel-index">VISUAL</span>
               <strong>园区能源数字沙盘</strong>
@@ -90,8 +91,8 @@
           </div>
         </section>
 
-        <section class="telemetry-panel ops-view" data-view="metrics">
-          <div class="panel-bar compact">
+        <section class="telemetry-panel ops-view ops-card" data-view="metrics" data-card="metrics">
+          <div class="panel-bar compact" data-drag-handle aria-label="拖移指标卡片">
             <div><span class="panel-index">METRICS</span><strong>运行指标</strong></div>
           </div>
 
@@ -133,8 +134,8 @@
         </section>
         </section>
 
-        <section class="decision-panel ops-view" data-view="audit">
-          <div class="decision-heading"><span>当前决策</span><strong id="decision-status">等待运行</strong></div>
+        <section class="decision-panel ops-view ops-card" data-view="audit" data-card="audit">
+          <div class="decision-heading" data-drag-handle aria-label="拖移审计卡片"><span>当前决策</span><strong id="decision-status">等待运行</strong></div>
           <div id="decision-summary" class="decision-summary"><p>运行后显示选定方案、审核结论和执行门禁。</p></div>
           <div class="mini-trace">
             <div class="mini-heading"><strong>协作轨迹</strong><span id="trace-count">0 项</span></div>
