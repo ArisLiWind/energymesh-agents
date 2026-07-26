@@ -122,7 +122,11 @@ function energyPath(scene, from, to, particles) {
   }
 }
 
-export function createCampus3D(canvas) {
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function createCampus3D(canvas, onLabels) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0xf9fafa);
@@ -177,6 +181,14 @@ export function createCampus3D(canvas) {
   energyPath(scene, [0, .12, 0], [4.7, .12, 2.1], particles);
   energyPath(scene, [0, .12, 0], [.3, .12, 4.5], particles);
   energyPath(scene, [0, .12, 0], [-3.5, .12, -1.2], particles);
+  const labelAnchors = {
+    factory: new THREE.Vector3(-4.4, 1.55, -1.9),
+    solar: new THREE.Vector3(.1, .82, -4.55),
+    storage: new THREE.Vector3(6.65, 2.35, -2.7),
+    grid: new THREE.Vector3(-7.1, 3.95, 4.2),
+    charge: new THREE.Vector3(.15, .95, 5.1),
+    compute: new THREE.Vector3(5.1, 1.75, 3.4),
+  };
 
   function positionCamera() {
     const radius = 20;
@@ -200,6 +212,24 @@ export function createCampus3D(canvas) {
     camera.top = 7.4;
     camera.bottom = -7.4;
     camera.updateProjectionMatrix();
+  }
+
+  function updateLabels() {
+    if (!onLabels) return;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const labels = {};
+    Object.entries(labelAnchors).forEach(([key, anchor]) => {
+      const projected = anchor.clone().project(camera);
+      const x = (projected.x * .5 + .5) * width;
+      const y = (-projected.y * .5 + .5) * height;
+      labels[key] = {
+        x: clamp(x, 48, width - 48),
+        y: clamp(y, 34, height - 22),
+        visible: projected.z > -1 && projected.z < 1,
+      };
+    });
+    onLabels(labels);
   }
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -227,6 +257,7 @@ export function createCampus3D(canvas) {
       const progress = (time * .00009 + particle.userData.offset) % 1;
       particle.position.copy(particle.userData.curve.getPointAt(progress));
     });
+    updateLabels();
     renderer.render(scene, camera);
     frame = requestAnimationFrame(render);
   }
@@ -244,6 +275,7 @@ export function createCampus3D(canvas) {
       zoom = 1;
       positionCamera();
     },
+    resize,
     destroy() {
       cancelAnimationFrame(frame);
       observer.disconnect();

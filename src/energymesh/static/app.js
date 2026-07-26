@@ -1,6 +1,6 @@
 import { createCampus3D } from "/static/campus3d.js";
 
-const state = { scenario: null, task: null, selectedAgent: null, campus3d: null };
+const state = { scenario: null, task: null, selectedAgent: null, campus3d: null, liveInterval: 57 };
 
 const agentInfo = {
   perception: { name: "感知Agent", icon: "◎", avatar: "perception", role: "核验负荷、光伏、SOC、设备状态与生产计划" },
@@ -45,8 +45,7 @@ async function request(url, options = {}) {
 
 function currentPoint() {
   if (!state.scenario) return null;
-  const hour = new Date().getHours();
-  return state.scenario.forecast[clamp(hour * 4, 0, 95)];
+  return state.scenario.forecast[clamp(state.liveInterval, 0, 95)];
 }
 
 function selectedPlan() {
@@ -71,7 +70,7 @@ function renderLiveData() {
   $("#grid-power").textContent = `${Math.round(grid)} kW`;
   $("#charge-power").textContent = `${Math.round(point.load_kw * .08)} kW`;
   $("#compute-power").textContent = `${Math.round(point.load_kw * .30)} kW`;
-  $("#battery-live").textContent = `${battery >= 0 ? "+" : ""}${Math.round(battery)} kW`;
+  $("#battery-live").textContent = planned ? `${battery >= 0 ? "+" : ""}${Math.round(battery)} kW` : "待调度";
   $("#soc-live").textContent = `${(soc * 100).toFixed(0)}%`;
   $("#capacity-live").textContent = `${Math.round(site.battery_capacity_kwh * soc)} kWh`;
   $("#pv-live").textContent = `${Math.round(point.pv_kw)} kW`;
@@ -89,6 +88,16 @@ function renderLiveData() {
   $$("#constraints > div").forEach((element, index) => {
     element.querySelector("strong").textContent = `${values[index].toFixed(0)}%`;
     element.querySelector("i").style.setProperty("--value", `${values[index]}%`);
+  });
+}
+
+function updateAssetLabels(labels) {
+  Object.entries(labels).forEach(([key, position]) => {
+    const element = $(`.asset[data-anchor="${key}"]`);
+    if (!element) return;
+    element.style.setProperty("--x", `${position.x}px`);
+    element.style.setProperty("--y", `${position.y}px`);
+    element.dataset.hidden = position.visible ? "false" : "true";
   });
 }
 
@@ -233,6 +242,13 @@ function enableCollaboration() {
   $("#conversation-subtitle").textContent = "四类Agent共享上下文并自动协商";
   $("#chat-input").placeholder = "未选中Agent：发送后由多智能体协同处理";
   resetConversation();
+}
+
+function activatePanel(panel) {
+  $$(".panel-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.panel === panel));
+  $$(".ops-view").forEach((view) => view.classList.toggle("active", view.dataset.view === panel));
+  if (panel === "metrics") renderTrendChart();
+  state.campus3d?.resize?.();
 }
 
 function agentReply(agentKey, input) {
@@ -417,6 +433,7 @@ $("#approval-form").addEventListener("submit", (event) => { event.preventDefault
 $("#reject-button").addEventListener("click", () => submitApproval(false));
 $("#close-dialog").addEventListener("click", () => $("#approval-dialog").close());
 $("#reset-camera").addEventListener("click", () => state.campus3d?.reset());
+$$(".panel-tab").forEach((tab) => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
 window.addEventListener("resize", renderTrendChart);
-state.campus3d = createCampus3D($("#campus-3d"));
+state.campus3d = createCampus3D($("#campus-3d"), updateAssetLabels);
 initialize();
