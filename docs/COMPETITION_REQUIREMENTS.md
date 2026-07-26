@@ -15,11 +15,12 @@ EnergyMesh Agents 的对应定位：
 
 ### 至少 3 个不同职能 Agent
 
-EnergyMesh Agents 设计 3 个核心 Agent：
+EnergyMesh Agents 设计 4 个核心 Agent，满足“至少 3 个”的要求：
 
-- 数据感知 Agent
-- 调度行动 Agent
-- 安全审核 Agent
+- 感知 Agent
+- 调度 Agent
+- 审核 Agent
+- 执行 Agent
 
 三者分别对应输入理解、策略生成、安全验证，职责边界清晰。
 
@@ -119,11 +120,11 @@ EnergyMesh Agents 初期建议实现：
 
 - 真实痛点：客户策略定制开发成本高。
 - 解决方案：多 Agent 生成、验证和运行调度策略。
-- 三 Agent 分工：数据、调度、审核。
+- 四 Agent 分工：感知、调度、审核、执行。
 - 完整闭环：从事件到复盘。
 - Skill 清单：可复用能力，而不是一次性流程。
 - 安全边界：LLM 不直接控制电力设备。
-- Demo 设计：光伏骤降 + 储能告警 + 峰价临近。
+- Demo 设计：紧急生产 + 光伏偏差 + 双路变压器热风险 + 峰价临近。
 
 ## 8. 复赛工程计划
 
@@ -131,11 +132,10 @@ EnergyMesh Agents 初期建议实现：
 
 建议工程拆分：
 
-- `agents/`：三类 Agent 定义。
+- `src/energymesh/`：四类 Agent 的领域实现与受控编排。
 - `skills/`：可复用 Skill。
 - `tools/`：模拟数据、预测、优化、仿真、审批、审计工具。
 - `data/`：样例站点、设备、负荷、电价和事件。
 - `runs/`：执行证据包。
 - `ui/`：Demo 前端或控制台。
 - `docs/`：方案、接口、评测和演示脚本。
-

@@ -1,0 +1,26 @@
+services:
+  energymesh:
+    build:
+      context: .
+    environment:
+      SIMULATION_MODE: "true"
+      ALLOW_PRODUCTION_WRITE: "false"
+      ENERGYMESH_DB_PATH: /app/var/energymesh.db
+      ENERGYMESH_EVIDENCE_DIR: /app/runs
+    ports:
+      - "8000:8000"
+    volumes:
+      - energymesh-data:/app/var
+      - ./runs:/app/runs
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  energymesh-data:
+
