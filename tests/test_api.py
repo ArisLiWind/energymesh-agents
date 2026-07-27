@@ -13,6 +13,20 @@ def test_health_and_demo_workflow(settings) -> None:
         assert health.status_code == 200
         assert health.json()["simulation_mode"] is True
         assert health.json()["allow_production_write"] is False
+        assert health.json()["agent_framework"] == "Alibaba Cloud AgentTeams"
+
+        manifest = client.get("/api/agentteams/manifest")
+        assert manifest.status_code == 200
+        manifest_body = manifest.json()
+        assert manifest_body["framework"] == "Alibaba Cloud AgentTeams"
+        assert manifest_body["team_name"] == "energymesh-test-team"
+        assert [worker["worker_id"] for worker in manifest_body["workers"]] == [
+            "energymesh_team_leader",
+            "perception_worker",
+            "dispatch_worker",
+            "audit_worker",
+            "execution_worker",
+        ]
 
         page = client.get("/")
         assert page.status_code == 200
@@ -30,6 +44,7 @@ def test_health_and_demo_workflow(settings) -> None:
         assert task["state"] == "awaiting_approval"
         assert task["perception"]["original_task_valid"] is False
         assert task["perception"]["recommended_action"] == "redefine_and_optimize"
+        assert task["trace"][0]["detail"]["agentteams_worker"] == "energymesh_team_leader"
 
         completed = client.post(
             f"/api/tasks/{task['task_id']}/approval",

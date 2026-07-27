@@ -1,0 +1,28 @@
+{
+  "framework": "Alibaba Cloud AgentTeams",
+  "team_name": "energymesh-park-control",
+  "pattern": "leader-worker",
+  "human_in_the_loop": true,
+  "leader": "energymesh_team_leader",
+  "workers": [
+    "perception_worker",
+    "dispatch_worker",
+    "audit_worker",
+    "execution_worker"
+  ],
+  "skills": [
+    "microgrid_context_ingest",
+    "dispatch_plan_generate",
+    "dispatch_audit_verify",
+    "execution_mapping",
+    "approval_rollback"
+  ],
+  "mcp_servers": [
+    {
+      "name": "energymesh-local-api",
+      "type": "http",
+      "base_url": "http://127.0.0.1:8000",
+      "production_write": false
+    }
+  ]
+}

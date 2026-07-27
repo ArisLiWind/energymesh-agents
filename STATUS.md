@@ -17,6 +17,8 @@ Updated: 2026-07-26
   post-execution verification.
 - SQLite task/trace persistence and SHA-256 JSON evidence packages.
 - FastAPI/OpenAPI service and responsive operator console.
+- AgentTeams-compatible Team Leader, Worker, Skill, MCP, and trace mapping manifest at
+  `/api/agentteams/manifest`, with import assets under `agentteams/`.
 - Locally hosted Three.js interactive park scene with orthographic camera, lighting, shadows,
   drag rotation, wheel zoom, and animated energy-flow particles.
 - 96-point load, PV, grid-import, and SOC trend chart plus before/after optimization bars.
@@ -34,12 +36,13 @@ Updated: 2026-07-26
 - Add forecast uncertainty bands and rolling-horizon re-optimization.
 - Evaluate against multiple seasons and measured-but-anonymized benchmark profiles.
 - Implement an MCP read-only facade only after its contracts and authentication are tested.
-- Integrate AgentTeams only when an actual runtime and reproducible test environment are available.
+- Validate the `agentteams/` assets against a real Alibaba Cloud AgentTeams instance when
+  credentials and a reproducible runtime are available.
 
 ## Known limitations
 
-- No AgentTeams runtime, MCP connection, cloud service, production database, or physical equipment
-  is connected.
+- No live cloud AgentTeams runtime, MCP connection, production database, or physical equipment is
+  connected; current AgentTeams support is a local-compatible import and governance contract.
 - The model is park-level economic dispatch, not network power flow or real-time control.
 - Docker validation depends on a host with Docker; absence must be reported in verification notes.
 - Demo approval is suitable only for a local presentation because authentication is not yet present.

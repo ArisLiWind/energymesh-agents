@@ -10,7 +10,7 @@
 
 大量园区、工业中心和算力中心已经部署能源管理系统，但这些系统的能力并不相同：
 
-EnergyMesh Agents 基于 AgentTeams 构建「调度 Agent、执行 Agent、审计 Agent」三类核心智能体协作链路：调度 Agent 汇总全部数据并生成调度方案，执行 Agent 将方案转换成具体设备、策略参数和执行位置，审计 Agent 对方案、执行动作和结果证据进行安全审计。系统最终形成从任务输入、方案生成、执行落位、审计验证到复盘沉淀的端到端闭环。
+EnergyMesh Agents 基于 AgentTeams 构建 Team Leader 与「感知 Agent、调度 Agent、审核 Agent、执行 Agent」四类 Worker 协作链路：Team Leader 拆解任务并监督进度，感知 Agent 核验运行上下文，调度 Agent 生成候选方案，审核 Agent 对方案、执行动作和结果证据进行安全审计，执行 Agent 将获批方案转换成具体设备、策略参数和执行位置。系统最终形成从任务输入、方案生成、执行落位、审计验证到复盘沉淀的端到端闭环。
 
 - **基础型 EMS** 主要依靠工程师预先设置运行时段、控制阈值和充放电规则，再按照固定策略
   自动执行。电价低时充电、电价高时放电，负荷超过阈值时削峰，光伏富余时优先储存。一旦
@@ -72,13 +72,29 @@ EnergyMesh Agents 不替代已有 EMS 和优化算法，而是在它们之上构
 
 ## 当前实现边界
 
-当前版本是可运行的模拟 MVP：不连接 AgentTeams、MCP、真实 EMS、BMS、PCS 或生产数据库，
-不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”只进入本地模拟适配器：
+当前版本是可运行的 AgentTeams-compatible 模拟 MVP：仓库提供 `agentteams/` Team Leader、
+Worker、SOUL.MD、AGENT.MD 和 Skill 资产，并通过 `/api/agentteams/manifest` 暴露可迁移
+清单；本地仍使用 `EnergyMeshOrchestrator` 保证无云账号也可运行。当前不连接真实 EMS、BMS、
+PCS 或生产数据库，不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”
+只进入本地模拟适配器：
 
 ```text
 SIMULATION_MODE=true
 ALLOW_PRODUCTION_WRITE=false
+AGENTTEAMS_ENABLED=true
 ```
+
+## AgentTeams 对接
+
+- 本地 manifest：`GET /api/agentteams/manifest`
+- AgentTeams 导入资产：`agentteams/`
+- Team Leader：`agentteams/team-leader/SOUL.md` 与 `agentteams/team-leader/AGENT.md`
+- Workers：`agentteams/workers/perception|dispatch|audit|execution`
+- Skills：`agentteams/skills/*/SKILL.md`
+
+这套实现遵循 AgentTeams 的 Leader-Worker、人机协同、Skill/MCP 资产分层思路。没有云端实例
+ID 时运行模式为 `local-compatible`；创建阿里云 AgentTeams 实例后，可设置
+`AGENTTEAMS_INSTANCE_ID` 记录对应实例。
 
 ## 一键运行
 

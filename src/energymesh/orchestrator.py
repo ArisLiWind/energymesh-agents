@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from energymesh.agentteams import actor_to_worker
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.models import (
     ApprovalRecord,
@@ -41,6 +42,9 @@ class EnergyMeshOrchestrator:
     @staticmethod
     def _record(task: TaskRecord, actor: str, action: str, status: str, **detail: object) -> None:
         now = datetime.now(UTC)
+        agentteams_worker = actor_to_worker(actor)
+        if agentteams_worker is not None:
+            detail = {**detail, "agentteams_worker": agentteams_worker}
         task.updated_at = now
         task.trace.append(
             TraceEvent(

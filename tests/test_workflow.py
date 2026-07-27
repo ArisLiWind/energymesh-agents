@@ -68,6 +68,9 @@ def test_executor_refuses_unsafe_runtime(scenario) -> None:
     settings = Settings(
         simulation_mode=False,
         allow_production_write=False,
+        agentteams_enabled=True,
+        agentteams_team_name="energymesh-test-team",
+        agentteams_instance_id=None,
         db_path=Path("unsafe.db"),
         evidence_dir=Path("unsafe-evidence"),
         host="127.0.0.1",

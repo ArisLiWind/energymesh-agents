@@ -16,6 +16,9 @@ def _bool_env(name: str, default: bool) -> bool:
 class Settings:
     simulation_mode: bool
     allow_production_write: bool
+    agentteams_enabled: bool
+    agentteams_team_name: str
+    agentteams_instance_id: str | None
     db_path: Path
     evidence_dir: Path
     host: str
@@ -26,6 +29,9 @@ class Settings:
         return cls(
             simulation_mode=_bool_env("SIMULATION_MODE", True),
             allow_production_write=_bool_env("ALLOW_PRODUCTION_WRITE", False),
+            agentteams_enabled=_bool_env("AGENTTEAMS_ENABLED", True),
+            agentteams_team_name=os.getenv("AGENTTEAMS_TEAM_NAME", "energymesh-park-control"),
+            agentteams_instance_id=os.getenv("AGENTTEAMS_INSTANCE_ID") or None,
             db_path=Path(os.getenv("ENERGYMESH_DB_PATH", "./var/energymesh.db")),
             evidence_dir=Path(os.getenv("ENERGYMESH_EVIDENCE_DIR", "./runs")),
             host=os.getenv("ENERGYMESH_HOST", "0.0.0.0"),

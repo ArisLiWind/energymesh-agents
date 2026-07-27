@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.config import Settings
 from energymesh.demo import apply_operational_change, load_demo_scenario
@@ -62,7 +63,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": app.version,
             "simulation_mode": runtime.simulation_mode,
             "allow_production_write": runtime.allow_production_write,
+            "agent_framework": "Alibaba Cloud AgentTeams",
+            "agentteams_enabled": runtime.agentteams_enabled,
+            "agentteams_team_name": runtime.agentteams_team_name,
         }
+
+    @app.get("/api/agentteams/manifest", response_model=AgentTeamsManifest)
+    def agentteams_manifest(request: Request) -> AgentTeamsManifest:
+        runtime: Settings = request.app.state.settings
+        return build_agentteams_manifest(runtime)
 
     @app.get("/api/demo/scenario", response_model=Scenario)
     def demo_scenario(
