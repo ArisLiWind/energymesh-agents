@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#151918" />
     <title>EnergyMesh Agents · 园区能源控制台</title>
+    <script>
+      if (window.location.protocol === "file:") {
+        window.location.replace("http://127.0.0.1:8000/");
+      }
+    </script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -35,10 +40,10 @@
           <span>✣</span><strong>自动协同</strong><small>四Agent共享上下文</small>
         </button>
         <div class="agents-strip" id="agents-strip">
-          <button class="agent-card" type="button" data-agent="perception"><span class="agent-avatar avatar-perception" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>感知Agent</strong><small>数据核验 · 异常判断</small></span><i></i></button>
-          <button class="agent-card" type="button" data-agent="dispatch"><span class="agent-avatar avatar-dispatch" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>调度Agent</strong><small>策略生成 · 成本权衡</small></span><i></i></button>
-          <button class="agent-card" type="button" data-agent="audit"><span class="agent-avatar avatar-audit" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>审核Agent</strong><small>约束审计 · 风险拦截</small></span><i></i></button>
-          <button class="agent-card" type="button" data-agent="execute"><span class="agent-avatar avatar-execute" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>执行Agent</strong><small>模拟下发 · 结果核对</small></span><i></i></button>
+          <div class="agent-card" role="button" tabindex="0" data-agent="perception"><span class="agent-avatar avatar-perception" data-agent-settings="perception" role="button" tabindex="0" title="模型设置" aria-label="感知Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>感知Agent</strong><small>数据核验 · 异常判断</small></span><i></i></div>
+          <div class="agent-card" role="button" tabindex="0" data-agent="dispatch"><span class="agent-avatar avatar-dispatch" data-agent-settings="dispatch" role="button" tabindex="0" title="模型设置" aria-label="调度Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>调度Agent</strong><small>策略生成 · 成本权衡</small></span><i></i></div>
+          <div class="agent-card" role="button" tabindex="0" data-agent="audit"><span class="agent-avatar avatar-audit" data-agent-settings="audit" role="button" tabindex="0" title="模型设置" aria-label="审核Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>审核Agent</strong><small>约束审计 · 风险拦截</small></span><i></i></div>
+          <div class="agent-card" role="button" tabindex="0" data-agent="execute"><span class="agent-avatar avatar-execute" data-agent-settings="execute" role="button" tabindex="0" title="模型设置" aria-label="执行Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>执行Agent</strong><small>模拟下发 · 结果核对</small></span><i></i></div>
         </div>
         <div class="sidebar-status">
           <span id="task-state" class="status-pill idle">待运行</span>
@@ -152,6 +157,31 @@
         <label>审批人<input id="approver" value="演示审批员" required minlength="2" /></label>
         <label>审批理由<textarea id="approval-reason" required minlength="2">演示环境中确认安全约束与影响范围。</textarea></label>
         <div class="dialog-actions"><button id="reject-button" class="command-button ghost danger" type="button">拒绝</button><button class="command-button primary" type="submit">批准并模拟执行</button></div>
+      </form>
+    </dialog>
+    <dialog id="model-dialog">
+      <form method="dialog" id="model-form">
+        <div class="dialog-heading"><div><span class="panel-index">MODEL SETTINGS</span><h2 id="model-dialog-title">模型设置</h2></div><button id="close-model-dialog" class="icon-button" type="button" aria-label="关闭">×</button></div>
+        <div class="model-profile">
+          <span id="model-avatar-preview" class="agent-avatar avatar-perception" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span>
+          <div><strong id="model-agent-name">感知Agent</strong><small id="model-agent-role">数据核验 · 异常判断</small></div>
+          <button id="random-avatar-button" class="command-button ghost" type="button">随机头像</button>
+        </div>
+        <section class="model-section">
+          <strong>模型设置</strong>
+          <label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label>
+          <label>API Key<input id="model-api-key" type="password" placeholder="•••••••••••••••" autocomplete="off" /></label>
+          <label>模型名称<input id="model-name" value="deepseek-chat" required /></label>
+          <div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div>
+          <p class="connection-line">连接状态：<span id="connection-status">未测试</span></p>
+          <p id="connection-error" class="connection-error" hidden></p>
+        </section>
+        <section class="model-section chat-test">
+          <strong>测试对话</strong>
+          <label>用户：<textarea id="model-test-message">请介绍你的职责</textarea></label>
+          <div class="model-actions"><button id="send-model-chat" class="command-button primary" type="button">发送</button></div>
+          <p class="agent-test-reply">Agent：<span id="model-test-reply">等待发送</span></p>
+        </section>
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>

@@ -1,6 +1,15 @@
 import { createCampus3D } from "/static/campus3d.js";
 
-const state = { scenario: null, task: null, selectedAgent: null, campus3d: null, liveInterval: 57 };
+const state = {
+  scenario: null,
+  task: null,
+  selectedAgent: null,
+  settingsAgent: null,
+  campus3d: null,
+  liveInterval: 57,
+  modelConfigs: {},
+  avatarStyles: {},
+};
 
 const agentInfo = {
   perception: { name: "感知Agent", icon: "◎", avatar: "perception", role: "核验负荷、光伏、SOC、设备状态与生产计划" },
@@ -27,6 +36,9 @@ const actionNames = {
 function $(selector) { return document.querySelector(selector); }
 function $$(selector) { return [...document.querySelectorAll(selector)]; }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function escapeHTML(value) {
+  return `${value}`.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
 
 function appShell() { return $(".app-shell"); }
 
@@ -43,6 +55,47 @@ async function request(url, options = {}) {
     throw new Error(body.detail || `请求失败 (${response.status})`);
   }
   return response.json();
+}
+
+function agentBackendId(agentKey) {
+  return {
+    perception: "perception_agent",
+    dispatch: "dispatch_agent",
+    audit: "audit_agent",
+    execute: "execution_agent",
+  }[agentKey] || agentKey;
+}
+
+function loadAvatarStyles() {
+  state.avatarStyles = JSON.parse(localStorage.getItem("energymesh-avatar-styles") || "{}");
+}
+
+function saveAvatarStyles() {
+  localStorage.setItem("energymesh-avatar-styles", JSON.stringify(state.avatarStyles));
+}
+
+function avatarStyleClass(agentKey) {
+  const index = state.avatarStyles[agentKey];
+  return Number.isInteger(index) ? `avatar-style-${index}` : "";
+}
+
+function avatarClasses(agentKey) {
+  const avatar = agentInfo[agentKey]?.avatar || "perception";
+  return `agent-avatar avatar-${avatar} ${avatarStyleClass(agentKey)}`.trim();
+}
+
+function syncAvatarStyles() {
+  $$(".agent-card").forEach((card) => {
+    const avatar = card.querySelector(".agent-avatar");
+    if (!avatar) return;
+    avatar.className = avatarClasses(card.dataset.agent);
+  });
+  if (state.selectedAgent) {
+    $("#conversation-icon").innerHTML = avatarMarkup(state.selectedAgent);
+  }
+  if (state.settingsAgent) {
+    $("#model-avatar-preview").className = avatarClasses(state.settingsAgent);
+  }
 }
 
 function currentPoint() {
@@ -200,15 +253,14 @@ function renderTrendChart() {
 
 function avatarMarkup(agentKey, user = false) {
   if (user) return `<span class="message-avatar user-avatar">人</span>`;
-  const avatar = agentInfo[agentKey]?.avatar || "perception";
-  return `<span class="message-avatar agent-avatar avatar-${avatar}" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span>`;
+  return `<span class="message-avatar ${avatarClasses(agentKey)}" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span>`;
 }
 
 function addMessage(agentKey, text, user = false) {
   const info = user ? { name: "你", icon: "人" } : agentInfo[agentKey];
   const message = document.createElement("div");
   message.className = `message${user ? " user" : ""}`;
-  message.innerHTML = `${avatarMarkup(agentKey, user)}<div class="message-body"><span class="message-meta">${info.name}</span>${text}</div>`;
+  message.innerHTML = `${avatarMarkup(agentKey, user)}<div class="message-body"><span class="message-meta">${escapeHTML(info.name)}</span>${escapeHTML(text)}</div>`;
   $("#messages").append(message);
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
@@ -377,7 +429,21 @@ function startResize(splitter, event) {
   window.addEventListener("pointerup", end);
 }
 
-function agentReply(agentKey, input) {
+async function agentReply(agentKey, input) {
+  const modelConfig = state.modelConfigs[agentBackendId(agentKey)];
+  if (modelConfig) {
+    try {
+      const result = await request(`/api/agents/${agentBackendId(agentKey)}/chat`, {
+        method: "POST",
+        body: JSON.stringify({ message: input }),
+      });
+      addMessage(agentKey, result.response);
+      return;
+    } catch (error) {
+      addMessage(agentKey, `模型调用失败：${error.message}`);
+      return;
+    }
+  }
   const point = currentPoint();
   const plan = selectedPlan();
   const audit = state.task?.audits.find((item) => item.plan_id === state.task.selected_plan_id);
@@ -394,6 +460,110 @@ function agentReply(agentKey, input) {
       : "我现在保持执行门禁关闭。审核和必要审批都完成后，我也只会向本地模拟适配器发送结构化命令，不会连接真实EMS或PCS。",
   };
   window.setTimeout(() => addMessage(agentKey, responses[agentKey]), 260);
+}
+
+function setConnectionState(config = null) {
+  const status = config?.connection_status || "未测试";
+  $("#connection-status").textContent = status;
+  $("#connection-status").dataset.state = status;
+  $("#connection-error").hidden = !config?.last_error;
+  $("#connection-error").textContent = config?.last_error || "";
+}
+
+function openModelDialog(agentKey) {
+  state.settingsAgent = agentKey;
+  const info = agentInfo[agentKey];
+  const backendId = agentBackendId(agentKey);
+  const config = state.modelConfigs[backendId];
+  $("#model-dialog-title").textContent = `${info.name}模型设置`;
+  $("#model-agent-name").textContent = info.name;
+  $("#model-agent-role").textContent = info.role;
+  $("#model-avatar-preview").className = avatarClasses(agentKey);
+  $("#model-base-url").value = config?.base_url || "https://api.deepseek.com";
+  $("#model-api-key").value = "";
+  $("#model-api-key").placeholder = config?.api_key_masked || "•••••••••••••••";
+  $("#model-name").value = config?.model || "deepseek-chat";
+  $("#model-test-message").value = "请介绍你的职责";
+  $("#model-test-reply").textContent = "等待发送";
+  setConnectionState(config);
+  $("#model-dialog").showModal();
+}
+
+function randomizeCurrentAvatar() {
+  if (!state.settingsAgent) return;
+  const current = state.avatarStyles[state.settingsAgent] ?? -1;
+  let next = Math.floor(Math.random() * 6);
+  if (next === current) next = (next + 1) % 6;
+  state.avatarStyles[state.settingsAgent] = next;
+  saveAvatarStyles();
+  syncAvatarStyles();
+}
+
+function currentModelPayload() {
+  return {
+    base_url: $("#model-base-url").value.trim(),
+    api_key: $("#model-api-key").value.trim() || null,
+    model: $("#model-name").value.trim(),
+  };
+}
+
+async function saveModelConfig() {
+  if (!state.settingsAgent) return null;
+  const backendId = agentBackendId(state.settingsAgent);
+  const config = await request(`/api/agents/${backendId}/model`, {
+    method: "PUT",
+    body: JSON.stringify(currentModelPayload()),
+  });
+  state.modelConfigs[backendId] = config;
+  $("#model-api-key").value = "";
+  $("#model-api-key").placeholder = config.api_key_masked || "•••••••••••••••";
+  setConnectionState(config);
+  return config;
+}
+
+async function testModelConnection() {
+  if (!state.settingsAgent) return;
+  const button = $("#test-model-button");
+  button.disabled = true;
+  try {
+    const config = await saveModelConfig();
+    if (!config) return;
+    const result = await request(`/api/agents/${agentBackendId(state.settingsAgent)}/model/test`, {
+      method: "POST",
+    });
+    const next = {
+      ...config,
+      connection_status: result.success ? "正常" : "失败",
+      last_error: result.error || null,
+    };
+    state.modelConfigs[config.agent_id] = next;
+    setConnectionState(next);
+    toast(result.success ? "连接正常" : result.error);
+  } catch (error) {
+    setConnectionState({ connection_status: "失败", last_error: error.message });
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function sendModelTestMessage() {
+  if (!state.settingsAgent) return;
+  const button = $("#send-model-chat");
+  button.disabled = true;
+  $("#model-test-reply").textContent = "发送中...";
+  try {
+    await saveModelConfig();
+    const result = await request(`/api/agents/${agentBackendId(state.settingsAgent)}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ message: $("#model-test-message").value.trim() }),
+    });
+    $("#model-test-reply").textContent = result.response;
+  } catch (error) {
+    $("#model-test-reply").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function collaborativeReply(input) {
@@ -530,18 +700,42 @@ async function reoptimize() {
 
 async function initialize() {
   try {
-    const [scenario, health] = await Promise.all([request("/api/demo/scenario"), request("/api/health")]);
+    loadAvatarStyles();
+    const [scenario, health, manifest] = await Promise.all([
+      request("/api/demo/scenario"),
+      request("/api/health"),
+      request("/api/agentteams/manifest"),
+    ]);
     if (!health.simulation_mode || health.allow_production_write) throw new Error("安全配置异常，页面已停止运行");
+    state.modelConfigs = manifest.model_configs || {};
     state.scenario = scenario;
     $("#scenario-name").textContent = scenario.name;
     $("#scenario-description").textContent = scenario.description;
     renderLiveData();
     renderTrendChart();
+    syncAvatarStyles();
     enableCollaboration(false);
   } catch (error) { toast(error.message); }
 }
 
-$$(".agent-card").forEach((card) => card.addEventListener("click", () => selectAgent(card.dataset.agent)));
+$$(".agent-card").forEach((card) => {
+  card.addEventListener("click", () => selectAgent(card.dataset.agent));
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") selectAgent(card.dataset.agent);
+  });
+});
+$$("[data-agent-settings]").forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openModelDialog(button.dataset.agentSettings);
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.stopPropagation();
+    event.preventDefault();
+    openModelDialog(button.dataset.agentSettings);
+  });
+});
 $("#collaboration-mode").addEventListener("click", () => enableCollaboration(true));
 $("#clear-selection").addEventListener("click", () => enableCollaboration(false));
 $("#chat-form").addEventListener("submit", (event) => {
@@ -558,6 +752,17 @@ $("#reoptimize-button").addEventListener("click", reoptimize);
 $("#approval-form").addEventListener("submit", (event) => { event.preventDefault(); submitApproval(true); });
 $("#reject-button").addEventListener("click", () => submitApproval(false));
 $("#close-dialog").addEventListener("click", () => $("#approval-dialog").close());
+$("#close-model-dialog").addEventListener("click", () => $("#model-dialog").close());
+$("#model-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await saveModelConfig();
+    toast("模型设置已保存");
+  } catch (error) { toast(error.message); }
+});
+$("#test-model-button").addEventListener("click", testModelConnection);
+$("#send-model-chat").addEventListener("click", sendModelTestMessage);
+$("#random-avatar-button").addEventListener("click", randomizeCurrentAvatar);
 $("#reset-camera").addEventListener("click", () => state.campus3d?.reset());
 $$(".panel-tab").forEach((tab) => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
 $$(".splitter").forEach((splitter) => splitter.addEventListener("pointerdown", (event) => startResize(splitter, event)));

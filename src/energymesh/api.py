@@ -10,7 +10,13 @@ from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.config import Settings
 from energymesh.demo import apply_operational_change, load_demo_scenario
+from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
 from energymesh.models import (
+    AgentChatRequest,
+    AgentChatResponse,
+    AgentModelConfigPublic,
+    AgentModelConfigRequest,
+    AgentModelTestResponse,
     ApprovalRequest,
     ReoptimizationRequest,
     Scenario,
@@ -71,7 +77,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/agentteams/manifest", response_model=AgentTeamsManifest)
     def agentteams_manifest(request: Request) -> AgentTeamsManifest:
         runtime: Settings = request.app.state.settings
-        return build_agentteams_manifest(runtime)
+        store: EvidenceStore = request.app.state.store
+        return build_agentteams_manifest(runtime, store.list_public_model_configs())
+
+    @app.put("/api/agents/{agent_id}/model", response_model=AgentModelConfigPublic)
+    def save_agent_model(
+        agent_id: str,
+        body: AgentModelConfigRequest,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> AgentModelConfigPublic:
+        try:
+            normalized = normalize_agent_id(agent_id)
+            return evidence_store.save_model_config(
+                normalized, body.base_url, body.api_key, body.model
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/agents/{agent_id}/model/test", response_model=AgentModelTestResponse)
+    def test_agent_model(
+        agent_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> AgentModelTestResponse:
+        try:
+            normalized = normalize_agent_id(agent_id)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        config = evidence_store.get_model_config(normalized)
+        if config is None:
+            return AgentModelTestResponse(success=False, error="Model config not saved")
+        try:
+            chat_with_agent_config(config, "Reply with OK.")
+        except Exception as error:
+            message = str(error)
+            evidence_store.update_model_status(normalized, "失败", message)
+            return AgentModelTestResponse(success=False, error=message)
+        evidence_store.update_model_status(normalized, "正常", None)
+        return AgentModelTestResponse(success=True, model=config.model)
+
+    @app.post("/api/agents/{agent_id}/chat", response_model=AgentChatResponse)
+    def chat_with_agent(
+        agent_id: str,
+        body: AgentChatRequest,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> AgentChatResponse:
+        try:
+            normalized = normalize_agent_id(agent_id)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        config = evidence_store.get_model_config(normalized)
+        if config is None:
+            raise HTTPException(status_code=409, detail="Model config not saved")
+        try:
+            reply = chat_with_agent_config(config, body.message)
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        return AgentChatResponse(agent_id=normalized, model=config.model, response=reply)
 
     @app.get("/api/demo/scenario", response_model=Scenario)
     def demo_scenario(
@@ -149,6 +210,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(static_dir / "index.html")
+
+    @app.get("/styles.css", include_in_schema=False)
+    def root_styles() -> FileResponse:
+        return FileResponse(static_dir / "styles.css")
+
+    @app.get("/app.js", include_in_schema=False)
+    def root_app_script() -> FileResponse:
+        return FileResponse(static_dir / "app.js")
+
+    @app.get("/campus3d.js", include_in_schema=False)
+    def root_campus_script() -> FileResponse:
+        return FileResponse(static_dir / "campus3d.js")
 
     return app
 

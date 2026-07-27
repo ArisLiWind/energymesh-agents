@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from energymesh.config import Settings
+from energymesh.models import AgentModelConfigPublic
 
 
 class AgentTeamsSkillSpec(BaseModel):
@@ -47,6 +48,7 @@ class AgentTeamsManifest(BaseModel):
     skills: list[AgentTeamsSkillSpec]
     mcp_servers: list[dict[str, Any]]
     trace_actor_mapping: dict[str, str]
+    model_configs: dict[str, AgentModelConfigPublic]
 
 
 TRACE_ACTOR_MAPPING = {
@@ -64,7 +66,10 @@ def actor_to_worker(actor: str) -> str | None:
     return TRACE_ACTOR_MAPPING.get(actor)
 
 
-def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
+def build_agentteams_manifest(
+    settings: Settings,
+    model_configs: dict[str, AgentModelConfigPublic] | None = None,
+) -> AgentTeamsManifest:
     runtime_mode = (
         "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
     )
@@ -184,4 +189,5 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 "production_write": False,
             }
         ],
+        model_configs=model_configs or {},
     )

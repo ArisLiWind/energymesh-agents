@@ -8,7 +8,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from energymesh.models import TaskRecord
+from energymesh.model_gateway import StoredModelConfig, mask_api_key
+from energymesh.models import AgentModelConfigPublic, TaskRecord
 
 
 class EvidenceStore:
@@ -49,6 +50,19 @@ class EvidenceStore:
                     payload TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     UNIQUE(task_id, sequence)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS agent_model_configs (
+                    agent_id TEXT PRIMARY KEY,
+                    base_url TEXT NOT NULL,
+                    api_key TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    connection_status TEXT NOT NULL,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL
                 )
                 """
             )
@@ -107,6 +121,106 @@ class EvidenceStore:
                 "SELECT payload FROM tasks ORDER BY updated_at DESC LIMIT ?", (limit,)
             ).fetchall()
         return [TaskRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def save_model_config(
+        self,
+        agent_id: str,
+        base_url: str,
+        api_key: str | None,
+        model: str,
+    ) -> AgentModelConfigPublic:
+        current = self.get_model_config(agent_id)
+        if api_key is None or not api_key.strip() or "•" in api_key:
+            if current is None:
+                raise ValueError("api_key is required")
+            saved_key = current.api_key
+        else:
+            saved_key = api_key.strip()
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_model_configs(
+                    agent_id, base_url, api_key, model, connection_status, last_error, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    base_url = excluded.base_url,
+                    api_key = excluded.api_key,
+                    model = excluded.model,
+                    connection_status = excluded.connection_status,
+                    last_error = excluded.last_error,
+                    updated_at = excluded.updated_at
+                """,
+                (agent_id, base_url.strip(), saved_key, model.strip(), "未测试", None, now),
+            )
+        stored = self.get_model_config(agent_id)
+        if stored is None:
+            raise RuntimeError("model config was not saved")
+        return self.public_model_config(stored)
+
+    def get_model_config(self, agent_id: str) -> StoredModelConfig | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT agent_id, base_url, api_key, model, connection_status, last_error
+                FROM agent_model_configs WHERE agent_id = ?
+                """,
+                (agent_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return StoredModelConfig(
+            agent_id=row["agent_id"],
+            base_url=row["base_url"],
+            api_key=row["api_key"],
+            model=row["model"],
+            connection_status=row["connection_status"],
+            last_error=row["last_error"],
+        )
+
+    def update_model_status(
+        self, agent_id: str, connection_status: str, last_error: str | None
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE agent_model_configs
+                SET connection_status = ?, last_error = ?, updated_at = ?
+                WHERE agent_id = ?
+                """,
+                (connection_status, last_error, datetime.now(UTC).isoformat(), agent_id),
+            )
+
+    def public_model_config(self, config: StoredModelConfig) -> AgentModelConfigPublic:
+        return AgentModelConfigPublic(
+            agent_id=config.agent_id,
+            base_url=config.base_url,
+            api_key_masked=mask_api_key(config.api_key),
+            model=config.model,
+            connection_status=config.connection_status,
+            last_error=config.last_error,
+        )
+
+    def list_public_model_configs(self) -> dict[str, AgentModelConfigPublic]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT agent_id, base_url, api_key, model, connection_status, last_error
+                FROM agent_model_configs ORDER BY agent_id
+                """
+            ).fetchall()
+        configs: dict[str, AgentModelConfigPublic] = {}
+        for row in rows:
+            stored = StoredModelConfig(
+                agent_id=row["agent_id"],
+                base_url=row["base_url"],
+                api_key=row["api_key"],
+                model=row["model"],
+                connection_status=row["connection_status"],
+                last_error=row["last_error"],
+            )
+            configs[stored.agent_id] = self.public_model_config(stored)
+        return configs
 
     def seal_evidence(self, task: TaskRecord) -> str:
         evidence = {

@@ -225,3 +225,34 @@ class ReoptimizationRequest(BaseModel):
     transformer_redundant_temperature_c: float | None = Field(default=None, ge=-30, le=150)
     emergency_production: bool = False
     simulate_execution_deviation: bool = False
+
+
+class AgentModelConfigRequest(BaseModel):
+    base_url: str = Field(min_length=8, max_length=500)
+    api_key: str | None = Field(default=None, max_length=500)
+    model: str = Field(min_length=1, max_length=120)
+
+
+class AgentModelConfigPublic(BaseModel):
+    agent_id: str
+    base_url: str
+    api_key_masked: str
+    model: str
+    connection_status: str
+    last_error: str | None = None
+
+
+class AgentModelTestResponse(BaseModel):
+    success: bool
+    model: str | None = None
+    error: str | None = None
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class AgentChatResponse(BaseModel):
+    agent_id: str
+    model: str
+    response: str

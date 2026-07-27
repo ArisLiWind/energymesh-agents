@@ -89,6 +89,75 @@ def test_health_and_demo_workflow(settings) -> None:
         assert changed_task["state"] == "awaiting_approval"
 
 
+def test_agent_model_config_test_and_chat(settings, monkeypatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_chat(config, message: str) -> str:
+        calls.append((config.agent_id, config.model, message))
+        if message == "Reply with OK.":
+            return "OK"
+        return f"{config.agent_id}: {message}"
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        saved = client.put(
+            "/api/agents/perception_agent/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-secret-value",
+                "model": "deepseek-chat",
+            },
+        )
+        assert saved.status_code == 200
+        saved_body = saved.json()
+        assert saved_body["agent_id"] == "perception_agent"
+        assert saved_body["api_key_masked"] != "sk-secret-value"
+        assert saved_body["connection_status"] == "未测试"
+
+        manifest = client.get("/api/agentteams/manifest").json()
+        assert manifest["model_configs"]["perception_agent"]["model"] == "deepseek-chat"
+        assert manifest["model_configs"]["perception_agent"]["api_key_masked"] != (
+            "sk-secret-value"
+        )
+
+        tested = client.post("/api/agents/perception_agent/model/test")
+        assert tested.status_code == 200
+        assert tested.json() == {"success": True, "model": "deepseek-chat", "error": None}
+
+        chatted = client.post(
+            "/api/agents/perception_agent/chat",
+            json={"message": "现在储能设备状态怎么样？"},
+        )
+        assert chatted.status_code == 200
+        assert chatted.json()["response"] == "perception_agent: 现在储能设备状态怎么样？"
+        assert calls == [
+            ("perception_agent", "deepseek-chat", "Reply with OK."),
+            ("perception_agent", "deepseek-chat", "现在储能设备状态怎么样？"),
+        ]
+
+
+def test_agent_model_test_returns_real_error(settings, monkeypatch) -> None:
+    def failing_chat(config, message: str) -> str:
+        raise RuntimeError("Invalid API key")
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", failing_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/audit_agent/model",
+            json={
+                "base_url": "https://api.anthropic-compatible.example",
+                "api_key": "sk-bad",
+                "model": "claude-compatible",
+            },
+        )
+        tested = client.post("/api/agents/audit_agent/model/test")
+        assert tested.status_code == 200
+        assert tested.json() == {"success": False, "model": None, "error": "Invalid API key"}
+        manifest = client.get("/api/agentteams/manifest").json()
+        assert manifest["model_configs"]["audit_agent"]["connection_status"] == "失败"
+        assert manifest["model_configs"]["audit_agent"]["last_error"] == "Invalid API key"
+
+
 def test_unknown_task_returns_404(settings) -> None:
     with TestClient(create_app(settings)) as client:
         response = client.get("/api/tasks/not-found")
