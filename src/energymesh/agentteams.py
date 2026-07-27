@@ -24,7 +24,7 @@ class AgentTeamsWorkerSpec(BaseModel):
     display_name: str
     role: str
     soul_md: str
-    agent_md: str
+    agents_md: str
     skills: list[str]
     mcp_servers: list[str]
     permissions: list[str]
@@ -34,6 +34,7 @@ class AgentTeamsManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     framework: str
+    framework_repository: str
     runtime_mode: str
     team_name: str
     instance_id: str | None
@@ -41,6 +42,7 @@ class AgentTeamsManifest(BaseModel):
     human_in_the_loop: bool
     local_orchestrator: str
     import_assets_path: str
+    declarative_resources: str
     workers: list[AgentTeamsWorkerSpec]
     skills: list[AgentTeamsSkillSpec]
     mcp_servers: list[dict[str, Any]]
@@ -63,15 +65,20 @@ def actor_to_worker(actor: str) -> str | None:
 
 
 def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
+    runtime_mode = (
+        "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
+    )
     return AgentTeamsManifest(
-        framework="Alibaba Cloud AgentTeams",
-        runtime_mode="local-compatible" if settings.agentteams_enabled else "local-only",
+        framework="agentscope-ai/AgentTeams open-source runtime",
+        framework_repository="https://github.com/agentscope-ai/AgentTeams",
+        runtime_mode=runtime_mode,
         team_name=settings.agentteams_team_name,
         instance_id=settings.agentteams_instance_id,
         leader_worker_pattern=True,
         human_in_the_loop=True,
         local_orchestrator="energymesh.orchestrator.EnergyMeshOrchestrator",
         import_assets_path="agentteams/",
+        declarative_resources="agentteams/agentteams-resources.yaml",
         trace_actor_mapping=TRACE_ACTOR_MAPPING,
         workers=[
             AgentTeamsWorkerSpec(
@@ -79,7 +86,7 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 display_name="EnergyMesh Team Leader",
                 role="意图理解、任务拆解、进度监控和人机协同入口",
                 soul_md="agentteams/team-leader/SOUL.md",
-                agent_md="agentteams/team-leader/AGENT.md",
+                agents_md="agentteams/team-leader/AGENTS.md",
                 skills=[
                     "microgrid_context_ingest",
                     "dispatch_plan_generate",
@@ -95,7 +102,7 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 display_name="感知 Agent",
                 role="核验运行上下文、识别异常和重新定义调度任务",
                 soul_md="agentteams/workers/perception/SOUL.md",
-                agent_md="agentteams/workers/perception/AGENT.md",
+                agents_md="agentteams/workers/perception/AGENTS.md",
                 skills=["microgrid_context_ingest"],
                 mcp_servers=["energymesh-local-api"],
                 permissions=["read_scenario", "read_task"],
@@ -105,7 +112,7 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 display_name="调度 Agent",
                 role="生成候选策略并调用优化模型",
                 soul_md="agentteams/workers/dispatch/SOUL.md",
-                agent_md="agentteams/workers/dispatch/AGENT.md",
+                agents_md="agentteams/workers/dispatch/AGENTS.md",
                 skills=["dispatch_plan_generate"],
                 mcp_servers=["energymesh-local-api"],
                 permissions=["read_context", "generate_plan"],
@@ -115,7 +122,7 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 display_name="审核 Agent",
                 role="独立复算安全约束、收益和审批门槛",
                 soul_md="agentteams/workers/audit/SOUL.md",
-                agent_md="agentteams/workers/audit/AGENT.md",
+                agents_md="agentteams/workers/audit/AGENTS.md",
                 skills=["dispatch_audit_verify"],
                 mcp_servers=["energymesh-local-api"],
                 permissions=["read_plan", "write_audit_decision"],
@@ -125,7 +132,7 @@ def build_agentteams_manifest(settings: Settings) -> AgentTeamsManifest:
                 display_name="执行 Agent",
                 role="把获批方案映射为幂等指令并模拟执行确认",
                 soul_md="agentteams/workers/execution/SOUL.md",
-                agent_md="agentteams/workers/execution/AGENT.md",
+                agents_md="agentteams/workers/execution/AGENTS.md",
                 skills=["execution_mapping", "approval_rollback"],
                 mcp_servers=["energymesh-local-api"],
                 permissions=["read_approved_plan", "write_simulated_commands"],

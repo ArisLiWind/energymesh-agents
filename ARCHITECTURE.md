@@ -54,8 +54,9 @@ runtime flags again before replay.
   contains no network/device adapter.
 - `storage.py`: SQLite task state and atomically written SHA-256 evidence packages.
 - `api.py`: FastAPI endpoints and static operator console.
-- `agentteams.py`: AgentTeams-compatible Team, Worker, Skill, MCP, and trace mapping manifest.
-- `agentteams/`: SOUL.MD, AGENT.MD, Worker, and Skill assets for Alibaba Cloud AgentTeams import.
+- `agentteams.py`: open-source AgentTeams Team, Worker, Skill, MCP, and trace mapping manifest.
+- `agentteams/`: `agentscope-ai/AgentTeams` Team/Human YAML, SOUL.md, AGENTS.md, Worker, and
+  Skill assets.
 
 ## Optimization model
 
@@ -73,7 +74,7 @@ analysis, relay protection, or a battery electrochemical model.
 ## API
 
 - `GET /api/health`: runtime safety flags.
-- `GET /api/agentteams/manifest`: AgentTeams-compatible Team/Worker/Skill/MCP manifest.
+- `GET /api/agentteams/manifest`: `agentscope-ai/AgentTeams` Team/Worker/Skill/MCP manifest.
 - `GET /api/demo/scenario`: committed demo scenario expanded to 96 points.
 - `POST /api/demo/run`: generate, audit, and select candidate plans.
 - `POST /api/tasks/{id}/approval`: approve or reject a gated plan.
@@ -81,5 +82,5 @@ analysis, relay protection, or a battery electrochemical model.
 - `GET /api/tasks` and `GET /api/tasks/{id}`: task/evidence retrieval.
 
 API contracts are visible at `/docs` and can later be wrapped by MCP tools without changing the
-domain pipeline. This version includes AgentTeams-compatible local assets and a manifest endpoint;
-it does not claim a live cloud AgentTeams instance unless `AGENTTEAMS_INSTANCE_ID` is configured.
+domain pipeline. This version includes `agentscope-ai/AgentTeams` declarative resources and Worker
+packages; EnergyMesh FastAPI remains the energy-domain tool/API layer behind the AgentTeams team.

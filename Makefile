@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test run verify
+.PHONY: install format lint typecheck test run agentteams-resources verify
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -20,5 +20,7 @@ test:
 run:
 	python3 -m uvicorn energymesh.api:app --app-dir src --reload
 
-verify: lint typecheck test
+agentteams-resources:
+	@printf "%s\n" "Apply agentteams/agentteams-resources.yaml with the open-source agentscope-ai/AgentTeams controller after installing its quickstart runtime."
 
+verify: lint typecheck test

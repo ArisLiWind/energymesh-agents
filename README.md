@@ -72,11 +72,12 @@ EnergyMesh Agents 不替代已有 EMS 和优化算法，而是在它们之上构
 
 ## 当前实现边界
 
-当前版本是可运行的 AgentTeams-compatible 模拟 MVP：仓库提供 `agentteams/` Team Leader、
-Worker、SOUL.MD、AGENT.MD 和 Skill 资产，并通过 `/api/agentteams/manifest` 暴露可迁移
-清单；本地仍使用 `EnergyMeshOrchestrator` 保证无云账号也可运行。当前不连接真实 EMS、BMS、
-PCS 或生产数据库，不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”
-只进入本地模拟适配器：
+当前版本使用开源 `agentscope-ai/AgentTeams` 的 Manager-Workers 协作框架作为多 Agent 运行
+与治理底座。仓库提供 `agentteams/agentteams-resources.yaml` 声明式 Team/Human 资源，以及
+Team Leader、四类 Worker、SOUL.md、AGENTS.md 和 Skill 资产；本地 FastAPI 服务承担能源业务
+工具/API 层，并通过 `/api/agentteams/manifest` 暴露运行清单。当前不连接真实 EMS、BMS、PCS
+或生产数据库，不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”只进入
+本地模拟适配器：
 
 ```text
 SIMULATION_MODE=true
@@ -84,17 +85,21 @@ ALLOW_PRODUCTION_WRITE=false
 AGENTTEAMS_ENABLED=true
 ```
 
-## AgentTeams 对接
+## AgentTeams 开源框架对接
 
+- 开源框架：`agentscope-ai/AgentTeams`
+- AgentTeams quickstart 入口：`http://127.0.0.1:18088`
+- 声明式资源：`agentteams/agentteams-resources.yaml`
 - 本地 manifest：`GET /api/agentteams/manifest`
-- AgentTeams 导入资产：`agentteams/`
-- Team Leader：`agentteams/team-leader/SOUL.md` 与 `agentteams/team-leader/AGENT.md`
+- Worker 包资产：`agentteams/`
+- Team Leader：`agentteams/team-leader/SOUL.md` 与 `agentteams/team-leader/AGENTS.md`
 - Workers：`agentteams/workers/perception|dispatch|audit|execution`
 - Skills：`agentteams/skills/*/SKILL.md`
 
-这套实现遵循 AgentTeams 的 Leader-Worker、人机协同、Skill/MCP 资产分层思路。没有云端实例
-ID 时运行模式为 `local-compatible`；创建阿里云 AgentTeams 实例后，可设置
-`AGENTTEAMS_INSTANCE_ID` 记录对应实例。
+这套实现遵循 AgentTeams 的 Manager-Workers 架构：Manager 只面向 Team Leader，Team Leader
+再在 Team Room 内分解任务给感知、调度、审核、执行四类 Worker；人类操作者通过 Matrix/Element
+房间全程可见、可介入。EnergyMesh 自身不再试图构建通用 Agent 底座，而是作为园区微电网调度
+这个实际行业问题的 AgentTeams 业务团队和工具层。
 
 ## 一键运行
 

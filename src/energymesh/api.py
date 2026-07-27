@@ -63,7 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": app.version,
             "simulation_mode": runtime.simulation_mode,
             "allow_production_write": runtime.allow_production_write,
-            "agent_framework": "Alibaba Cloud AgentTeams",
+            "agent_framework": "agentscope-ai/AgentTeams",
             "agentteams_enabled": runtime.agentteams_enabled,
             "agentteams_team_name": runtime.agentteams_team_name,
         }

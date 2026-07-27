@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from energymesh.api import create_app
+
+
+def test_agentteams_resource_assets_exist() -> None:
+    root = Path(__file__).resolve().parents[1]
+    resources = root / "agentteams" / "agentteams-resources.yaml"
+    text = resources.read_text(encoding="utf-8")
+    assert "apiVersion: agentteams.io/v1beta1" in text
+    assert "kind: Team" in text
+    assert "runtime: openclaw" in text
+    assert "runtime: copaw" in text
+    assert (root / "agentteams" / "team-leader" / "AGENTS.md").exists()
 
 
 def test_health_and_demo_workflow(settings) -> None:
@@ -13,13 +25,15 @@ def test_health_and_demo_workflow(settings) -> None:
         assert health.status_code == 200
         assert health.json()["simulation_mode"] is True
         assert health.json()["allow_production_write"] is False
-        assert health.json()["agent_framework"] == "Alibaba Cloud AgentTeams"
+        assert health.json()["agent_framework"] == "agentscope-ai/AgentTeams"
 
         manifest = client.get("/api/agentteams/manifest")
         assert manifest.status_code == 200
         manifest_body = manifest.json()
-        assert manifest_body["framework"] == "Alibaba Cloud AgentTeams"
+        assert manifest_body["framework"] == "agentscope-ai/AgentTeams open-source runtime"
+        assert manifest_body["framework_repository"] == "https://github.com/agentscope-ai/AgentTeams"
         assert manifest_body["team_name"] == "energymesh-test-team"
+        assert manifest_body["declarative_resources"] == "agentteams/agentteams-resources.yaml"
         assert [worker["worker_id"] for worker in manifest_body["workers"]] == [
             "energymesh_team_leader",
             "perception_worker",

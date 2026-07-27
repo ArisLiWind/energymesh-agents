@@ -1,0 +1,79 @@
+apiVersion: agentteams.io/v1beta1
+kind: Team
+metadata:
+  name: energymesh-park-control
+spec:
+  description: "EnergyMesh Agents team for observable, reusable, auditable park microgrid dispatch."
+  peerMentions: true
+  leader:
+    name: energymesh-team-leader
+    model: qwen3.5-plus
+    runtime: openclaw
+    skills:
+      - microgrid_context_ingest
+      - dispatch_plan_generate
+      - dispatch_audit_verify
+      - execution_mapping
+      - approval_rollback
+    mcpServers:
+      - name: energymesh-local-api
+        url: http://host.docker.internal:8000/api/agentteams/manifest
+        transport: http
+    package: file://./agentteams/team-leader
+    soul: |
+      You are the EnergyMesh Team Leader. Decompose park microgrid dispatch tasks, coordinate the
+      perception, dispatch, audit, and execution Workers, and keep every safety-relevant action
+      visible in the AgentTeams Matrix rooms.
+  workers:
+    - name: perception-worker
+      model: qwen3.5-plus
+      runtime: copaw
+      skills:
+        - microgrid_context_ingest
+      mcpServers:
+        - name: energymesh-local-api
+          url: http://host.docker.internal:8000/api/demo/scenario
+          transport: http
+      package: file://./agentteams/workers/perception
+    - name: dispatch-worker
+      model: qwen3.5-plus
+      runtime: copaw
+      skills:
+        - dispatch_plan_generate
+      mcpServers:
+        - name: energymesh-local-api
+          url: http://host.docker.internal:8000/api/demo/run
+          transport: http
+      package: file://./agentteams/workers/dispatch
+    - name: audit-worker
+      model: qwen3.5-plus
+      runtime: openclaw
+      skills:
+        - dispatch_audit_verify
+      mcpServers:
+        - name: energymesh-local-api
+          url: http://host.docker.internal:8000/api/tasks
+          transport: http
+      package: file://./agentteams/workers/audit
+    - name: execution-worker
+      model: qwen3.5-plus
+      runtime: copaw
+      skills:
+        - execution_mapping
+        - approval_rollback
+      mcpServers:
+        - name: energymesh-local-api
+          url: http://host.docker.internal:8000/api/tasks
+          transport: http
+      package: file://./agentteams/workers/execution
+---
+apiVersion: agentteams.io/v1beta1
+kind: Human
+metadata:
+  name: park-operator
+spec:
+  displayName: "Park Operator"
+  email: operator@example.com
+  permissionLevel: 2
+  accessibleTeams:
+    - energymesh-park-control

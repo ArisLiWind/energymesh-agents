@@ -1,5 +1,7 @@
 {
-  "framework": "Alibaba Cloud AgentTeams",
+  "framework": "agentscope-ai/AgentTeams",
+  "framework_repository": "https://github.com/agentscope-ai/AgentTeams",
+  "declarative_resources": "agentteams/agentteams-resources.yaml",
   "team_name": "energymesh-park-control",
   "pattern": "leader-worker",
   "human_in_the_loop": true,
