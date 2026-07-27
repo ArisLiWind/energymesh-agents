@@ -91,6 +91,46 @@ class Scenario(BaseModel):
         return self
 
 
+class ExternalTelemetryPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interval: int
+    timestamp: datetime
+    load_kw: float = Field(ge=0)
+    pv_kw: float = Field(ge=0)
+    battery_soc: float = Field(ge=0, le=1)
+    tariff_yuan_per_kwh: float = Field(ge=0)
+    transformer_temperature_c: float = Field(ge=-30, le=150)
+    transformer_limit_kw: float = Field(gt=0)
+    grid_interconnection_limit_kw: float = Field(gt=0)
+    battery_available: bool
+    fault_code: str | None = None
+    production_min_load_kw: float = Field(ge=0)
+
+
+class ExternalDataSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    generated_at: datetime
+    current_interval: int = Field(ge=0)
+    scenario: Scenario
+    telemetry: list[ExternalTelemetryPoint]
+    current: ExternalTelemetryPoint
+    environment_signals: dict[str, Any]
+    layer_summary: dict[str, list[str]]
+
+
+class ExternalDispatchRequest(BaseModel):
+    seed: int = Field(default=42, ge=0, le=10_000)
+    current_interval: int = Field(default=57, ge=0, le=95)
+    fault_mode: str = Field(
+        default="cloud_and_transformer_heat",
+        min_length=2,
+        max_length=80,
+    )
+
+
 class DispatchPoint(BaseModel):
     interval: int
     timestamp: datetime

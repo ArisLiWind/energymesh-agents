@@ -10,6 +10,7 @@ from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.config import Settings
 from energymesh.demo import apply_operational_change, load_demo_scenario
+from energymesh.external_data import ExternalDataSimulator
 from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
 from energymesh.models import (
     AgentChatRequest,
@@ -18,6 +19,8 @@ from energymesh.models import (
     AgentModelConfigRequest,
     AgentModelTestResponse,
     ApprovalRequest,
+    ExternalDataSnapshot,
+    ExternalDispatchRequest,
     ReoptimizationRequest,
     Scenario,
     TaskRecord,
@@ -41,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store=store,
     )
     scenario = load_demo_scenario()
+    external_data = ExternalDataSimulator()
 
     app = FastAPI(
         title="EnergyMesh Agents API",
@@ -51,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.store = store
     app.state.orchestrator = orchestrator
     app.state.scenario = scenario
+    app.state.external_data = external_data
 
     def get_orchestrator(request: Request) -> EnergyMeshOrchestrator:
         return cast(EnergyMeshOrchestrator, request.app.state.orchestrator)
@@ -60,6 +65,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_scenario(request: Request) -> Scenario:
         return cast(Scenario, request.app.state.scenario)
+
+    def get_external_data(request: Request) -> ExternalDataSimulator:
+        return cast(ExternalDataSimulator, request.app.state.external_data)
 
     @app.get("/api/health")
     def health(request: Request) -> dict[str, object]:
@@ -139,6 +147,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         active_scenario: Annotated[Scenario, Depends(get_scenario)],
     ) -> Scenario:
         return active_scenario
+
+    @app.get("/api/external/snapshot", response_model=ExternalDataSnapshot)
+    def external_snapshot(
+        simulator: Annotated[ExternalDataSimulator, Depends(get_external_data)],
+        seed: int = 42,
+        current_interval: int = 57,
+        fault_mode: str = "cloud_and_transformer_heat",
+    ) -> ExternalDataSnapshot:
+        return simulator.snapshot(seed, current_interval, fault_mode)
+
+    @app.post("/api/external/dispatch", response_model=TaskRecord, status_code=201)
+    def dispatch_from_external_data(
+        body: ExternalDispatchRequest,
+        workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
+        simulator: Annotated[ExternalDataSimulator, Depends(get_external_data)],
+    ) -> TaskRecord:
+        snapshot = simulator.snapshot(body.seed, body.current_interval, body.fault_mode)
+        try:
+            return workflow.run(
+                snapshot.scenario,
+                trigger=f"EXTERNAL_DATA_{body.fault_mode.upper()}",
+            )
+        except WorkflowError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/api/demo/run", response_model=TaskRecord, status_code=201)
     def run_demo(

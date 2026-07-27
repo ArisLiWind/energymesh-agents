@@ -52,6 +52,40 @@ def test_health_and_demo_workflow(settings) -> None:
         assert scenario.status_code == 200
         assert len(scenario.json()["forecast"]) == 96
 
+        snapshot = client.get("/api/external/snapshot")
+        assert snapshot.status_code == 200
+        snapshot_body = snapshot.json()
+        assert snapshot_body["source"] == "simulated_external_feeds"
+        assert len(snapshot_body["telemetry"]) == 96
+        assert {
+            "load_kw",
+            "pv_kw",
+            "battery_soc",
+            "tariff_yuan_per_kwh",
+            "transformer_limit_kw",
+            "grid_interconnection_limit_kw",
+            "fault_code",
+            "production_min_load_kw",
+        }.issubset(snapshot_body["environment_signals"])
+        assert snapshot_body["layer_summary"]["deterministic_verification"]
+
+        external_task = client.post(
+            "/api/external/dispatch",
+            json={
+                "seed": 42,
+                "current_interval": 57,
+                "fault_mode": "cloud_and_transformer_heat",
+            },
+        )
+        assert external_task.status_code == 201
+        external_body = external_task.json()
+        assert external_body["trigger"] == "EXTERNAL_DATA_CLOUD_AND_TRANSFORMER_HEAT"
+        assert external_body["scenario_snapshot"]["production_plan"]["source"] == "simulated_mes"
+        assert any(
+            event["action"] == "independent_policy_audit"
+            for event in external_body["trace"]
+        )
+
         created = client.post("/api/demo/run")
         assert created.status_code == 201
         task = created.json()

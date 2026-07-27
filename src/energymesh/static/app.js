@@ -2,6 +2,7 @@ import { createCampus3D } from "/static/campus3d.js";
 
 const state = {
   scenario: null,
+  externalSnapshot: null,
   task: null,
   selectedAgent: null,
   settingsAgent: null,
@@ -146,6 +147,13 @@ function renderLiveData() {
   });
 }
 
+function renderExternalSignals() {
+  if (!state.externalSnapshot) return;
+  const current = state.externalSnapshot.current;
+  const fault = current.fault_code || "运行正常";
+  $("#data-source-status").innerHTML = `<i></i>外部数据 ${current.interval}/95 · ${escapeHTML(fault)}`;
+}
+
 function updateAssetLabels(labels) {
   Object.entries(labels).forEach(([key, position]) => {
     const element = $(`.asset[data-anchor="${key}"]`);
@@ -267,8 +275,12 @@ function addMessage(agentKey, text, user = false) {
 
 function resetConversation() {
   $("#messages").innerHTML = "";
-  addMessage("perception", "已接入园区演示数据。当前为本地模拟沙盘，未连接真实EMS、BMS或PCS。");
-  addMessage("dispatch", "等待任务。收到变化后，我会调用优化器生成多套策略，而不是直接下发功率。");
+  const current = state.externalSnapshot?.current;
+  const sourceText = current
+    ? `已接入模拟外部数据：负荷${Math.round(current.load_kw)} kW、光伏${Math.round(current.pv_kw)} kW、SOC ${(current.battery_soc * 100).toFixed(0)}%、电价${current.tariff_yuan_per_kwh} 元/kWh。`
+    : "已接入园区演示数据。当前为本地模拟沙盘，未连接真实EMS、BMS或PCS。";
+  addMessage("perception", sourceText);
+  addMessage("dispatch", "等待任务。收到外部态势后，我会调用优化器生成充电、放电、功率与备用容量策略，而不是直接下发功率。");
   addMessage("audit", "所有候选方案必须通过SOC、功率、变压器、并网和能量守恒复算。");
 }
 
@@ -628,6 +640,11 @@ function renderTask() {
   state.scenario = state.task.scenario_snapshot;
   $("#scenario-name").textContent = state.scenario.name;
   $("#scenario-description").textContent = state.scenario.description;
+  if (state.task.trigger?.startsWith("EXTERNAL_DATA_")) {
+    $("#data-source-status").innerHTML = `<i></i>外部数据已进入调度`;
+  } else {
+    renderExternalSignals();
+  }
   renderLiveData();
   renderTrendChart();
   renderImpact();
@@ -646,16 +663,27 @@ function openApproval(message) {
 async function runDemo() {
   const button = $("#run-button");
   button.disabled = true;
-  button.innerHTML = "<span>•••</span>Agent协商中";
+  button.innerHTML = "<span>•••</span>读取外部数据";
   try {
-    state.task = await request("/api/demo/run", { method: "POST" });
+    state.externalSnapshot = await request("/api/external/snapshot?seed=42&current_interval=57&fault_mode=cloud_and_transformer_heat");
+    state.scenario = state.externalSnapshot.scenario;
+    renderExternalSignals();
+    button.innerHTML = "<span>•••</span>Agent协商中";
+    state.task = await request("/api/external/dispatch", {
+      method: "POST",
+      body: JSON.stringify({
+        seed: 42,
+        current_interval: state.externalSnapshot.current_interval,
+        fault_mode: "cloud_and_transformer_heat",
+      }),
+    });
     enableCollaboration(true);
     renderTask();
     if (state.task.state === "awaiting_approval") {
       const plan = selectedPlan();
       openApproval(`审核Agent已确认硬约束通过，但方案包含${plan.metrics.shed_energy_kwh} kWh柔性负荷响应。批准只会在本地模拟器回放，不连接真实设备。`);
     }
-    toast("四类Agent已完成一轮协同决策");
+    toast("外部数据已触发感知、调度与确定性审核");
   } catch (error) { toast(error.message); }
   finally {
     button.disabled = false;
@@ -701,16 +729,18 @@ async function reoptimize() {
 async function initialize() {
   try {
     loadAvatarStyles();
-    const [scenario, health, manifest] = await Promise.all([
-      request("/api/demo/scenario"),
+    const [snapshot, health, manifest] = await Promise.all([
+      request("/api/external/snapshot?seed=42&current_interval=57&fault_mode=cloud_and_transformer_heat"),
       request("/api/health"),
       request("/api/agentteams/manifest"),
     ]);
     if (!health.simulation_mode || health.allow_production_write) throw new Error("安全配置异常，页面已停止运行");
     state.modelConfigs = manifest.model_configs || {};
-    state.scenario = scenario;
-    $("#scenario-name").textContent = scenario.name;
-    $("#scenario-description").textContent = scenario.description;
+    state.externalSnapshot = snapshot;
+    state.scenario = snapshot.scenario;
+    $("#scenario-name").textContent = snapshot.scenario.name;
+    $("#scenario-description").textContent = snapshot.scenario.description;
+    renderExternalSignals();
     renderLiveData();
     renderTrendChart();
     syncAvatarStyles();

@@ -13,3 +13,4 @@ var/
 runs/*.json
 !runs/.gitkeep
 
+.vercel
