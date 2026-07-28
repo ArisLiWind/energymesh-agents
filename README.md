@@ -89,8 +89,9 @@ AGENTTEAMS_ENABLED=true
 ## AgentTeams 开源框架对接
 
 - 开源框架：`agentscope-ai/AgentTeams`
-- AgentTeams quickstart 入口：`http://127.0.0.1:18088`（可选；仅在本机另行启动
-  AgentTeams quickstart 时可访问）
+- AgentTeams quickstart 验证入口：`http://127.0.0.1:18088`（框架级验证入口；需另行启动
+  AgentTeams quickstart。本地 FastAPI Demo 可独立复现能源业务闭环，完整参赛验证应启动
+  quickstart 并加载本仓库声明式资源）
 - 声明式资源：`agentteams/agentteams-resources.yaml`
 - 本地 manifest：`GET /api/agentteams/manifest`
 - Worker 包资产：`agentteams/`
@@ -98,10 +99,30 @@ AGENTTEAMS_ENABLED=true
 - Workers：`agentteams/workers/perception|dispatch|audit|execution`
 - Skills：`agentteams/skills/*/SKILL.md`
 
-这套实现遵循 AgentTeams 的 Manager-Workers 架构：Manager 只面向 Team Leader，Team Leader
-再在 Team Room 内分解任务给感知、调度、审核、执行四类 Worker；人类操作者通过 Matrix/Element
-房间全程可见、可介入。EnergyMesh 自身不再试图构建通用 Agent 底座，而是作为园区微电网调度
-这个实际行业问题的 AgentTeams 业务团队和工具层。
+这套实现把 EnergyMesh 业务闭环明确映射到 AgentTeams 的 Manager-Workers 模式：Team Leader
+负责任务拆解、上下文汇总和状态追踪，感知、调度、审核、执行四类 Worker 只处理各自职责内的
+Skill。评审可先运行 FastAPI 控制台复现能源业务闭环，再在 AgentTeams quickstart 中加载
+`agentteams/agentteams-resources.yaml` 验证角色编排、Skill 包、Worker 包和人工参与边界。
+EnergyMesh 自身不构建通用 Agent 底座，而是作为园区微电网调度这个实际行业问题的
+AgentTeams 业务团队和工具层。
+
+## 评审核验入口
+
+- **场景价值**：README 第一至四部分说明园区、工业中心和算力中心的真实问题、目标用户、痛点和收益；
+  `docs/JUDGING_ALIGNMENT.md` 对应评分矩阵逐项给出证据。
+- **外部数据输入**：`GET /api/external/snapshot` 模拟负荷、光伏、储能、电价、变压器、并网限制、
+  设备故障和生产计划；`POST /api/external/dispatch` 用这些外部态势触发闭环调度。
+- **多 Agent 协同**：`agentteams/agentteams-resources.yaml`、`agentteams/team-leader/*`、
+  `agentteams/workers/*` 和 `/api/agentteams/manifest` 对应 AgentTeams 的角色编排、任务拆解、
+  上下文传递、协同执行与状态追踪。
+- **Agent Identity**：`docs/AGENT_IDENTITY.md` 说明每个 Agent 的身份、能力边界、输入输出和协同关系。
+- **Skill 工程**：`agentteams/skills/*/SKILL.md` 与 `docs/SKILL_CONTRACTS.md` 说明 Skill 的用途、
+  输入输出、调用条件、依赖工具、失败处理、安全边界、验证方式和复用价值。
+- **MCP / RAG / 可观测 / 云工具链**：`docs/TOOLING_AND_CLOUD_INTEGRATION.md` 说明 FastAPI/OpenAPI
+  等价工具契约、后续 MCP 迁移、共享状态、Trace、Metrics、PolarDB、Higress、Nacos、RocketMQ
+  和 AgentLoop/LoongSuite 的必要性与替换边界。
+- **工程运行与审计**：`make verify`、`tests/`、`runs/`、SQLite 状态、SHA-256 evidence、审批 gate
+  和安全回退共同证明 Demo 可运行、动作可追踪、高风险步骤可审计。
 
 ## 一键运行
 
@@ -124,6 +145,14 @@ make run
 当前仓库还包含 Vercel Python serverless preview 配置：`api/index.py`、`vercel.json`、
 `.python-version` 和 `uv.lock`。Vercel 适合公开演示；长期保存模型密钥、审计证据和运行历史时，
 应迁移到 PolarDB for PostgreSQL 或等价外部数据库，而不是依赖 Vercel 的临时 `/tmp` 存储。
+
+### AgentTeams 框架级验证
+
+本地 FastAPI Demo 用于在没有 AgentTeams runtime 的环境中复现业务闭环；AgentTeams quickstart
+用于验证协同框架接入，而不是可有可无的展示页。启动 AgentTeams quickstart 后，加载
+`agentteams/agentteams-resources.yaml`。其中 `energymesh-local-api` 指向
+`http://host.docker.internal:8000`，因此验证前应保持 FastAPI 服务运行，并确认
+`GET /api/agentteams/manifest` 可返回 Team、Worker、Skill 和工具入口清单。
 
 ### Docker Compose
 
@@ -181,7 +210,7 @@ make verify       # lint + typecheck + test
 src/energymesh/   领域模型、外部数据模拟、优化、审计、编排、API 与控制台
 tests/            优化、安全状态机与 API 测试
 runs/             运行时证据包（默认不提交）
-docs/             评审对齐、Agent Identity、Skill 契约、工具集成与架构材料
+docs/             评审对齐、Agent Identity、Skill 契约、工具集成、架构与历史方案材料
 ```
 
 工程边界与信任关系见 [ARCHITECTURE.md](ARCHITECTURE.md)，安全模型见
