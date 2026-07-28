@@ -17,7 +17,8 @@ flowchart LR
     B -->|missing or conflicting data| O["Human handoff"]
     M["Original EMS policy"] --> N["Baseline replay"]
     C --> D["Forecast / thermal / optimization tools"]
-    D --> E["Candidate plans"]
+    D --> R["Restricted strategy script drafts"]
+    R --> E["Sandbox replay candidate plans"]
     N --> F
     E --> F["Independent Audit Agent"]
     F -->|rejected| G["Evidence only"]
@@ -33,8 +34,10 @@ flowchart LR
 ```
 
 EnergyMesh is the autonomous coordination layer above existing EMS, production systems, forecasting
-services, and numerical optimizers. The optimizer has no execution capability. The auditor does not
-share optimizer objectives and
+services, numerical optimizers, and scriptable policy authoring. When the operating situation changes,
+the Dispatch Agent should author a restricted strategy script draft rather than merely select a
+pre-baked policy. The script has no network, filesystem, import, approval, or equipment-write
+permission. The auditor statically checks the script, replays it in a sandbox, and independently
 recomputes SOC, power, transformer, grid-interconnection, temperature-derating, production-plan,
 load-authorization, interval-balance, and baseline-improvement rules. The executor asserts the safe
 runtime flags again before replay.
@@ -45,9 +48,10 @@ runtime flags again before replay.
   constraints; detects sensor conflict, determines whether the old task is still valid, prioritizes
   objectives, and selects required tools before optimization.
 - `demo.py`: deterministic 96-point demo forecast and controlled operational-change injection.
-- `optimizer.py`: linear economic dispatch solved by `scipy.optimize.milp`.
-- `audit.py`: fail-closed validation and an independent cost comparison against the original EMS
-  policy.
+- `optimizer.py`: linear economic dispatch solved by `scipy.optimize.milp`; in the strategy-script
+  flow, it is a tool the Dispatch Agent may use while authoring a restricted policy script.
+- `audit.py`: fail-closed script/static validation, sandbox replay checks, and an independent cost
+  comparison against the original EMS policy.
 - `orchestrator.py`: explicit task state machine and Agent responsibility boundaries.
 - `simulator.py`: maps plans to idempotent EMS/PCS/load commands and confirms every interval using
   local simulated adapters; deviations above 5% activate a safe fallback and human ownership. It
@@ -70,6 +74,19 @@ availability, temperature derating, production minimum load, and terminal SOC re
 
 This is a linear park-level energy balance. It is not AC/DC power flow, voltage analysis, fault
 analysis, relay protection, or a battery electrochemical model.
+
+## Strategy script flow
+
+For new operational conditions or planning requests, Agent information flow is:
+
+1. Perception Agent outputs trusted context, conflicts, objective priority, and tool needs.
+2. Dispatch Agent writes restricted strategy script drafts and expected metrics.
+3. Audit Agent performs static checks, sandbox replay, hard-constraint recomputation, and benefit
+   comparison against the baseline.
+4. Human Operator approves actions that affect production or flexible load.
+5. Execution Agent maps only the approved script output to idempotent simulated commands.
+
+See `docs/STRATEGY_SCRIPT_FLOW.md` for the detailed script boundary and evidence chain.
 
 ## API
 

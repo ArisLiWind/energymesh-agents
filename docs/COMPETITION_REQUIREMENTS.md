@@ -44,12 +44,12 @@ EnergyMesh Agents 以 `agentscope-ai/AgentTeams` 为协同设计基点：
 
 1. 任务输入：`GET /api/external/snapshot` 模拟外部 EMS/BMS/PCS/气象/MES 数据。
 2. 任务拆解：Team Leader 创建 TaskRecord 并驱动四类 Worker。
-3. 上下文传递：`TaskRecord` 保存 scenario、perception、plans、audits、approval、trace、execution_summary。
-4. 工具调用：Skill 调用 FastAPI/OpenAPI 工具契约；后续可包装为 MCP Server。
-5. 结果验证：审核 Agent 独立复算硬约束和收益；执行 Agent 回放计划并检查偏差。
+3. 上下文传递：`TaskRecord` 保存 scenario、perception、策略脚本草案、plans、audits、approval、trace、execution_summary。
+4. 工具调用：Skill 调用 FastAPI/OpenAPI 工具契约；调度 Agent 生成受限脚本草案；后续可包装为 MCP Server。
+5. 结果验证：审核 Agent 对脚本做静态审查和沙箱回放，独立复算硬约束和收益；执行 Agent 回放计划并检查偏差。
 6. 证据沉淀：SQLite audit_events、TaskRecord trace、JSON evidence SHA-256。
 7. 审批与回滚：柔性负荷响应需要人工审批；执行偏差触发 safe_fallback。
-8. 经验沉淀：Task evidence 可迁移到 PolarDB/RAG/长记忆，用于后续策略复盘。
+8. 经验沉淀：Task evidence 与策略脚本版本可迁移到 PolarDB/RAG/长记忆，用于后续策略复盘。
 
 ## MCP、RAG、可观测
 

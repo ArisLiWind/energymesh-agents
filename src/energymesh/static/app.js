@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260728b";
+import { createCampus3D } from "/static/campus3d.js?v=20260728c";
 
 const state = {
   scenario: null,
@@ -14,7 +14,7 @@ const state = {
 
 const agentInfo = {
   perception: { name: "感知Agent", icon: "◎", avatar: "perception", role: "核验负荷、光伏、SOC、设备状态与生产计划" },
-  dispatch: { name: "调度Agent", icon: "◔", avatar: "dispatch", role: "调用优化工具生成下一调度周期候选策略" },
+  dispatch: { name: "调度Agent", icon: "◔", avatar: "dispatch", role: "生成受限策略脚本草案与候选动作" },
   audit: { name: "审核Agent", icon: "◆", avatar: "audit", role: "独立复算安全约束，并验证方案是否优于基线" },
   execute: { name: "执行Agent", icon: "▷", avatar: "execute", role: "在审批门禁后模拟下发，并持续核对计划与实际" },
 };
@@ -22,7 +22,7 @@ const agentInfo = {
 const actionNames = {
   task_received: "接收新调度任务",
   operational_context_validated: "完成数据和生产计划核验",
-  candidate_plans_optimized: "生成三套候选调度方案",
+  candidate_plans_optimized: "生成三套策略脚本草案",
   independent_policy_audit: "独立完成硬约束与收益审核",
   audited_plan_selected: "选定通过审核的最优方案",
   human_approval_requested: "请求人工审批柔性负荷响应",
@@ -286,8 +286,8 @@ function resetConversation() {
     ? `已接入模拟外部数据：负荷${Math.round(current.load_kw)} kW、光伏${Math.round(current.pv_kw)} kW、SOC ${(current.battery_soc * 100).toFixed(0)}%、电价${current.tariff_yuan_per_kwh} 元/kWh。`
     : "已接入园区演示数据。当前为本地模拟沙盘，未连接真实EMS、BMS或PCS。";
   addMessage("perception", sourceText);
-  addMessage("dispatch", "等待任务。收到外部态势后，我会调用优化器生成充电、放电、功率与备用容量策略，而不是直接下发功率。");
-  addMessage("audit", "所有候选方案必须通过SOC、功率、变压器、并网和能量守恒复算。");
+  addMessage("dispatch", "等待任务。收到外部态势后，我会生成受限策略脚本草案，表达充电、放电、功率与备用容量逻辑，而不是直接下发功率。");
+  addMessage("audit", "所有策略脚本必须通过静态审查、沙箱回放，以及SOC、功率、变压器、并网和能量守恒复算。");
 }
 
 function setChatOpen(open) {

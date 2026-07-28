@@ -10,7 +10,7 @@
 - 目标用户：园区能源运营团队、工业企业能源管理工程师、算力中心基础设施运维团队、储能运营商。
 - 核心痛点：传统 EMS 依赖固定规则或人工重新设参；高级 EMS 需要问题已被正确定义；现实中负荷、光伏、储能 SOC、电价、设备热状态和生产计划会同时变化。
 - 可感知收益：降低峰值购电、降低总用能成本、提升光伏自用率、减少人工策略重配、降低高风险调度误执行概率。
-- 行业复制性：同一“环境感知 -> 策略生成 -> 确定性验证 -> 审批执行 -> 证据沉淀”链路可迁移到工商业园区、数据中心、微电网、充储一体站和虚拟电厂局部调度。
+- 行业复制性：同一“环境感知 -> 策略脚本生成 -> 静态审查 -> 确定性验证 -> 审批执行 -> 证据沉淀”链路可迁移到工商业园区、数据中心、微电网、充储一体站和虚拟电厂局部调度。
 
 可验证证据：
 
@@ -29,7 +29,7 @@
 - 上下文传递：`TaskRecord` 保存 scenario、perception、baseline、plans、audits、selected_plan、approval、trace、execution_summary。
 - 状态流转：`TaskState` 覆盖 received、context_ready、plans_generated、audited、awaiting_approval、approved、executing、completed、safe_fallback、human_handoff、failed。
 - 异常冲突：传感器冲突进入 human_handoff；执行偏差超过阈值进入 safe_fallback。
-- 多方案选择：优化器生成 economic_aggressive、balanced、conservative 三套候选方案，审核 Agent 拦截不安全方案，编排器在可执行候选中选取成本最低方案。
+- 多方案选择：调度 Agent 为 economic_aggressive、balanced、conservative 三类目标生成策略脚本草案和候选动作，审核 Agent 拦截不安全脚本和方案，编排器在可执行候选中选取成本最低方案。
 - 高风险边界：柔性负荷响应需要人工审批；被拒绝或变化后的子任务不能复用旧审批。
 
 可验证证据：
@@ -66,6 +66,7 @@
 - `/api/agentteams/manifest`
 - `docs/SKILL_CONTRACTS.md`
 - `docs/TOOLING_AND_CLOUD_INTEGRATION.md`
+- `docs/STRATEGY_SCRIPT_FLOW.md`
 
 ## 4. 工程落地、运行验证与安全可审计 20%
 
@@ -97,7 +98,7 @@
 - 开源接口：FastAPI/OpenAPI、AgentTeams manifest、Skill Markdown 资产。
 - 文档：README、Architecture、Security、Status、评审对齐、Skill 契约、云工具集成契约。
 - 第三方依赖：`pyproject.toml`、`requirements.txt`、`uv.lock`、`THIRD_PARTY_NOTICES.md`。
-- 可复用成果：外部数据模拟器、确定性审计器、AgentTeams worker 包、OpenAI-compatible per-Agent model config。
+- 可复用成果：外部数据模拟器、策略脚本信息流、确定性审计器、AgentTeams worker 包、OpenAI-compatible per-Agent model config。
 
 ## 6. 补充要求逐条核验
 

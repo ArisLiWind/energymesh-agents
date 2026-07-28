@@ -11,7 +11,7 @@
 - 输入：外部数据快照、人工任务、历史 TaskRecord、审批状态。
 - 输出：任务拆解、Worker 调用顺序、状态更新、人工审批请求。
 - 能力边界：不直接生成设备控制指令；不绕过审核和审批。
-- 协作关系：向感知 Agent 传递环境态势，向调度 Agent 传递可信上下文，向审核 Agent 传递候选方案，向执行 Agent 传递获批方案。
+- 协作关系：向感知 Agent 传递环境态势，向调度 Agent 传递可信上下文，向审核 Agent 传递策略脚本草案，向执行 Agent 传递获批脚本的确定性输出。
 - 审计责任：所有关键状态转移必须进入 `TaskRecord.trace`。
 
 ## 2. 感知 Agent
@@ -32,12 +32,12 @@
 - AgentTeams worker id：`dispatch_worker`
 - 本地 actor：`dispatch_agent`
 - 声明资源：`agentteams/workers/dispatch`
-- 身份定位：策略生成和多方案比较 Agent。
-- 核心职责：回放原 EMS 基线，调用优化算法生成充电、放电、购电、弃光、柔性负荷候选动作。
-- 输入：可信 `Scenario`、站点约束、目标优先级、基线策略。
-- 输出：`DispatchPlan[]`，包含 96 个 15 分钟动作点、策略说明和 metrics。
-- 能力边界：只生成计划；不得直接执行设备动作或修改审批状态。
-- 协作关系：接收感知 Agent 的上下文；向审核 Agent 交付候选方案和原 EMS 基线。
+- 身份定位：策略脚本生成和多方案比较 Agent。
+- 核心职责：回放原 EMS 基线，根据新情况和策划需求生成不需要编译器的受限策略脚本草案，并通过脚本产出充电、放电、购电、弃光、柔性负荷候选动作。
+- 输入：可信 `Scenario`、站点约束、目标优先级、基线策略、感知 Agent 输出的异常与缺失信息。
+- 输出：策略脚本草案、脚本说明、依赖假设、`DispatchPlan[]`、96 个 15 分钟动作点和 metrics。
+- 能力边界：只生成脚本草案和计划输出；不得直接执行设备动作、修改审批状态、访问网络或读写文件。
+- 协作关系：接收感知 Agent 的上下文；向审核 Agent 交付脚本草案、脚本输出、依赖假设和原 EMS 基线。
 - 失败处理：优化器不可行时抛出 WorkflowError，由 Team Leader 标记 failed 或 human_handoff。
 
 ## 4. 审核 Agent
@@ -46,9 +46,9 @@
 - 本地 actor：`audit_agent`
 - 声明资源：`agentteams/workers/audit`
 - 身份定位：独立安全审计和确定性验证 Agent。
-- 核心职责：逐点复算 SOC、PCS 功率、温度降额、变压器容量、并网功率、生产最低负荷、能量守恒和相对基线收益。
-- 输入：`Scenario`、`DispatchPlan`、baseline plan。
-- 输出：`AuditReport`，包括 approved、rejected、requires_approval、findings、checked_rules、improvement。
+- 核心职责：对策略脚本做静态审查和沙箱回放，逐点复算 SOC、PCS 功率、温度降额、变压器容量、并网功率、生产最低负荷、能量守恒和相对基线收益。
+- 输入：策略脚本草案、脚本依赖假设、`Scenario`、`DispatchPlan`、baseline plan。
+- 输出：脚本静态审查结果、沙箱回放结果、`AuditReport`，包括 approved、rejected、requires_approval、findings、checked_rules、improvement。
 - 能力边界：fail closed；经济收益不能覆盖硬安全约束。
 - 协作关系：向 Team Leader 返回哪些方案可选；向执行 Agent 输出是否需要审批。
 - 失败处理：硬约束失败直接 rejected；柔性负荷削减但硬约束通过时 requires_approval。
@@ -59,8 +59,8 @@
 - 本地 actor：`execution_agent`
 - 声明资源：`agentteams/workers/execution`
 - 身份定位：获批计划映射、模拟执行和结果验证 Agent。
-- 核心职责：把获批方案映射为 EMS、PCS、LOAD_CONTROLLER 幂等命令，在本地模拟器回放，并比较计划与实际。
-- 输入：获批 `DispatchPlan`、`AuditReport`、可选 approval_id。
+- 核心职责：把获批脚本的确定性输出映射为 EMS、PCS、LOAD_CONTROLLER 幂等命令，在本地模拟器回放，并比较计划与实际。
+- 输入：获批策略脚本输出、`DispatchPlan`、`AuditReport`、可选 approval_id。
 - 输出：`ExecutionCommand[]`、execution_summary、safe fallback policy。
 - 能力边界：当前 MVP 真实设备连接数必须为 0；生产写入必须关闭。
 - 协作关系：接收审核 Agent 放行结论；向审核 Agent 和 Team Leader 返回执行确认、偏差和回退结果。

@@ -28,7 +28,7 @@ EnergyMesh Agents 将关键能力沉淀为可复用 Skill。Skill 是 Agent 的�
 
 ## 2. `dispatch_plan_generate`
 
-- 用途：基于可信上下文生成多套候选调度方案。
+- 用途：基于可信上下文生成多套候选策略脚本草案，并由脚本输出候选调度方案。
 - 调用 Agent：调度 Agent。
 - 调用条件：感知 Agent 输出 `data_complete=true` 且未进入 human_handoff。
 - 输入：
@@ -36,34 +36,41 @@ EnergyMesh Agents 将关键能力沉淀为可复用 Skill。Skill 是 Agent 的�
   - 站点安全边界
   - 目标优先级
   - 原 EMS 基线策略
+  - 感知 Agent 输出的异常、冲突和目标优先级
 - 输出：
+  - 受限策略脚本草案
+  - 脚本说明和依赖假设
   - `baseline_plan`
   - `DispatchPlan[]`
   - 每个计划的 96 点 charge/discharge/grid/curtail/shed/SOC
   - `PlanMetrics`
 - 依赖工具：`energymesh.optimizer.DispatchOptimizer`、`scipy.optimize.milp`。
-- 失败处理：优化不可行时抛出 WorkflowError；不产生任何执行命令。
-- 安全边界：计划生成和设备执行分离。
+- 失败处理：脚本草案无法生成、脚本输出不可行或优化不可行时抛出 WorkflowError；不产生任何执行命令。
+- 安全边界：脚本生成、脚本审核和设备执行分离；脚本不得导入库、访问网络、读写文件或直接写设备。
 - 验证方式：`test_optimizer_generates_three_power_balanced_candidates`。
-- 复用价值：可替换优化器，实现同一输入输出契约下的滚动优化、鲁棒优化或启发式调度。
+- 复用价值：可替换脚本生成器或优化器，实现同一输入输出契约下的滚动优化、鲁棒优化、启发式调度或站点定制策略。
 
 ## 3. `dispatch_audit_verify`
 
-- 用途：独立验证候选计划是否可执行、是否优于原 EMS 基线。
+- 用途：独立验证策略脚本是否安全、候选计划是否可执行、是否优于原 EMS 基线。
 - 调用 Agent：审核 Agent。
 - 调用条件：调度 Agent 已生成候选计划。
 - 输入：
+  - 策略脚本草案
+  - 脚本依赖假设
   - `Scenario`
   - `DispatchPlan`
   - baseline `DispatchPlan`
 - 输出：
+  - 静态审查结果
+  - 沙箱回放结果
   - `AuditReport.decision`
   - `AuditFinding[]`
   - `checked_rules`
   - `improvement_yuan`
   - `improvement_ratio`
 - 依赖工具：`energymesh.audit.IndependentSafetyAuditor`。
-- 失败处理：任一硬约束 critical finding 直接 rejected；柔性负荷削减进入 requires_approval。
+- 失败处理：脚本越权、未知变量、不确定行为或任一硬约束 critical finding 直接 rejected；柔性负荷削减进入 requires_approval。
 - 安全边界：fail closed；不可验证即不放行。
 - 验证方式：`test_independent_audit_blocks_unsafe_reserve_and_gates_load_shed`。
 - 复用价值：可作为任意储能/负荷调度计划的独立审计器。
