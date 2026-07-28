@@ -32,7 +32,7 @@ spec:
         - microgrid_context_ingest
       mcpServers:
         - name: energymesh-local-api
-          url: http://host.docker.internal:8000/api/demo/scenario
+          url: http://host.docker.internal:8000/api/external/snapshot
           transport: http
       package: file://./agentteams/workers/perception
     - name: dispatch-worker
@@ -42,7 +42,7 @@ spec:
         - dispatch_plan_generate
       mcpServers:
         - name: energymesh-local-api
-          url: http://host.docker.internal:8000/api/demo/run
+          url: http://host.docker.internal:8000/api/external/dispatch
           transport: http
       package: file://./agentteams/workers/dispatch
     - name: audit-worker

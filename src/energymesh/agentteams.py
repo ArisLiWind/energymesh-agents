@@ -148,14 +148,14 @@ def build_agentteams_manifest(
                 name="microgrid_context_ingest",
                 description="汇总园区负荷、光伏、储能、电价、设备状态和生产计划并给出可信上下文。",
                 local_module="energymesh.perception.PerceptionAgent",
-                tool_contract="GET /api/demo/scenario, GET /api/tasks/{task_id}",
+                tool_contract="GET /api/external/snapshot, GET /api/tasks/{task_id}",
                 safety_boundary="只读数据；数据缺失或冲突时必须交还人工。",
             ),
             AgentTeamsSkillSpec(
                 name="dispatch_plan_generate",
                 description="基于已核验上下文生成候选储能和柔性负荷调度方案。",
                 local_module="energymesh.optimizer.DispatchOptimizer",
-                tool_contract="POST /api/demo/run, POST /api/tasks/{task_id}/reoptimize",
+                tool_contract="POST /api/external/dispatch, POST /api/tasks/{task_id}/reoptimize",
                 safety_boundary="只生成方案，不直接执行设备动作。",
             ),
             AgentTeamsSkillSpec(

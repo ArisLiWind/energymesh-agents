@@ -1,141 +1,68 @@
 # Agent Infra 赛题要求映射
 
-## 1. 赛道定位
+当前完整评审矩阵见 [JUDGING_ALIGNMENT.md](JUDGING_ALIGNMENT.md)。本文保留为简版索引，方便快速核验必选项。
 
-赛道要求聚焦企业级复杂任务下的多 Agent 基础设施与协同系统，推动 Agent 从 Demo 走向 Production。
+## 必选项
 
-EnergyMesh Agents 的对应定位：
+### AgentTeams
 
-- 企业场景：园区微电网与储能调度。
-- 复杂任务：多源数据、设备约束、客户策略、经济目标、安全边界、审批审计。
-- 多 Agent 闭环：从事件输入到策略生成、仿真验证、安全审批、模拟执行和复盘沉淀。
-- 可复用价值：把定制化储能策略沉淀成 Skill、工具接口和策略案例库。
+EnergyMesh Agents 以 `agentscope-ai/AgentTeams` 为协同设计基点：
 
-## 2. 必选要求映射
+- 声明式资源：`agentteams/agentteams-resources.yaml`
+- Team Leader：`agentteams/team-leader`
+- Workers：`agentteams/workers/perception|dispatch|audit|execution`
+- Skills：`agentteams/skills/*`
+- 运行 manifest：`GET /api/agentteams/manifest`
+- Trace 映射：`src/energymesh/agentteams.py`
 
-### 至少 3 个不同职能 Agent
+### 至少 3 个 Agent
 
-EnergyMesh Agents 设计 4 个核心 Agent，满足“至少 3 个”的要求：
+当前实现 5 个协作身份：
 
+- EnergyMesh Team Leader
 - 感知 Agent
 - 调度 Agent
 - 审核 Agent
 - 执行 Agent
 
-三者分别对应输入理解、策略生成、安全验证，职责边界清晰。
+详细身份清单见 [AGENT_IDENTITY.md](AGENT_IDENTITY.md)。
 
-### AgentTeams 作为协同设计基点
+### Skill
 
-AgentTeams 用于：
+当前 Skill：
 
-- 定义 Agent Identity
-- 编排任务拆解
-- 管理上下文传递
-- 维护共享状态
-- 记录工具调用轨迹
-- 跟踪审批、执行、回滚和复盘状态
+- `microgrid_context_ingest`
+- `dispatch_plan_generate`
+- `dispatch_audit_verify`
+- `execution_mapping`
+- `approval_rollback`
 
-### 端到端任务闭环
+每个 Skill 的输入输出、调用条件、依赖工具、失败处理、安全边界和复用价值见
+[SKILL_CONTRACTS.md](SKILL_CONTRACTS.md)。
 
-EnergyMesh Agents 闭环：
+## 多 Agent 闭环
 
-1. 微电网事件输入
-2. 数据感知与异常识别
-3. 调度任务拆解
-4. 策略生成与工具调用
-5. 安全审核与仿真验证
-6. 人工审批
-7. 模拟执行
-8. 结果核验
-9. 证据沉淀
-10. 复盘为可复用策略
+1. 任务输入：`GET /api/external/snapshot` 模拟外部 EMS/BMS/PCS/气象/MES 数据。
+2. 任务拆解：Team Leader 创建 TaskRecord 并驱动四类 Worker。
+3. 上下文传递：`TaskRecord` 保存 scenario、perception、plans、audits、approval、trace、execution_summary。
+4. 工具调用：Skill 调用 FastAPI/OpenAPI 工具契约；后续可包装为 MCP Server。
+5. 结果验证：审核 Agent 独立复算硬约束和收益；执行 Agent 回放计划并检查偏差。
+6. 证据沉淀：SQLite audit_events、TaskRecord trace、JSON evidence SHA-256。
+7. 审批与回滚：柔性负荷响应需要人工审批；执行偏差触发 safe_fallback。
+8. 经验沉淀：Task evidence 可迁移到 PolarDB/RAG/长记忆，用于后续策略复盘。
 
-## 3. Skill 要求映射
+## MCP、RAG、可观测
 
-核心 Skill：
+当前未实现 live MCP Server，但已提供等价 OpenAPI 工具契约，迁移成本低。当前已实现：
 
-- `microgrid_event_ingest`
-- `dispatch_strategy_generate`
-- `microgrid_simulate_and_verify`
-- `approval_and_rollback`
-- `dispatch_postmortem`
+- 共享状态管理：TaskRecord。
+- 轨迹可观测：Trace、audit_events、PlanMetrics、execution_summary。
 
-每个 Skill 都包含输入输出、调用条件、依赖工具、失败处理、安全边界和复用价值。
+RAG 作为复赛增强项，建议接入 PolarDB for PostgreSQL + pgvector。完整设计见
+[TOOLING_AND_CLOUD_INTEGRATION.md](TOOLING_AND_CLOUD_INTEGRATION.md)。
 
-## 4. MCP 与工具集成映射
+## 推荐云工具
 
-初期按 MCP 可迁移契约设计工具：
-
-- 数据模拟工具
-- 预测工具
-- 优化工具
-- 仿真验证工具
-- 审批工具
-- 审计写入工具
-
-每个工具需要明确：
-
-- 参数 Schema
-- 返回 Schema
-- 权限范围
-- 错误处理
-- 幂等控制
-- 审计记录
-
-## 5. RAG 与上下文要求映射
-
-比赛要求从 Agent 记忆存储、知识库 RAG、共享状态管理、轨迹可观测中至少实现 2 项。
-
-EnergyMesh Agents 初期建议实现：
-
-- 共享状态管理：保存事件包、策略、仿真结果、审批状态和执行状态。
-- 轨迹可观测：保存 Agent Trace、工具 Log 和关键 Metrics。
-
-复赛增强：
-
-- 知识库 RAG：检索历史事故、设备手册、客户策略模板和电力安全规则。
-- Agent 长记忆：沉淀客户偏好、站点特征和策略案例。
-
-## 6. 审批、回滚与审计
-
-高风险动作包括：
-
-- 降低非关键负荷
-- 提高储能充放电功率
-- 改变保供策略
-- 临时切换运行模式
-- 影响客户生产或舒适度的策略
-
-处理原则：
-
-- 高风险动作必须人工审批。
-- 审批拒绝或超时进入保守策略。
-- 每次执行前生成回滚点。
-- 每次决策生成证据包。
-- 复盘报告不得覆盖历史审计记录。
-
-## 7. 初赛提交重点
-
-初赛不强制代码，应优先讲清：
-
-- 真实痛点：客户策略定制开发成本高。
-- 解决方案：多 Agent 生成、验证和运行调度策略。
-- 四 Agent 分工：感知、调度、审核、执行。
-- 完整闭环：从事件到复盘。
-- Skill 清单：可复用能力，而不是一次性流程。
-- 安全边界：LLM 不直接控制电力设备。
-- Demo 设计：紧急生产 + 光伏偏差 + 双路变压器热风险 + 峰价临近。
-
-## 8. 复赛工程计划
-
-复赛需要可执行 AgentTeams 代码包和 Demo。
-
-建议工程拆分：
-
-- `src/energymesh/`：四类 Agent 的领域实现与受控编排。
-- `skills/`：可复用 Skill。
-- `tools/`：模拟数据、预测、优化、仿真、审批、审计工具。
-- `data/`：样例站点、设备、负荷、电价和事件。
-- `runs/`：执行证据包。
-- `ui/`：Demo 前端或控制台。
-- `docs/`：方案、接口、评测和演示脚本。
+当前本地 MVP 不绑定云账号。阿里云官方用云 Skills、Nacos、Higress、PolarDB for PostgreSQL、
+RocketMQ、AgentLoop/LoongSuite 的必要性、接口契约、权限边界、可替换性和迁移成本见
+[TOOLING_AND_CLOUD_INTEGRATION.md](TOOLING_AND_CLOUD_INTEGRATION.md)。

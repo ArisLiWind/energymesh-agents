@@ -175,5 +175,8 @@ docs/             比赛背景与历史方案材料
 ```
 
 工程边界与信任关系见 [ARCHITECTURE.md](ARCHITECTURE.md)，安全模型见
-[SECURITY.md](SECURITY.md)，实际完成状态与限制见 [STATUS.md](STATUS.md)，前端所含
-Three.js 许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[SECURITY.md](SECURITY.md)，实际完成状态与限制见 [STATUS.md](STATUS.md)。参赛评审材料见
+[docs/JUDGING_ALIGNMENT.md](docs/JUDGING_ALIGNMENT.md)、[docs/AGENT_IDENTITY.md](docs/AGENT_IDENTITY.md)、
+[docs/SKILL_CONTRACTS.md](docs/SKILL_CONTRACTS.md) 与
+[docs/TOOLING_AND_CLOUD_INTEGRATION.md](docs/TOOLING_AND_CLOUD_INTEGRATION.md)。前端所含 Three.js
+许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
