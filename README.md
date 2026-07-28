@@ -75,9 +75,10 @@ EnergyMesh Agents 不替代已有 EMS 和优化算法，而是在它们之上构
 当前版本使用开源 `agentscope-ai/AgentTeams` 的 Manager-Workers 协作框架作为多 Agent 运行
 与治理底座。仓库提供 `agentteams/agentteams-resources.yaml` 声明式 Team/Human 资源，以及
 Team Leader、四类 Worker、SOUL.md、AGENTS.md 和 Skill 资产；本地 FastAPI 服务承担能源业务
-工具/API 层，并通过 `/api/agentteams/manifest` 暴露运行清单。当前不连接真实 EMS、BMS、PCS
-或生产数据库，不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”只进入
-本地模拟适配器：
+工具/API 层，并通过 `/api/agentteams/manifest` 暴露运行清单。当前通过
+`/api/external/snapshot` 模拟 EMS、BMS、PCS、气象和 MES 外部数据输入，通过
+`/api/external/dispatch` 触发完整多 Agent 调度闭环。当前不连接真实 EMS、BMS、PCS 或生产数据库，
+不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”只进入本地模拟适配器：
 
 ```text
 SIMULATION_MODE=true
@@ -88,7 +89,8 @@ AGENTTEAMS_ENABLED=true
 ## AgentTeams 开源框架对接
 
 - 开源框架：`agentscope-ai/AgentTeams`
-- AgentTeams quickstart 入口：`http://127.0.0.1:18088`
+- AgentTeams quickstart 入口：`http://127.0.0.1:18088`（可选；仅在本机另行启动
+  AgentTeams quickstart 时可访问）
 - 声明式资源：`agentteams/agentteams-resources.yaml`
 - 本地 manifest：`GET /api/agentteams/manifest`
 - Worker 包资产：`agentteams/`
@@ -119,6 +121,10 @@ make run
 打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。OpenAPI 文档位于
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。
 
+当前仓库还包含 Vercel Python serverless preview 配置：`api/index.py`、`vercel.json`、
+`.python-version` 和 `uv.lock`。Vercel 适合公开演示；长期保存模型密钥、审计证据和运行历史时，
+应迁移到 PolarDB for PostgreSQL 或等价外部数据库，而不是依赖 Vercel 的临时 `/tmp` 存储。
+
 ### Docker Compose
 
 ```bash
@@ -134,15 +140,16 @@ ALLOW_PRODUCTION_WRITE=false
 
 ## 演示流程
 
-1. 页面通过 Three.js 加载可旋转、缩放的园区三维沙盘，并展示负荷、光伏、购电与 SOC 的
+1. 页面先读取 `/api/external/snapshot`，模拟 EMS、BMS、PCS、气象和 MES 外部数据。
+2. 页面通过 Three.js 加载可旋转、缩放的园区三维沙盘，并展示负荷、光伏、购电与 SOC 的
    96 点实时趋势。
-2. 感知 Agent 判断原任务失效，核验双路传感器并重排目标优先级。
-3. 系统计算原 EMS 固定策略基线，调度 Agent 再生成经济压力测试、安全均衡和保守保供三套计划。
-4. 审核 Agent 独立复算 SOC、功率、变压器、并网、生产计划、能量守恒和相对基线收益。
-5. 包含柔性负荷响应的安全均衡方案进入人工审批。
-6. 批准后，执行 Agent 生成带幂等键的 EMS、PCS 和负荷控制命令，只在模拟器回放并确认 96 个时段。
-7. SQLite 保存状态与轨迹，`runs/` 保存带 SHA-256 的 JSON 证据包。
-8. 点击“注入变化并重调度”，验证数据变化如何触发一轮独立的新闭环。
+3. 感知 Agent 判断原任务失效，核验双路传感器并重排目标优先级。
+4. 系统计算原 EMS 固定策略基线，调度 Agent 再生成经济压力测试、安全均衡和保守保供三套计划。
+5. 审核 Agent 独立复算 SOC、功率、变压器、并网、生产计划、能量守恒和相对基线收益。
+6. 包含柔性负荷响应的安全均衡方案进入人工审批。
+7. 批准后，执行 Agent 生成带幂等键的 EMS、PCS 和负荷控制命令，只在模拟器回放并确认 96 个时段。
+8. SQLite 保存状态与轨迹，`runs/` 保存带 SHA-256 的 JSON 证据包。
+9. 点击“注入变化并重调度”，验证数据变化如何触发一轮独立的新闭环。
 
 测试还覆盖两条失败闭环：双路温度冲突时进入人工接管；模拟执行偏差超过 5% 时进入安全回退。
 
@@ -152,8 +159,11 @@ ALLOW_PRODUCTION_WRITE=false
   Agent 基于当前场景与任务结果的协商过程。
 - 手动选中一个 Agent 后，输入只进入该 Agent 的职责范围；点击“自动协同”或“退出单聊”
   才会恢复多 Agent 模式。
-- 当前对话能力是本地、确定性的任务上下文对话引擎，会引用实时点位、优化指标、审核结论和
-  执行状态；它不是外部 LLM，也不应被描述成已经接入通用大模型。
+- 未配置模型时，对话能力使用本地、确定性的任务上下文回复，会引用实时点位、优化指标、审核
+  结论和执行状态。
+- 点击任意 Agent 头像可配置 OpenAI-compatible 模型网关参数：Base URL、API Key 和模型名称。
+  API Key 只保存在后端，前端和 manifest 只返回 masked key。配置后，该 Agent 的测试对话和
+  单聊可真实调用对应模型。
 
 ## 常用命令
 
@@ -168,10 +178,10 @@ make verify       # lint + typecheck + test
 ## 目录
 
 ```text
-src/energymesh/   领域模型、优化、审计、编排、API、控制台与合成场景
+src/energymesh/   领域模型、外部数据模拟、优化、审计、编排、API 与控制台
 tests/            优化、安全状态机与 API 测试
 runs/             运行时证据包（默认不提交）
-docs/             比赛背景与历史方案材料
+docs/             评审对齐、Agent Identity、Skill 契约、工具集成与架构材料
 ```
 
 工程边界与信任关系见 [ARCHITECTURE.md](ARCHITECTURE.md)，安全模型见
