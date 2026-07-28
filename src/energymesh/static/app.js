@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js";
+import { createCampus3D } from "/static/campus3d.js?v=20260728b";
 
 const state = {
   scenario: null,
@@ -68,7 +68,13 @@ function agentBackendId(agentKey) {
 }
 
 function loadAvatarStyles() {
-  state.avatarStyles = JSON.parse(localStorage.getItem("energymesh-avatar-styles") || "{}");
+  try {
+    const saved = JSON.parse(localStorage.getItem("energymesh-avatar-styles") || "{}");
+    state.avatarStyles = saved && typeof saved === "object" ? saved : {};
+  } catch {
+    state.avatarStyles = {};
+    localStorage.removeItem("energymesh-avatar-styles");
+  }
 }
 
 function saveAvatarStyles() {
@@ -729,17 +735,18 @@ async function reoptimize() {
 async function initialize() {
   try {
     loadAvatarStyles();
-    const [snapshot, health, manifest] = await Promise.all([
-      request("/api/external/snapshot?seed=42&current_interval=57&fault_mode=cloud_and_transformer_heat"),
+    const [scenarioResult, health, manifest] = await Promise.all([
+      request("/api/external/snapshot?seed=42&current_interval=57&fault_mode=cloud_and_transformer_heat")
+        .catch(() => request("/api/demo/scenario")),
       request("/api/health"),
       request("/api/agentteams/manifest"),
     ]);
     if (!health.simulation_mode || health.allow_production_write) throw new Error("安全配置异常，页面已停止运行");
     state.modelConfigs = manifest.model_configs || {};
-    state.externalSnapshot = snapshot;
-    state.scenario = snapshot.scenario;
-    $("#scenario-name").textContent = snapshot.scenario.name;
-    $("#scenario-description").textContent = snapshot.scenario.description;
+    state.externalSnapshot = scenarioResult.source === "simulated_external_feeds" ? scenarioResult : null;
+    state.scenario = state.externalSnapshot?.scenario || scenarioResult;
+    $("#scenario-name").textContent = state.scenario.name;
+    $("#scenario-description").textContent = state.scenario.description;
     renderExternalSignals();
     renderLiveData();
     renderTrendChart();
@@ -798,5 +805,11 @@ $$(".panel-tab").forEach((tab) => tab.addEventListener("click", () => activatePa
 $$(".splitter").forEach((splitter) => splitter.addEventListener("pointerdown", (event) => startResize(splitter, event)));
 setupCardSorting();
 window.addEventListener("resize", renderTrendChart);
-state.campus3d = createCampus3D($("#campus-3d"), updateAssetLabels);
+try {
+  state.campus3d = createCampus3D($("#campus-3d"), updateAssetLabels);
+} catch (error) {
+  state.campus3d = null;
+  console.error(error);
+  toast("三维沙盘暂不可用，数据面板已继续加载");
+}
 initialize();
