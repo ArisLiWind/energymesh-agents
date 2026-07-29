@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260728c";
+import { createCampus3D } from "/static/campus3d.js?v=20260729a";
 
 const state = {
   scenario: null,
@@ -212,8 +212,8 @@ function renderTrendChart() {
   const forecast = state.scenario.forecast;
   const plan = selectedPlan();
   const series = [
-    { color: "#dbe0dd", values: forecast.map((point) => point.load_kw) },
-    { color: "#67d9cf", values: forecast.map((point) => point.pv_kw) },
+    { color: "#d9e7f3", values: forecast.map((point) => point.load_kw) },
+    { color: "#8ecfff", values: forecast.map((point) => point.pv_kw) },
     {
       color: "#f2bd5b",
       values: plan
@@ -231,12 +231,12 @@ function renderTrendChart() {
   context.font = "7px Inter, sans-serif";
   for (let row = 0; row <= 3; row += 1) {
     const y = inset.top + plotHeight * row / 3;
-    context.strokeStyle = "#343b38";
+    context.strokeStyle = "#2c3a47";
     context.beginPath();
     context.moveTo(inset.left, y);
     context.lineTo(width - inset.right, y);
     context.stroke();
-    context.fillStyle = "#7f8a84";
+    context.fillStyle = "#8fa3b6";
     context.fillText(`${Math.round(max * (1 - row / 3))}`, 1, y + 2);
   }
   series.forEach((item) => {

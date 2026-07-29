@@ -1,14 +1,14 @@
 import * as THREE from "/static/vendor/three.module.min.js";
 
-const white = new THREE.MeshStandardMaterial({ color: 0xf4f6f7, roughness: 0.72 });
-const side = new THREE.MeshStandardMaterial({ color: 0xd9e0e4, roughness: 0.8 });
-const dark = new THREE.MeshStandardMaterial({ color: 0x91a0aa, roughness: 0.6 });
-const glass = new THREE.MeshStandardMaterial({ color: 0x92afc0, roughness: 0.3, metalness: 0.15 });
-const solar = new THREE.MeshStandardMaterial({ color: 0x365a72, roughness: 0.45, metalness: 0.1 });
-const energyGreen = new THREE.MeshStandardMaterial({
-  color: 0x69e66e,
-  emissive: 0x1f8f48,
-  emissiveIntensity: 0.45,
+const white = new THREE.MeshStandardMaterial({ color: 0xf7fbff, roughness: 0.74 });
+const side = new THREE.MeshStandardMaterial({ color: 0xe0ebf3, roughness: 0.82 });
+const dark = new THREE.MeshStandardMaterial({ color: 0x8197aa, roughness: 0.62 });
+const glass = new THREE.MeshStandardMaterial({ color: 0x7fb2d4, roughness: 0.28, metalness: 0.18 });
+const solar = new THREE.MeshStandardMaterial({ color: 0x264b6c, roughness: 0.45, metalness: 0.12 });
+const energyFlow = new THREE.MeshStandardMaterial({
+  color: 0xa9dcff,
+  emissive: 0x4aa9f5,
+  emissiveIntensity: 0.55,
 });
 
 function box(group, size, position, material = white) {
@@ -112,10 +112,10 @@ function energyPath(scene, from, to, particles) {
     new THREE.Vector3(mid.x, .12, mid.z),
     new THREE.Vector3(...to),
   ]);
-  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 28, .035, 7, false), energyGreen);
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 28, .035, 7, false), energyFlow);
   scene.add(tube);
   for (let index = 0; index < 3; index += 1) {
-    const particle = new THREE.Mesh(new THREE.SphereGeometry(.11, 12, 12), energyGreen);
+    const particle = new THREE.Mesh(new THREE.SphereGeometry(.11, 12, 12), energyFlow);
     particle.userData = { curve, offset: index / 3 + particles.length * .11 };
     particles.push(particle);
     scene.add(particle);
@@ -129,12 +129,12 @@ function clamp(value, min, max) {
 export function createCampus3D(canvas, onLabels) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0xf9fafa);
+  renderer.setClearColor(0xf7fbff);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xf9fafa, 24, 38);
+  scene.fog = new THREE.Fog(0xf7fbff, 22, 36);
   const camera = new THREE.OrthographicCamera(-10, 10, 6.2, -6.2, .1, 100);
   let azimuth = -.75;
   let elevation = .72;
@@ -144,17 +144,17 @@ export function createCampus3D(canvas, onLabels) {
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(24, 18),
-    new THREE.MeshStandardMaterial({ color: 0xf1f4f4, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xf3f8fc, roughness: 1 }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const gridHelper = new THREE.GridHelper(24, 24, 0xdce3e6, 0xe7ecee);
+  const gridHelper = new THREE.GridHelper(24, 24, 0xd8e5ef, 0xe8f0f6);
   gridHelper.position.y = .015;
   scene.add(gridHelper);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xbfcbd1, 2.2));
-  const sun = new THREE.DirectionalLight(0xffffff, 3.2);
+  scene.add(new THREE.HemisphereLight(0xf7fbff, 0x9bb3c8, 2.35));
+  const sun = new THREE.DirectionalLight(0xf8fbff, 3.4);
   sun.position.set(-8, 14, 9);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -171,7 +171,7 @@ export function createCampus3D(canvas, onLabels) {
   chargers(scene);
   grid(scene);
 
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .12, 24), energyGreen);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .12, 24), energyFlow);
   hub.position.set(0, .08, 0);
   scene.add(hub);
   const particles = [];
