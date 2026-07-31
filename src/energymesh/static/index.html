@@ -36,6 +36,8 @@
         <div class="sidebar-footer"><span>本地模拟</span><small>生产写入关闭</small></div>
       </aside>
 
+      <div class="pane-resizer" data-resizer="sidebar" role="separator" aria-label="调整会话列表宽度" aria-orientation="vertical" tabindex="0"></div>
+
       <section class="panel conversation-panel" aria-label="多智能体协作会话">
         <div class="conversation-heading">
           <div class="conversation-avatar" id="conversation-avatar">感</div>
@@ -48,6 +50,8 @@
         <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
         <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
       </section>
+
+      <div class="pane-resizer" data-resizer="conversation" role="separator" aria-label="调整协作会话宽度" aria-orientation="vertical" tabindex="0"></div>
 
       <section class="panel operations-panel" aria-label="园区调度与审计">
         <div class="panel-heading"><div><span>VISUAL</span><strong>园区能源数字沙盘</strong></div><div class="segmented"><button class="active" type="button" data-mode="demo">沙盘</button><button type="button" data-mode="audit">审计</button></div></div>

@@ -485,6 +485,56 @@ function setupCampus() {
   });
 }
 
+function setupPaneResizers() {
+  const workspace = $(".workspace");
+  const sidebar = $(".agent-sidebar");
+  const conversation = $(".conversation-panel");
+  if (!workspace || !sidebar || !conversation) return;
+
+  const restoreWidth = (property, fallback) => {
+    const saved = Number(window.localStorage.getItem(`energymesh.${property}`));
+    workspace.style.setProperty(property, `${Number.isFinite(saved) && saved > 0 ? saved : fallback}px`);
+  };
+  restoreWidth("--sidebar-width", 260);
+  restoreWidth("--conversation-width", 360);
+
+  $$(".pane-resizer").forEach((resizer) => {
+    const property = resizer.dataset.resizer === "sidebar" ? "--sidebar-width" : "--conversation-width";
+    resizer.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      resizer.setPointerCapture(event.pointerId);
+      resizer.classList.add("is-dragging");
+      document.body.style.cursor = "col-resize";
+
+      const move = (moveEvent) => {
+        const bounds = workspace.getBoundingClientRect();
+        const sidebarWidth = sidebar.getBoundingClientRect().width;
+        const conversationWidth = conversation.getBoundingClientRect().width;
+        const rightMinimum = 390;
+        const dividerWidth = 18;
+        const value = property === "--sidebar-width"
+          ? moveEvent.clientX - bounds.left
+          : moveEvent.clientX - bounds.left - sidebarWidth - 9;
+        const minimum = property === "--sidebar-width" ? 220 : 300;
+        const otherWidth = property === "--sidebar-width" ? conversationWidth : sidebarWidth;
+        const maximum = Math.max(minimum, bounds.width - otherWidth - rightMinimum - dividerWidth);
+        const width = Math.round(Math.min(Math.max(value, minimum), maximum));
+        workspace.style.setProperty(property, `${width}px`);
+      };
+
+      const finish = () => {
+        resizer.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        window.localStorage.setItem(`energymesh.${property}`, `${Math.round(property === "--sidebar-width" ? sidebar.getBoundingClientRect().width : conversation.getBoundingClientRect().width)}`);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", finish);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish, { once: true });
+    });
+  });
+}
+
 function setupEvents() {
   $("#run-button").addEventListener("click", runDemo);
   $("#approve-b").addEventListener("click", approveCandidateB);
@@ -571,6 +621,7 @@ async function restoreLatestDemo() {
 
 drawScenarioChart();
 setupCampus();
+setupPaneResizers();
 setupEvents();
 loadModelConfigs();
 restoreLatestDemo();
