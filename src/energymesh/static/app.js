@@ -70,10 +70,10 @@ const tutorialSteps = [
   {
     event: "context",
     target: "#view-context",
-    title: "确认交接上下文",
-    story: "感知 Agent 已将 EMS、BMS、PCS、光伏、生产与传感器质量结果固化为同一个 ContextSnapshot，并使 V1 计划失效。",
-    objective: "查看 V2 的结构化上下文",
-    action: "点击“查看上下文”。调度、审核、审批和执行都必须引用同一个 context_hash。",
+    title: "理解自动交接的感知快照",
+    story: "感知 Agent 已自动将 EMS、BMS、PCS、光伏、生产与传感器质量结果固化为同一个 ContextSnapshot，并使 V1 计划失效。",
+    objective: "查看 V2 感知快照",
+    action: "点击“查看感知快照”。这不会触发交接，交接已经完成；你是在复核调度、审核、审批和执行共同引用的 context_hash。",
   },
   {
     event: "review",
@@ -460,8 +460,33 @@ function openTraceDetail(index) {
   $("#trace-dialog").showModal();
 }
 
+function renderContextDashboard(context) {
+  const changes = context.changes || {};
+  const quality = context.data_quality || {};
+  $("#context-summary").innerHTML = `
+    <article><span>任务版本</span><strong>V${escapeHTML(context.task_version)}</strong></article>
+    <article><span>原计划</span><strong>${context.previous_plan_status === "invalidated" ? "已失效" : escapeHTML(context.previous_plan_status)}</strong></article>
+    <article><span>自动化权限</span><strong>${context.automation_permission === "restricted" ? "受限执行" : escapeHTML(context.automation_permission)}</strong></article>
+    <article><span>约束版本</span><strong>${escapeHTML(context.constraint_set_version)}</strong></article>
+  `;
+  const changeCards = [
+    ["生产负荷", `+${changes.production_load_added_kw} kW`, "急单插入"],
+    ["光伏实际偏差", `${changes.pv_actual_vs_forecast_percent}%`, "低于预测"],
+    ["变压器温度", changes.transformer_temperature_conflict ? "数据冲突" : "正常", "需安全降级"],
+    ["电价时段", changes.tariff_period === "peak" ? "峰值" : escapeHTML(changes.tariff_period), "需重新评估成本"],
+  ];
+  $("#context-changes").innerHTML = changeCards.map(([label, value, note]) => `<article><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join("");
+  const validSources = Object.entries(quality).filter(([, value]) => value === "valid").map(([name]) => name.toUpperCase());
+  $("#context-quality").innerHTML = `
+    <article class="quality-ok"><span>可信数据源</span><strong>${validSources.join(" · ") || "--"}</strong><small>时间戳与完整性校验通过</small></article>
+    <article class="quality-warning"><span>需人工关注</span><strong>变压器传感器冲突</strong><small>两路温度数据不一致，自动化权限已收紧</small></article>
+    <article><span>快照标识</span><strong>${escapeHTML(context.context_id)}</strong><small>${escapeHTML(context.context_hash).slice(0, 20)}...</small></article>
+  `;
+}
+
 function openContext() {
   if (!state.context) return;
+  renderContextDashboard(state.context);
   $("#context-json").textContent = JSON.stringify(state.context, null, 2);
   $("#context-dialog").showModal();
 }

@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-tutorial2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-context-dashboard2" />
   </head>
   <body>
     <header class="topbar">
@@ -46,7 +46,7 @@
           <span class="connection">连接状态：<b id="agent-model-status">未测试</b></span>
         </div>
         <div class="conversation-context">
-          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong><button id="view-context" class="context-button" type="button" disabled>查看上下文</button>
+          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong><button id="view-context" class="context-button" type="button" disabled>查看感知快照</button>
         </div>
         <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
         <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
@@ -73,11 +73,11 @@
 
     <dialog id="trace-dialog"><form method="dialog"><div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div><pre id="trace-json"></pre></form></dialog>
     <dialog id="evidence-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div><pre id="evidence-json"></pre></form></dialog>
-    <dialog id="context-dialog"><form method="dialog"><div class="dialog-heading"><div><span>CONTEXT SNAPSHOT</span><h2>感知上下文</h2></div><button class="icon-button" type="button" data-close-dialog="context-dialog">×</button></div><pre id="context-json"></pre></form></dialog>
+    <dialog id="context-dialog"><form method="dialog"><div class="dialog-heading"><div><span>CONTEXT SNAPSHOT</span><h2>感知快照已自动交接</h2></div><div class="dialog-actions"><button class="mini-button" type="button" data-close-dialog="context-dialog">返回任务</button><button class="icon-button" type="button" data-close-dialog="context-dialog" aria-label="关闭">×</button></div></div><div class="context-dashboard"><p class="context-lead">感知 Agent 已完成数据校验，并将同一份快照自动传递给调度 Agent、审核 Agent 与后续审批链路。</p><div id="context-summary" class="context-summary"></div><section><h3>14:00 运行变化</h3><div id="context-changes" class="context-changes"></div></section><section><h3>数据质量与安全边界</h3><div id="context-quality" class="context-quality"></div></section><section class="handoff-path"><h3>自动交接路径</h3><div><span>感知</span><i></i><span>调度</span><i></i><span>审核</span><i></i><span>人工审批</span><i></i><span>执行</span></div></section><details class="raw-context"><summary>查看原始审计数据</summary><pre id="context-json"></pre></details></div></form></dialog>
     <dialog id="candidate-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT VERDICT</span><h2 id="candidate-dialog-title">候选方案</h2></div><button class="icon-button" type="button" data-close-dialog="candidate-dialog">×</button></div><pre id="candidate-json"></pre></form></dialog>
     <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="avatar-setting"><span>头像</span><button id="random-avatar-button" class="mini-button" type="button">随机更换</button></div><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
     <div id="tutorial-overlay" class="tutorial-overlay" hidden aria-live="polite"><div id="tutorial-spotlight" class="tutorial-spotlight"></div><aside id="tutorial-card" class="tutorial-card"><div class="tutorial-progress"><span id="tutorial-step">任务引导</span><span id="tutorial-count">01 / 07</span></div><h2 id="tutorial-title">处理 14:00 复合异常</h2><p id="tutorial-story"></p><div class="tutorial-objective"><span>当前目标</span><strong id="tutorial-objective">创建一次安全重新调度任务</strong></div><p id="tutorial-action"></p><div class="tutorial-actions"><button id="tutorial-skip" class="mini-button" type="button">跳过引导</button><button id="tutorial-restart" class="mini-button" type="button" hidden>重新开始</button></div></aside></div>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-tutorial4"></script>
+    <script type="module" src="/static/app.js?v=20260731-context-dashboard1"></script>
   </body>
 </html>
