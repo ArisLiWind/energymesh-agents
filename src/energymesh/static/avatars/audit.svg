@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="审核 Agent 肖像">
+  <rect width="160" height="160" fill="#f5f5f2"/>
+  <path d="M24 160c7-36 28-56 56-56s49 20 56 56" fill="#aeb3af"/>
+  <path d="M51 84h58v29c0 16-13 29-29 29s-29-13-29-29z" fill="#bb7f61"/>
+  <circle cx="80" cy="63" r="35" fill="#d99b77"/>
+  <path d="M43 66c0-30 13-49 38-49 27 0 39 20 37 50-11-8-22-12-36-12-17 0-28 5-39 11z" fill="#4b3937"/>
+  <path d="M46 48c8-18 25-28 42-24 15 3 25 12 29 27" fill="none" stroke="#4b3937" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="67" cy="69" r="2.4" fill="#35302f"/><circle cx="93" cy="69" r="2.4" fill="#35302f"/>
+  <path d="M72 85c5 2 11 2 16 0" fill="none" stroke="#97584f" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M39 160c6-26 20-40 41-40s35 14 41 40" fill="#7a7d74"/>
+  <path d="M63 118l17 17 17-17" fill="#f4f4f2"/>
+</svg>

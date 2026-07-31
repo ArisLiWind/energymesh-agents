@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="感知 Agent 肖像">
+  <rect width="160" height="160" fill="#f5f5f2"/>
+  <path d="M25 160c4-37 26-57 55-57s51 20 55 57" fill="#9eabb0"/>
+  <path d="M51 85h58v28c0 16-13 29-29 29s-29-13-29-29z" fill="#e3ad8b"/>
+  <circle cx="80" cy="63" r="35" fill="#efc29f"/>
+  <path d="M44 65c0-30 14-47 38-47 28 0 40 20 37 48-10-7-17-11-28-11-16 0-26 8-47 10z" fill="#31373b"/>
+  <path d="M49 59c8 5 18 7 31 7 15 0 27-4 37-11" fill="none" stroke="#31373b" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="67" cy="68" r="2.4" fill="#414141"/><circle cx="93" cy="68" r="2.4" fill="#414141"/>
+  <path d="M72 85c5 3 11 3 16 0" fill="none" stroke="#b96f66" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M42 160c4-24 18-39 38-39s35 15 38 39" fill="#677d89"/>
+  <path d="M65 116l15 17 15-17" fill="#f4f4f2"/>
+</svg>

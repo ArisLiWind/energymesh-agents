@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="调度 Agent 肖像">
+  <rect width="160" height="160" fill="#f5f5f2"/>
+  <path d="M24 160c7-36 28-56 56-56s49 20 56 56" fill="#a7b2b4"/>
+  <path d="M52 84h56v28c0 16-12 29-28 29s-28-13-28-29z" fill="#d89d78"/>
+  <circle cx="80" cy="63" r="35" fill="#e7b18c"/>
+  <path d="M44 65c1-33 18-49 38-49 25 0 39 19 37 51-8-10-17-16-32-16-19 0-30 8-43 14z" fill="#292d31"/>
+  <path d="M51 48c12-14 36-18 57 2" fill="none" stroke="#292d31" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="67" cy="69" r="2.4" fill="#363636"/><circle cx="93" cy="69" r="2.4" fill="#363636"/>
+  <path d="M73 85c4 2 10 2 14 0" fill="none" stroke="#aa665c" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M39 160c6-26 20-40 41-40s35 14 41 40" fill="#58768a"/>
+  <path d="M63 118l17 17 17-17" fill="#f4f4f2"/>
+</svg>

@@ -28,10 +28,10 @@
         <p class="sidebar-copy">选择一个 Agent，围绕当前园区任务自然交流；点击头像配置该角色使用的模型。</p>
         <button class="team-entry active" type="button" data-agent="perception_agent"><span class="team-symbol">✦</span><span><strong>自动协同</strong><small>Team Leader 编排 · 当前任务</small></span><i>4</i></button>
         <div id="agent-roster" class="agent-roster">
-          <article class="agent-row active" data-agent="perception_agent"><button class="agent-avatar perception" type="button" data-open-model="perception_agent" aria-label="配置感知 Agent 模型">感</button><button class="agent-select" type="button" data-agent="perception_agent"><strong>感知 Agent</strong><small>数据核验 · 异常判断</small></button><i></i></article>
-          <article class="agent-row" data-agent="dispatch_agent"><button class="agent-avatar dispatch" type="button" data-open-model="dispatch_agent" aria-label="配置调度 Agent 模型">调</button><button class="agent-select" type="button" data-agent="dispatch_agent"><strong>调度 Agent</strong><small>策略代码 · 方案生成</small></button><i></i></article>
-          <article class="agent-row" data-agent="audit_agent"><button class="agent-avatar audit" type="button" data-open-model="audit_agent" aria-label="配置审核 Agent 模型">审</button><button class="agent-select" type="button" data-agent="audit_agent"><strong>审核 Agent</strong><small>约束审计 · 风险拦截</small></button><i></i></article>
-          <article class="agent-row" data-agent="execution_agent"><button class="agent-avatar execution" type="button" data-open-model="execution_agent" aria-label="配置执行 Agent 模型">执</button><button class="agent-select" type="button" data-agent="execution_agent"><strong>执行 Agent</strong><small>指令映射 · 结果核对</small></button><i></i></article>
+          <article class="agent-row active" data-agent="perception_agent"><button class="agent-avatar perception" type="button" data-open-model="perception_agent" aria-label="配置感知 Agent 模型"><img src="/static/avatars/perception.svg" alt="" /></button><button class="agent-select" type="button" data-agent="perception_agent"><strong>感知 Agent</strong><small>数据核验 · 异常判断</small></button><i></i></article>
+          <article class="agent-row" data-agent="dispatch_agent"><button class="agent-avatar dispatch" type="button" data-open-model="dispatch_agent" aria-label="配置调度 Agent 模型"><img src="/static/avatars/dispatch.svg" alt="" /></button><button class="agent-select" type="button" data-agent="dispatch_agent"><strong>调度 Agent</strong><small>策略代码 · 方案生成</small></button><i></i></article>
+          <article class="agent-row" data-agent="audit_agent"><button class="agent-avatar audit" type="button" data-open-model="audit_agent" aria-label="配置审核 Agent 模型"><img src="/static/avatars/audit.svg" alt="" /></button><button class="agent-select" type="button" data-agent="audit_agent"><strong>审核 Agent</strong><small>约束审计 · 风险拦截</small></button><i></i></article>
+          <article class="agent-row" data-agent="execution_agent"><button class="agent-avatar execution" type="button" data-open-model="execution_agent" aria-label="配置执行 Agent 模型"><img src="/static/avatars/execution.svg" alt="" /></button><button class="agent-select" type="button" data-agent="execution_agent"><strong>执行 Agent</strong><small>指令映射 · 结果核对</small></button><i></i></article>
         </div>
         <div class="sidebar-footer"><span>本地模拟</span><small>生产写入关闭</small></div>
       </aside>
@@ -40,7 +40,7 @@
 
       <section class="panel conversation-panel" aria-label="多智能体协作会话">
         <div class="conversation-heading">
-          <div class="conversation-avatar" id="conversation-avatar">感</div>
+          <div class="conversation-avatar"><img id="conversation-avatar" src="/static/avatars/perception.svg" alt="" /></div>
           <div><strong id="selected-agent-name">感知 Agent</strong><small id="selected-agent-skill">microgrid_context_ingest</small></div>
           <span class="connection">连接状态：<b id="agent-model-status">未测试</b></span>
         </div>

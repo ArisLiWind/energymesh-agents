@@ -21,21 +21,25 @@ const agentInfo = {
   perception_agent: {
     name: "感知 Agent",
     skill: "microgrid_context_ingest",
+    avatar: "/static/avatars/perception.svg",
     defaultPrompt: "请基于当前CTX解释你发现了哪些异常，以及为什么V1计划失效。",
   },
   dispatch_agent: {
     name: "调度 Agent",
     skill: "dispatch_plan_generate",
+    avatar: "/static/avatars/dispatch.svg",
     defaultPrompt: "请说明三套候选方案的差异，以及为什么你不能批准自己的方案。",
   },
   audit_agent: {
     name: "审核 Agent",
     skill: "dispatch_audit_verify",
+    avatar: "/static/avatars/audit.svg",
     defaultPrompt: "请解释Candidate A为什么被否决，并列出你独立复算的硬约束。",
   },
   execution_agent: {
     name: "执行 Agent",
     skill: "execution_mapping",
+    avatar: "/static/avatars/execution.svg",
     defaultPrompt: "请说明你只能执行已审核且已审批方案的原因，以及幂等键如何使用。",
   },
 };
@@ -134,9 +138,9 @@ function drawScenarioChart() {
   const pv = seededSeries(96, 240, 250, 1.7).map((value, index) => index >= 56 && index < 64 ? value * 0.814 : value);
   const tariff = Array.from({ length: 96 }, (_, index) => (index >= 56 && index <= 80 ? 980 : index > 32 && index < 56 ? 620 : 380));
   const series = [
-    { label: "负荷", color: "#edf6ff", values: load },
-    { label: "光伏", color: "#8ecfff", values: pv },
-    { label: "电价", color: "#f2bd5b", values: tariff },
+    { label: "负荷", color: "#25272b", values: load },
+    { label: "光伏", color: "#438fc8", values: pv },
+    { label: "电价", color: "#c68c3d", values: tariff },
   ];
   const max = Math.max(...series.flatMap((item) => item.values));
   const inset = { left: 30, top: 18, right: 12, bottom: 18 };
@@ -144,7 +148,7 @@ function drawScenarioChart() {
   const plotHeight = height - inset.top - inset.bottom;
   context.clearRect(0, 0, width, height);
   context.font = "10px Inter, sans-serif";
-  context.strokeStyle = "#2c3a47";
+  context.strokeStyle = "#e2e6ea";
   context.lineWidth = 1;
   for (let row = 0; row <= 4; row += 1) {
     const y = inset.top + (plotHeight * row) / 4;
@@ -154,7 +158,7 @@ function drawScenarioChart() {
     context.stroke();
   }
   const eventX = inset.left + (plotWidth * 56) / 95;
-  context.fillStyle = "rgba(239,119,111,.12)";
+  context.fillStyle = "rgba(218,91,84,.12)";
   context.fillRect(eventX, inset.top, 2, plotHeight);
   series.forEach((item) => {
     context.beginPath();
@@ -265,7 +269,7 @@ function renderAgentConsole() {
   const config = state.modelConfigs[state.selectedAgent];
   $("#selected-agent-name").textContent = info.name;
   $("#selected-agent-skill").textContent = info.skill;
-  $("#conversation-avatar").textContent = info.name.slice(0, 1);
+  $("#conversation-avatar").src = info.avatar;
   $("#agent-model-status").textContent = config?.connection_status || "未测试";
   $("#agent-chat-input").placeholder = info.defaultPrompt;
   $$(".agent-row").forEach((row) => {
