@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-workspace1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-codex-surface2" />
   </head>
   <body>
     <header class="topbar">
@@ -74,6 +74,6 @@
     <dialog id="evidence-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div><pre id="evidence-json"></pre></form></dialog>
     <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-workspace1"></script>
+    <script type="module" src="/static/app.js?v=20260731-codex-surface2"></script>
   </body>
 </html>
