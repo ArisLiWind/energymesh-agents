@@ -9,10 +9,35 @@ const state = {
   events: [],
   evidence: null,
   approval: null,
+  selectedAgent: "perception_agent",
+  modelConfigs: {},
   playbackIndex: -1,
   playbackTimer: null,
   paused: false,
   campus3d: null,
+};
+
+const agentInfo = {
+  perception_agent: {
+    name: "感知 Agent",
+    skill: "microgrid_context_ingest",
+    defaultPrompt: "请基于当前CTX解释你发现了哪些异常，以及为什么V1计划失效。",
+  },
+  dispatch_agent: {
+    name: "调度 Agent",
+    skill: "dispatch_plan_generate",
+    defaultPrompt: "请说明三套候选方案的差异，以及为什么你不能批准自己的方案。",
+  },
+  audit_agent: {
+    name: "审核 Agent",
+    skill: "dispatch_audit_verify",
+    defaultPrompt: "请解释Candidate A为什么被否决，并列出你独立复算的硬约束。",
+  },
+  execution_agent: {
+    name: "执行 Agent",
+    skill: "execution_mapping",
+    defaultPrompt: "请说明你只能执行已审核且已审批方案的原因，以及幂等键如何使用。",
+  },
 };
 
 const agentByActor = {
@@ -63,6 +88,19 @@ async function request(url, options = {}) {
     throw new Error(body.detail || `请求失败 (${response.status})`);
   }
   return response.json();
+}
+
+function agentContextPrompt(message) {
+  const taskLine = state.task
+    ? `当前任务 ${state.task.task_id}/V${state.task.task_version}，状态 ${state.task.state}。`
+    : "当前尚未创建任务。";
+  const contextLine = state.context
+    ? `当前上下文 ${state.context.context_id}，context_hash=${state.context.context_hash}。`
+    : "当前尚未生成ContextSnapshot。";
+  const candidateLine = state.candidates.length
+    ? `候选方案：${state.candidates.map((item) => `${item.candidate_id}:${item.name}`).join("；")}。`
+    : "当前尚未生成候选方案。";
+  return `${taskLine}\n${contextLine}\n${candidateLine}\n用户问题：${message}`;
 }
 
 function toast(message) {
@@ -171,6 +209,7 @@ function renderTask() {
   $("#trace-id").textContent = state.run?.trace_id || "--";
   $("#evidence-status").textContent = task?.evidence_sha256 ? "已封存" : state.evidence ? "可查看" : "未生成";
   $("#open-evidence").disabled = !state.task;
+  renderAgentConsole();
 }
 
 function renderCandidates() {
@@ -221,6 +260,90 @@ function renderTrace() {
   $$(".trace-item").forEach((item) => {
     item.addEventListener("click", () => openTraceDetail(Number(item.dataset.index)));
   });
+}
+
+function renderAgentConsole() {
+  const info = agentInfo[state.selectedAgent];
+  const config = state.modelConfigs[state.selectedAgent];
+  $("#selected-agent-name").textContent = info.name;
+  $("#agent-model-status").textContent = config?.connection_status || "未测试";
+  $("#agent-chat-input").placeholder = info.defaultPrompt;
+  $$(".agent-chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.agent === state.selectedAgent);
+  });
+}
+
+function addAgentMessage(role, text) {
+  const message = document.createElement("article");
+  message.className = `agent-message ${role}`;
+  message.innerHTML = `<span>${role === "user" ? "用户" : agentInfo[state.selectedAgent].name}</span><p>${escapeHTML(text)}</p>`;
+  $("#agent-messages").append(message);
+  $("#agent-messages").scrollTop = $("#agent-messages").scrollHeight;
+}
+
+async function loadModelConfigs() {
+  try {
+    const manifest = await request("/api/agentteams/manifest");
+    state.modelConfigs = manifest.model_configs || {};
+    renderAgentConsole();
+  } catch {
+    state.modelConfigs = {};
+  }
+}
+
+function openModelDialog() {
+  const info = agentInfo[state.selectedAgent];
+  const config = state.modelConfigs[state.selectedAgent];
+  $("#model-title").textContent = `${info.name} 模型设置`;
+  $("#model-base-url").value = config?.base_url || "https://api.deepseek.com";
+  $("#model-api-key").value = "";
+  $("#model-name").value = config?.model || "deepseek-chat";
+  $("#model-connection-status").textContent = config?.connection_status || "未测试";
+  $("#model-error").hidden = true;
+  $("#model-dialog").showModal();
+}
+
+async function saveModelConfig() {
+  const body = {
+    base_url: $("#model-base-url").value,
+    api_key: $("#model-api-key").value || null,
+    model: $("#model-name").value,
+  };
+  const saved = await request(`/api/agents/${state.selectedAgent}/model`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  state.modelConfigs[state.selectedAgent] = saved;
+  renderAgentConsole();
+  toast("模型配置已保存在后端，前端不会回显完整 API Key");
+}
+
+async function testModelConnection() {
+  try {
+    await saveModelConfig();
+    const result = await request(`/api/agents/${state.selectedAgent}/model/test`, { method: "POST" });
+    $("#model-connection-status").textContent = result.success ? "正常" : "失败";
+    $("#model-error").hidden = result.success;
+    $("#model-error").textContent = result.error || "";
+    await loadModelConfigs();
+  } catch (error) {
+    $("#model-connection-status").textContent = "失败";
+    $("#model-error").hidden = false;
+    $("#model-error").textContent = error.message;
+  }
+}
+
+async function sendAgentChat(message) {
+  addAgentMessage("user", message);
+  try {
+    const result = await request(`/api/agents/${state.selectedAgent}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ message: agentContextPrompt(message) }),
+    });
+    addAgentMessage("agent", result.response);
+  } catch (error) {
+    addAgentMessage("agent", `无法连接模型：${error.message}。请先打开模型设置，保存并测试连接。`);
+  }
 }
 
 function openTraceDetail(index) {
@@ -358,6 +481,36 @@ function setupEvents() {
   $("#execute-b").addEventListener("click", executeCandidateB);
   $("#rollback-button").addEventListener("click", runRollback);
   $("#open-evidence").addEventListener("click", openEvidence);
+  $("#agent-model-button").addEventListener("click", openModelDialog);
+  $("#model-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await saveModelConfig();
+      $("#model-dialog").close();
+    } catch (error) {
+      $("#model-error").hidden = false;
+      $("#model-error").textContent = error.message;
+    }
+  });
+  $("#test-model-button").addEventListener("click", testModelConnection);
+  $("#agent-chat-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#agent-chat-input");
+    const message = input.value.trim() || agentInfo[state.selectedAgent].defaultPrompt;
+    input.value = "";
+    await sendAgentChat(message);
+  });
+  $$(".agent-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      state.selectedAgent = chip.dataset.agent;
+      $("#agent-messages").innerHTML = "";
+      addAgentMessage(
+        "agent",
+        `已切换到${agentInfo[state.selectedAgent].name}。我会带着当前task_id、task_version和context_hash回答。`,
+      );
+      renderAgentConsole();
+    });
+  });
   $("#pause-button").addEventListener("click", () => {
     state.paused = !state.paused;
     $("#pause-button").textContent = state.paused ? "继续播放" : "暂停播放";
@@ -402,4 +555,5 @@ async function restoreLatestDemo() {
 drawScenarioChart();
 setupCampus();
 setupEvents();
+loadModelConfigs();
 restoreLatestDemo();

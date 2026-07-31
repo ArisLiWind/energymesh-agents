@@ -10,7 +10,7 @@
         window.location.replace("http://127.0.0.1:8000/");
       }
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-demo2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-demo3" />
   </head>
   <body>
     <header class="topbar">
@@ -95,9 +95,32 @@
 
       <section class="panel trace-panel" aria-label="AgentTeams Trace">
         <div class="panel-heading">
-          <div><span>TRACE</span><strong>AgentTeams Trace</strong></div>
+          <div><span>AGENTS</span><strong>Agent 交流与 Trace</strong></div>
           <small id="trace-count">0 条事件</small>
         </div>
+        <section class="agent-console" aria-label="Agent 操作台">
+          <div class="agent-head">
+            <div><span>AGENT CONTROL</span><strong>右侧 Agent 聊天</strong></div>
+            <button id="agent-model-button" class="command-button ghost" type="button">模型设置</button>
+          </div>
+          <div id="agent-roster" class="agent-roster">
+            <button class="agent-chip active" type="button" data-agent="perception_agent"><span>感知</span><small>microgrid_context_ingest</small></button>
+            <button class="agent-chip" type="button" data-agent="dispatch_agent"><span>调度</span><small>dispatch_plan_generate</small></button>
+            <button class="agent-chip" type="button" data-agent="audit_agent"><span>审核</span><small>dispatch_audit_verify</small></button>
+            <button class="agent-chip" type="button" data-agent="execution_agent"><span>执行</span><small>execution_mapping</small></button>
+          </div>
+          <div class="agent-context">
+            <div><span>当前 Agent</span><strong id="selected-agent-name">感知 Agent</strong></div>
+            <div><span>连接状态</span><strong id="agent-model-status">未测试</strong></div>
+          </div>
+          <div id="agent-messages" class="agent-messages">
+            <p>选择 Agent 后，可围绕当前任务、上下文哈希、候选方案和审批边界直接提问。</p>
+          </div>
+          <form id="agent-chat-form" class="agent-composer">
+            <input id="agent-chat-input" placeholder="例如：请基于当前CTX解释你的下一步动作" autocomplete="off" />
+            <button class="command-button primary" type="submit">发送</button>
+          </form>
+        </section>
         <div id="trace-list" class="trace-list"><p class="empty">运行后展示真实后端事件记录。</p></div>
       </section>
 
@@ -126,7 +149,24 @@
       </form>
     </dialog>
 
+    <dialog id="model-dialog">
+      <form method="dialog" id="model-form">
+        <div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div>
+        <div class="model-body">
+          <label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label>
+          <label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label>
+          <label>模型名称<input id="model-name" value="deepseek-chat" required /></label>
+          <div class="model-actions">
+            <button id="test-model-button" class="command-button ghost" type="button">测试连接</button>
+            <button class="command-button primary" type="submit">保存</button>
+          </div>
+          <p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p>
+          <p id="model-error" class="model-error" hidden></p>
+        </div>
+      </form>
+    </dialog>
+
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-demo2"></script>
+    <script type="module" src="/static/app.js?v=20260731-demo3"></script>
   </body>
 </html>
