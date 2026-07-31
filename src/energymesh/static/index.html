@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-codex-surface2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-tutorial2" />
   </head>
   <body>
     <header class="topbar">
@@ -16,6 +16,7 @@
       <div class="site-heading"><span class="site-kicker">PARK CONTROL / AGENTTEAMS</span><strong>园区能源协同调度</strong></div>
       <div class="header-actions">
         <span class="runtime"><i></i><span><strong>Simulation</strong><small>生产写入关闭</small></span></span>
+        <button id="tutorial-button" class="command-button ghost" type="button">任务引导</button>
         <button id="pause-button" class="command-button ghost" type="button">暂停播放</button>
         <button id="rollback-button" class="command-button ghost" type="button">运行回滚场景</button>
         <button id="run-button" class="command-button primary" type="button"><span>▶</span>运行14:00复合变化</button>
@@ -45,7 +46,7 @@
           <span class="connection">连接状态：<b id="agent-model-status">未测试</b></span>
         </div>
         <div class="conversation-context">
-          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong>
+          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong><button id="view-context" class="context-button" type="button" disabled>查看上下文</button>
         </div>
         <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
         <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
@@ -59,7 +60,7 @@
         <div class="operations-scroll">
           <div class="signal-grid"><div><span>新增生产负荷</span><strong>+420 kW</strong></div><div><span>光伏实际偏差</span><strong>-18.6%</strong></div><div><span>变压器温度</span><strong>传感器冲突</strong></div><div><span>电价时段</span><strong>峰值</strong></div></div>
           <div class="chart-stack"><canvas id="scenario-chart" aria-label="96点负荷、光伏、电价曲线"></canvas><div class="event-line"><i></i><span>14:00</span></div></div>
-          <div class="decision-heading"><div><span>DISPATCH</span><strong>候选方案与审批</strong></div><small id="current-agent">--</small></div>
+          <div class="decision-heading"><div><span>DISPATCH</span><strong>候选方案与审批</strong></div><div class="decision-meta"><small id="current-agent">--</small><button id="review-candidates" class="mini-button" type="button" disabled>查看方案</button></div></div>
           <div id="candidate-list" class="candidate-list"><p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p></div>
           <div class="decision-actions"><button id="approve-b" class="command-button primary" type="button" disabled>批准 Candidate B</button><button id="execute-b" class="command-button ghost" type="button" disabled>执行获批方案</button></div>
           <div class="trace-heading"><div><span>TRACE</span><strong>协作记录</strong></div><small id="trace-count">0 条事件</small></div>
@@ -72,8 +73,11 @@
 
     <dialog id="trace-dialog"><form method="dialog"><div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div><pre id="trace-json"></pre></form></dialog>
     <dialog id="evidence-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div><pre id="evidence-json"></pre></form></dialog>
-    <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
+    <dialog id="context-dialog"><form method="dialog"><div class="dialog-heading"><div><span>CONTEXT SNAPSHOT</span><h2>感知上下文</h2></div><button class="icon-button" type="button" data-close-dialog="context-dialog">×</button></div><pre id="context-json"></pre></form></dialog>
+    <dialog id="candidate-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT VERDICT</span><h2 id="candidate-dialog-title">候选方案</h2></div><button class="icon-button" type="button" data-close-dialog="candidate-dialog">×</button></div><pre id="candidate-json"></pre></form></dialog>
+    <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="avatar-setting"><span>头像</span><button id="random-avatar-button" class="mini-button" type="button">随机更换</button></div><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
+    <div id="tutorial-overlay" class="tutorial-overlay" hidden aria-live="polite"><div id="tutorial-spotlight" class="tutorial-spotlight"></div><aside id="tutorial-card" class="tutorial-card"><div class="tutorial-progress"><span id="tutorial-step">任务引导</span><span id="tutorial-count">01 / 07</span></div><h2 id="tutorial-title">处理 14:00 复合异常</h2><p id="tutorial-story"></p><div class="tutorial-objective"><span>当前目标</span><strong id="tutorial-objective">创建一次安全重新调度任务</strong></div><p id="tutorial-action"></p><div class="tutorial-actions"><button id="tutorial-skip" class="mini-button" type="button">跳过引导</button><button id="tutorial-restart" class="mini-button" type="button" hidden>重新开始</button></div></aside></div>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-codex-surface2"></script>
+    <script type="module" src="/static/app.js?v=20260731-tutorial4"></script>
   </body>
 </html>

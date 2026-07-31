@@ -15,6 +15,8 @@ const state = {
   playbackTimer: null,
   paused: false,
   campus3d: null,
+  avatarSelection: {},
+  tutorial: { active: false, step: 0, target: null },
 };
 
 const agentInfo = {
@@ -53,6 +55,67 @@ const agentByActor = {
   "Execution Agent": "Execution Agent",
   Verification: "Verification",
 };
+
+const avatarOptions = Object.values(agentInfo).map((agent) => agent.avatar);
+
+const tutorialSteps = [
+  {
+    event: "run",
+    target: "#run-button",
+    title: "14:00 复合异常",
+    story: "生产负荷增加 420 kW，光伏低于预测 18.6%，变压器温度传感器冲突，同时进入峰值电价。原 EMS 基线不能再直接执行。",
+    objective: "创建一次安全重新调度任务",
+    action: "点击“运行14:00复合变化”。Team Leader 会创建真实任务，并把它交给感知 Agent。",
+  },
+  {
+    event: "context",
+    target: "#view-context",
+    title: "确认交接上下文",
+    story: "感知 Agent 已将 EMS、BMS、PCS、光伏、生产与传感器质量结果固化为同一个 ContextSnapshot，并使 V1 计划失效。",
+    objective: "查看 V2 的结构化上下文",
+    action: "点击“查看上下文”。调度、审核、审批和执行都必须引用同一个 context_hash。",
+  },
+  {
+    event: "review",
+    target: "#review-candidates",
+    title: "审查重新调度候选方案",
+    story: "Dispatch Agent 已用 V2 上下文生成经济优先、安全均衡和保供优先三套策略，但它没有批准自己的权限。",
+    objective: "进入候选方案审查",
+    action: "点击“查看方案”，定位到真实的审核结果。",
+  },
+  {
+    event: "candidate-a",
+    target: '[data-candidate-id="Candidate-A"]',
+    title: "理解审核门禁",
+    story: "Audit Agent 独立重算硬约束。经济优先方案的变压器负载率为 103.8%，超过 95% 安全上限，必须否决。",
+    objective: "查看被拒绝的 Candidate A",
+    action: "点击 Candidate A，查看它为什么不能进入人工审批。",
+  },
+  {
+    event: "approve",
+    target: "#approve-b",
+    title: "人工确认安全方案",
+    story: "Candidate B 通过了 SOC、PCS、变压器、并网和生产约束。高风险执行仍需由人绑定 task_version 与 context_hash 批准。",
+    objective: "批准安全均衡方案",
+    action: "点击“批准 Candidate B”。未通过审核的方案不会获得这个入口。",
+  },
+  {
+    event: "execute",
+    target: "#execute-b",
+    title: "映射模拟执行指令",
+    story: "Execution Agent 只能把已经审核并批准的方案映射为幂等模拟指令，不能自行改写目标或跳过门禁。",
+    objective: "执行获批方案",
+    action: "点击“执行获批方案”，进入确定性验证。",
+  },
+  {
+    event: "evidence",
+    target: "#open-evidence",
+    title: "封存可审计证据",
+    story: "验证完成后，状态迁移、交接、Skill 调用、审批与执行回执被纳入同一个证据包。",
+    objective: "查看任务证据",
+    action: "点击“查看任务证据”，完成本次安全调度任务。",
+  },
+];
 
 const stateLabels = {
   TASK_RECEIVED: "任务接收",
@@ -211,6 +274,8 @@ function renderTask() {
   $("#trace-id").textContent = state.run?.trace_id || "--";
   $("#evidence-status").textContent = task?.evidence_sha256 ? "已封存" : state.evidence ? "可查看" : "未生成";
   $("#open-evidence").disabled = !state.task;
+  $("#view-context").disabled = !state.context;
+  $("#review-candidates").disabled = !state.candidates.length;
   renderAgentConsole();
 }
 
@@ -224,7 +289,7 @@ function renderCandidates() {
     const rejected = verdict?.verdict === "rejected";
     const status = verdict ? (rejected ? "审核拒绝" : "审核通过") : "待审核";
     return `
-      <article class="candidate ${rejected ? "rejected" : "approved"}">
+      <button class="candidate ${rejected ? "rejected" : "approved"}" type="button" data-candidate-id="${escapeHTML(candidate.candidate_id)}">
         <div>
           <span>${escapeHTML(candidate.candidate_id)}｜${escapeHTML(candidate.name)}</span>
           <strong>${escapeHTML(candidate.priority)}</strong>
@@ -236,9 +301,12 @@ function renderCandidates() {
           <div><dt>变压器</dt><dd>${candidate.transformer_load_percent}%</dd></div>
         </dl>
         <p>${escapeHTML(status)}${verdict ? `：${escapeHTML(verdict.reason)}` : ""}</p>
-      </article>
+      </button>
     `;
   }).join("");
+  $$(".candidate").forEach((candidate) => {
+    candidate.addEventListener("click", () => openCandidateDetail(candidate.dataset.candidateId));
+  });
 }
 
 function traceText(event) {
@@ -269,12 +337,36 @@ function renderAgentConsole() {
   const config = state.modelConfigs[state.selectedAgent];
   $("#selected-agent-name").textContent = info.name;
   $("#selected-agent-skill").textContent = info.skill;
-  $("#conversation-avatar").src = info.avatar;
+  $("#conversation-avatar").src = state.avatarSelection[state.selectedAgent] || info.avatar;
   $("#agent-model-status").textContent = config?.connection_status || "未测试";
   $("#agent-chat-input").placeholder = info.defaultPrompt;
   $$(".agent-row").forEach((row) => {
     row.classList.toggle("active", row.dataset.agent === state.selectedAgent);
   });
+  $$(".agent-row").forEach((row) => {
+    const avatar = row.querySelector(".agent-avatar img");
+    if (avatar) avatar.src = state.avatarSelection[row.dataset.agent] || agentInfo[row.dataset.agent].avatar;
+  });
+}
+
+function restoreAvatarSelection() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("energymesh.agent-avatars") || "{}");
+    state.avatarSelection = Object.fromEntries(
+      Object.entries(saved).filter(([agentId, avatar]) => agentInfo[agentId] && avatarOptions.includes(avatar)),
+    );
+  } catch {
+    state.avatarSelection = {};
+  }
+}
+
+function randomizeAgentAvatar() {
+  const current = state.avatarSelection[state.selectedAgent] || agentInfo[state.selectedAgent].avatar;
+  const alternatives = avatarOptions.filter((avatar) => avatar !== current);
+  state.avatarSelection[state.selectedAgent] = alternatives[Math.floor(Math.random() * alternatives.length)];
+  window.localStorage.setItem("energymesh.agent-avatars", JSON.stringify(state.avatarSelection));
+  renderAgentConsole();
+  toast(`${agentInfo[state.selectedAgent].name} 的头像已随机更换`);
 }
 
 function addAgentMessage(role, text) {
@@ -368,6 +460,105 @@ function openTraceDetail(index) {
   $("#trace-dialog").showModal();
 }
 
+function openContext() {
+  if (!state.context) return;
+  $("#context-json").textContent = JSON.stringify(state.context, null, 2);
+  $("#context-dialog").showModal();
+}
+
+function openCandidateDetail(candidateId) {
+  const candidate = state.candidates.find((item) => item.candidate_id === candidateId);
+  const verdict = state.audit.find((item) => item.candidate_id === candidateId);
+  if (!candidate) return;
+  $("#candidate-dialog-title").textContent = `${candidate.candidate_id}｜${candidate.name}`;
+  $("#candidate-json").textContent = JSON.stringify({ candidate, audit_verdict: verdict || null }, null, 2);
+  $("#candidate-dialog").showModal();
+}
+
+function reviewCandidates() {
+  $("#candidate-list").scrollIntoView({ behavior: "smooth", block: "center" });
+  tutorialAdvance("review");
+}
+
+function clearTutorialTarget() {
+  if (state.tutorial.target) state.tutorial.target.classList.remove("tutorial-target");
+  state.tutorial.target = null;
+}
+
+function positionTutorial() {
+  const target = state.tutorial.target;
+  if (!target) return;
+  const spotlight = $("#tutorial-spotlight");
+  const card = $("#tutorial-card");
+  const rect = target.getBoundingClientRect();
+  spotlight.style.left = `${Math.max(4, rect.left - 6)}px`;
+  spotlight.style.top = `${Math.max(4, rect.top - 6)}px`;
+  spotlight.style.width = `${rect.width + 12}px`;
+  spotlight.style.height = `${rect.height + 12}px`;
+  const cardWidth = Math.min(360, window.innerWidth - 32);
+  const left = rect.left + rect.width / 2 > window.innerWidth / 2
+    ? 16
+    : window.innerWidth - cardWidth - 16;
+  card.style.left = `${left}px`;
+  card.style.top = "auto";
+  card.style.bottom = "78px";
+}
+
+function showTutorialCompletion() {
+  clearTutorialTarget();
+  $("#tutorial-overlay").hidden = false;
+  $("#tutorial-spotlight").style.cssText = "";
+  $("#tutorial-step").textContent = "任务完成";
+  $("#tutorial-count").textContent = "07 / 07";
+  $("#tutorial-title").textContent = "安全调度闭环已完成";
+  $("#tutorial-story").textContent = "你已亲手完成感知、上下文交接、候选方案审计、人工审批、模拟执行与证据封存。每一个关键节点均来自真实后端任务记录。";
+  $("#tutorial-objective").textContent = "查看证据并复盘本次任务";
+  $("#tutorial-action").textContent = "可重新开始本教程，或继续用 Agent 会话探索当前园区任务。";
+  $("#tutorial-restart").hidden = false;
+  document.body.classList.add("tutorial-active");
+  window.localStorage.setItem("energymesh.tutorial-completed", "true");
+}
+
+function showTutorialStep() {
+  const step = tutorialSteps[state.tutorial.step];
+  if (!step) return showTutorialCompletion();
+  const target = $(step.target);
+  if (!target) return;
+  clearTutorialTarget();
+  state.tutorial.target = target;
+  target.classList.add("tutorial-target");
+  $("#tutorial-overlay").hidden = false;
+  $("#tutorial-step").textContent = "安全调度任务";
+  $("#tutorial-count").textContent = `${String(state.tutorial.step + 1).padStart(2, "0")} / ${String(tutorialSteps.length).padStart(2, "0")}`;
+  $("#tutorial-title").textContent = step.title;
+  $("#tutorial-story").textContent = step.story;
+  $("#tutorial-objective").textContent = step.objective;
+  $("#tutorial-action").textContent = step.action;
+  $("#tutorial-restart").hidden = true;
+  document.body.classList.add("tutorial-active");
+  window.requestAnimationFrame(positionTutorial);
+}
+
+function beginTutorial() {
+  state.tutorial = { active: true, step: 0, target: null };
+  showTutorialStep();
+}
+
+function tutorialAdvance(event) {
+  if (!state.tutorial.active) return;
+  const step = tutorialSteps[state.tutorial.step];
+  if (!step || step.event !== event) return;
+  state.tutorial.step += 1;
+  showTutorialStep();
+}
+
+function stopTutorial() {
+  state.tutorial.active = false;
+  clearTutorialTarget();
+  $("#tutorial-overlay").hidden = true;
+  document.body.classList.remove("tutorial-active");
+}
+
 function startPlayback() {
   window.clearInterval(state.playbackTimer);
   state.playbackIndex = -1;
@@ -414,6 +605,7 @@ async function runDemo() {
     await refreshTask(state.run.task_id);
     startPlayback();
     toast("14:00复合变化任务已创建，等待人工审批");
+    tutorialAdvance("run");
   } catch (error) {
     toast(error.message);
   }
@@ -435,6 +627,7 @@ async function approveCandidateB() {
     await refreshTask(state.run.task_id);
     $("#execute-b").disabled = false;
     toast("Candidate B 已绑定上下文哈希完成审批");
+    tutorialAdvance("approve");
   } catch (error) {
     toast(error.message);
   }
@@ -455,6 +648,7 @@ async function executeCandidateB() {
     await refreshTask(state.run.task_id);
     startPlayback();
     toast("执行完成，偏差低于5%，证据已封存");
+    tutorialAdvance("execute");
   } catch (error) {
     toast(error.message);
   }
@@ -545,6 +739,12 @@ function setupEvents() {
   $("#execute-b").addEventListener("click", executeCandidateB);
   $("#rollback-button").addEventListener("click", runRollback);
   $("#open-evidence").addEventListener("click", openEvidence);
+  $("#view-context").addEventListener("click", openContext);
+  $("#review-candidates").addEventListener("click", reviewCandidates);
+  $("#tutorial-button").addEventListener("click", beginTutorial);
+  $("#tutorial-skip").addEventListener("click", stopTutorial);
+  $("#tutorial-restart").addEventListener("click", beginTutorial);
+  $("#random-avatar-button").addEventListener("click", randomizeAgentAvatar);
   $("#model-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -580,6 +780,9 @@ function setupEvents() {
   $$("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => $(`#${button.dataset.closeDialog}`).close());
   });
+  $("#context-dialog").addEventListener("close", () => tutorialAdvance("context"));
+  $("#candidate-dialog").addEventListener("close", () => tutorialAdvance("candidate-a"));
+  $("#evidence-dialog").addEventListener("close", () => tutorialAdvance("evidence"));
   $$(".segmented button").forEach((button) => {
     button.addEventListener("click", () => {
       $$(".segmented button").forEach((item) => item.classList.toggle("active", item === button));
@@ -590,6 +793,7 @@ function setupEvents() {
   window.addEventListener("resize", () => {
     drawScenarioChart();
     state.campus3d?.resize?.();
+    if (state.tutorial.active) positionTutorial();
   });
 }
 
@@ -626,6 +830,10 @@ async function restoreLatestDemo() {
 drawScenarioChart();
 setupCampus();
 setupPaneResizers();
+restoreAvatarSelection();
 setupEvents();
 loadModelConfigs();
 restoreLatestDemo();
+if (!window.localStorage.getItem("energymesh.tutorial-completed")) {
+  window.setTimeout(beginTutorial, 450);
+}
