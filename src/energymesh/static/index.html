@@ -4,24 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b121b" />
-    <title>EnergyMesh Agents · AgentTeams 调度演示控制台</title>
+    <title>EnergyMesh Agents · 园区电力协同工作台</title>
     <script>
-      if (window.location.protocol === "file:") {
-        window.location.replace("http://127.0.0.1:8000/");
-      }
+      if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-demo3" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-workspace1" />
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="EnergyMesh Agents 首页">
-        <span class="brand-mark" aria-hidden="true"><b>E</b><i>M</i></span>
-        <span><strong>EnergyMesh</strong><small>AGENTS</small></span>
-      </a>
-      <div class="site-heading">
-        <span class="site-kicker">PARK CONTROL / AGENTTEAMS DISPATCH DEMO</span>
-        <strong>14:00 复合变化 · 多 Agent 可审计调度闭环</strong>
-      </div>
+      <a class="brand" href="/" aria-label="EnergyMesh Agents 首页"><span class="brand-mark" aria-hidden="true"><b>E</b><i>M</i></span><span><strong>EnergyMesh</strong><small>AGENTS</small></span></a>
+      <div class="site-heading"><span class="site-kicker">PARK CONTROL / AGENTTEAMS</span><strong>园区能源协同调度</strong></div>
       <div class="header-actions">
         <span class="runtime"><i></i><span><strong>Simulation</strong><small>生产写入关闭</small></span></span>
         <button id="pause-button" class="command-button ghost" type="button">暂停播放</button>
@@ -30,143 +22,54 @@
       </div>
     </header>
 
-    <main class="demo-console">
-      <section class="panel scenario-panel" aria-label="现实场景">
-        <div class="panel-heading">
-          <div><span>SCENARIO</span><strong>现实场景</strong></div>
-          <small>Simulation · EMS/BMS/PCS/PV/Load/Tariff</small>
+    <main class="workspace">
+      <aside class="panel agent-sidebar" aria-label="协作对象">
+        <div class="panel-heading"><div><span>AGENTS</span><strong>选择会话</strong></div><small>4 个角色在线</small></div>
+        <p class="sidebar-copy">选择一个 Agent，围绕当前园区任务自然交流；点击头像配置该角色使用的模型。</p>
+        <button class="team-entry active" type="button" data-agent="perception_agent"><span class="team-symbol">✦</span><span><strong>自动协同</strong><small>Team Leader 编排 · 当前任务</small></span><i>4</i></button>
+        <div id="agent-roster" class="agent-roster">
+          <article class="agent-row active" data-agent="perception_agent"><button class="agent-avatar perception" type="button" data-open-model="perception_agent" aria-label="配置感知 Agent 模型">感</button><button class="agent-select" type="button" data-agent="perception_agent"><strong>感知 Agent</strong><small>数据核验 · 异常判断</small></button><i></i></article>
+          <article class="agent-row" data-agent="dispatch_agent"><button class="agent-avatar dispatch" type="button" data-open-model="dispatch_agent" aria-label="配置调度 Agent 模型">调</button><button class="agent-select" type="button" data-agent="dispatch_agent"><strong>调度 Agent</strong><small>策略代码 · 方案生成</small></button><i></i></article>
+          <article class="agent-row" data-agent="audit_agent"><button class="agent-avatar audit" type="button" data-open-model="audit_agent" aria-label="配置审核 Agent 模型">审</button><button class="agent-select" type="button" data-agent="audit_agent"><strong>审核 Agent</strong><small>约束审计 · 风险拦截</small></button><i></i></article>
+          <article class="agent-row" data-agent="execution_agent"><button class="agent-avatar execution" type="button" data-open-model="execution_agent" aria-label="配置执行 Agent 模型">执</button><button class="agent-select" type="button" data-agent="execution_agent"><strong>执行 Agent</strong><small>指令映射 · 结果核对</small></button><i></i></article>
         </div>
-        <div class="chart-stack">
-          <canvas id="scenario-chart" aria-label="96点负荷、光伏、电价曲线"></canvas>
-          <div class="event-line"><i></i><span>14:00</span></div>
+        <div class="sidebar-footer"><span>本地模拟</span><small>生产写入关闭</small></div>
+      </aside>
+
+      <section class="panel conversation-panel" aria-label="多智能体协作会话">
+        <div class="conversation-heading">
+          <div class="conversation-avatar" id="conversation-avatar">感</div>
+          <div><strong id="selected-agent-name">感知 Agent</strong><small id="selected-agent-skill">microgrid_context_ingest</small></div>
+          <span class="connection">连接状态：<b id="agent-model-status">未测试</b></span>
         </div>
-        <div class="signal-grid">
-          <div><span>新增生产负荷</span><strong>+420 kW</strong></div>
-          <div><span>光伏实际偏差</span><strong>-18.6%</strong></div>
-          <div><span>变压器温度</span><strong>传感器冲突</strong></div>
-          <div><span>电价时段</span><strong>峰值</strong></div>
+        <div class="conversation-context">
+          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong>
         </div>
-        <div class="systems">
-          <article><span>EMS</span><strong>baseline invalidated</strong></article>
-          <article><span>BMS</span><strong>SOC 55%</strong></article>
-          <article><span>PCS</span><strong>可控 320 kW</strong></article>
-          <article><span>变压器</span><strong>传感器冲突</strong></article>
-          <article><span>生产计划</span><strong>急单插入</strong></article>
+        <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
+        <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
+      </section>
+
+      <section class="panel operations-panel" aria-label="园区调度与审计">
+        <div class="panel-heading"><div><span>VISUAL</span><strong>园区能源数字沙盘</strong></div><div class="segmented"><button class="active" type="button" data-mode="demo">沙盘</button><button type="button" data-mode="audit">审计</button></div></div>
+        <div class="campus-shell"><div class="campus"><canvas id="campus-3d" aria-label="极简白色园区能源沙盘"></canvas><button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button><article class="asset" data-anchor="factory"><span>生产车间</span><strong>502 kW</strong></article><article class="asset" data-anchor="solar"><span>屋顶光伏</span><strong>335 kW</strong></article><article class="asset" data-anchor="storage"><span>储能系统</span><strong>SOC 55%</strong></article><article class="asset" data-anchor="grid"><span>公共电网</span><strong>475 kW</strong></article><article class="asset" data-anchor="charge"><span>充电设施</span><strong>65 kW</strong></article><article class="asset" data-anchor="compute"><span>算力中心</span><strong>243 kW</strong></article><div class="scene-hint">拖拽旋转 · 标签跟随建筑</div></div></div>
+        <div class="operations-scroll">
+          <div class="signal-grid"><div><span>新增生产负荷</span><strong>+420 kW</strong></div><div><span>光伏实际偏差</span><strong>-18.6%</strong></div><div><span>变压器温度</span><strong>传感器冲突</strong></div><div><span>电价时段</span><strong>峰值</strong></div></div>
+          <div class="chart-stack"><canvas id="scenario-chart" aria-label="96点负荷、光伏、电价曲线"></canvas><div class="event-line"><i></i><span>14:00</span></div></div>
+          <div class="decision-heading"><div><span>DISPATCH</span><strong>候选方案与审批</strong></div><small id="current-agent">--</small></div>
+          <div id="candidate-list" class="candidate-list"><p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p></div>
+          <div class="decision-actions"><button id="approve-b" class="command-button primary" type="button" disabled>批准 Candidate B</button><button id="execute-b" class="command-button ghost" type="button" disabled>执行获批方案</button></div>
+          <div class="trace-heading"><div><span>TRACE</span><strong>协作记录</strong></div><small id="trace-count">0 条事件</small></div>
+          <div id="trace-list" class="trace-list"><p class="empty">运行后展示真实后端事件记录。</p></div>
         </div>
       </section>
 
-      <section class="panel decision-panel" aria-label="当前任务与决策">
-        <div class="panel-heading">
-          <div><span>DECISION</span><strong>当前任务与决策</strong></div>
-          <div class="segmented"><button class="active" type="button" data-mode="demo">演示模式</button><button type="button" data-mode="audit">审计模式</button></div>
-        </div>
-        <div class="task-strip">
-          <div><span>Task ID</span><strong id="task-id">未创建</strong></div>
-          <div><span>Version</span><strong id="task-version">--</strong></div>
-          <div><span>Task State</span><strong id="task-state">IDLE</strong></div>
-          <div><span>Current Agent</span><strong id="current-agent">--</strong></div>
-          <div><span>Skill</span><strong id="current-skill">--</strong></div>
-        </div>
-        <div class="baseline">
-          <div><span>EMS 基线</span><strong>14:00 前计划已失效</strong></div>
-          <p>基线未包含 +420 kW 生产插单，也未处理光伏偏差和变压器传感器冲突。Team Leader 只能维护状态和编排，不能直接生成方案或下发指令。</p>
-        </div>
-        <div id="candidate-list" class="candidate-list">
-          <p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p>
-        </div>
-        <div class="decision-actions">
-          <button id="approve-b" class="command-button primary" type="button" disabled>批准 Candidate B</button>
-          <button id="execute-b" class="command-button ghost" type="button" disabled>执行获批方案</button>
-        </div>
-        <div class="campus-shell">
-          <div class="campus">
-            <canvas id="campus-3d" aria-label="极简白色园区能源沙盘"></canvas>
-            <button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button>
-            <article class="asset" data-anchor="factory"><span>生产车间</span><strong>502 kW</strong></article>
-            <article class="asset" data-anchor="solar"><span>屋顶光伏</span><strong>335 kW</strong></article>
-            <article class="asset" data-anchor="storage"><span>储能系统</span><strong>SOC 55%</strong></article>
-            <article class="asset" data-anchor="grid"><span>公共电网</span><strong>475 kW</strong></article>
-            <article class="asset" data-anchor="charge"><span>充电设施</span><strong>65 kW</strong></article>
-            <article class="asset" data-anchor="compute"><span>算力中心</span><strong>243 kW</strong></article>
-            <div class="scene-hint">拖拽旋转 · 标签跟随建筑</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel trace-panel" aria-label="AgentTeams Trace">
-        <div class="panel-heading">
-          <div><span>AGENTS</span><strong>Agent 交流与 Trace</strong></div>
-          <small id="trace-count">0 条事件</small>
-        </div>
-        <section class="agent-console" aria-label="Agent 操作台">
-          <div class="agent-head">
-            <div><span>AGENT CONTROL</span><strong>右侧 Agent 聊天</strong></div>
-            <button id="agent-model-button" class="command-button ghost" type="button">模型设置</button>
-          </div>
-          <div id="agent-roster" class="agent-roster">
-            <button class="agent-chip active" type="button" data-agent="perception_agent"><span>感知</span><small>microgrid_context_ingest</small></button>
-            <button class="agent-chip" type="button" data-agent="dispatch_agent"><span>调度</span><small>dispatch_plan_generate</small></button>
-            <button class="agent-chip" type="button" data-agent="audit_agent"><span>审核</span><small>dispatch_audit_verify</small></button>
-            <button class="agent-chip" type="button" data-agent="execution_agent"><span>执行</span><small>execution_mapping</small></button>
-          </div>
-          <div class="agent-context">
-            <div><span>当前 Agent</span><strong id="selected-agent-name">感知 Agent</strong></div>
-            <div><span>连接状态</span><strong id="agent-model-status">未测试</strong></div>
-          </div>
-          <div id="agent-messages" class="agent-messages">
-            <p>选择 Agent 后，可围绕当前任务、上下文哈希、候选方案和审批边界直接提问。</p>
-          </div>
-          <form id="agent-chat-form" class="agent-composer">
-            <input id="agent-chat-input" placeholder="例如：请基于当前CTX解释你的下一步动作" autocomplete="off" />
-            <button class="command-button primary" type="submit">发送</button>
-          </form>
-        </section>
-        <div id="trace-list" class="trace-list"><p class="empty">运行后展示真实后端事件记录。</p></div>
-      </section>
-
-      <footer class="evidence-bar">
-        <div><span>Task State</span><strong id="evidence-state">IDLE</strong></div>
-        <div><span>Task Version</span><strong id="evidence-version">--</strong></div>
-        <div><span>Context ID</span><strong id="context-id">--</strong></div>
-        <div><span>Context Hash</span><strong id="context-hash">--</strong></div>
-        <div><span>Trace ID</span><strong id="trace-id">--</strong></div>
-        <div><span>Evidence</span><strong id="evidence-status">未生成</strong></div>
-        <button id="open-evidence" class="command-button ghost" type="button" disabled>查看任务证据</button>
-      </footer>
+      <footer class="evidence-bar"><div><span>Task State</span><strong id="evidence-state">IDLE</strong></div><div><span>Context ID</span><strong id="context-id">--</strong></div><div><span>Context Hash</span><strong id="context-hash">--</strong></div><div><span>Trace ID</span><strong id="trace-id">--</strong></div><div><span>Evidence</span><strong id="evidence-status">未生成</strong></div><button id="open-evidence" class="command-button ghost" type="button" disabled>查看任务证据</button></footer>
     </main>
 
-    <dialog id="trace-dialog">
-      <form method="dialog">
-        <div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div>
-        <pre id="trace-json"></pre>
-      </form>
-    </dialog>
-
-    <dialog id="evidence-dialog">
-      <form method="dialog">
-        <div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div>
-        <pre id="evidence-json"></pre>
-      </form>
-    </dialog>
-
-    <dialog id="model-dialog">
-      <form method="dialog" id="model-form">
-        <div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div>
-        <div class="model-body">
-          <label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label>
-          <label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label>
-          <label>模型名称<input id="model-name" value="deepseek-chat" required /></label>
-          <div class="model-actions">
-            <button id="test-model-button" class="command-button ghost" type="button">测试连接</button>
-            <button class="command-button primary" type="submit">保存</button>
-          </div>
-          <p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p>
-          <p id="model-error" class="model-error" hidden></p>
-        </div>
-      </form>
-    </dialog>
-
+    <dialog id="trace-dialog"><form method="dialog"><div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div><pre id="trace-json"></pre></form></dialog>
+    <dialog id="evidence-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div><pre id="evidence-json"></pre></form></dialog>
+    <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-demo3"></script>
+    <script type="module" src="/static/app.js?v=20260731-workspace1"></script>
   </body>
 </html>

@@ -201,9 +201,7 @@ function renderTask() {
   $("#task-state").textContent = task ? (stateLabels[task.state] || task.state) : "IDLE";
   $("#task-state").className = statusClass(task?.state);
   $("#current-agent").textContent = active ? agentByActor[active.actor] || active.actor : "--";
-  $("#current-skill").textContent = active?.skill_name || "--";
   $("#evidence-state").textContent = task ? task.state : "IDLE";
-  $("#evidence-version").textContent = task ? `V${task.task_version}` : "--";
   $("#context-id").textContent = context?.context_id || "--";
   $("#context-hash").textContent = context?.context_hash ? `${context.context_hash.slice(0, 16)}...` : "--";
   $("#trace-id").textContent = state.run?.trace_id || "--";
@@ -266,10 +264,12 @@ function renderAgentConsole() {
   const info = agentInfo[state.selectedAgent];
   const config = state.modelConfigs[state.selectedAgent];
   $("#selected-agent-name").textContent = info.name;
+  $("#selected-agent-skill").textContent = info.skill;
+  $("#conversation-avatar").textContent = info.name.slice(0, 1);
   $("#agent-model-status").textContent = config?.connection_status || "未测试";
   $("#agent-chat-input").placeholder = info.defaultPrompt;
-  $$(".agent-chip").forEach((chip) => {
-    chip.classList.toggle("active", chip.dataset.agent === state.selectedAgent);
+  $$(".agent-row").forEach((row) => {
+    row.classList.toggle("active", row.dataset.agent === state.selectedAgent);
   });
 }
 
@@ -301,6 +301,16 @@ function openModelDialog() {
   $("#model-connection-status").textContent = config?.connection_status || "未测试";
   $("#model-error").hidden = true;
   $("#model-dialog").showModal();
+}
+
+function selectAgent(agentId) {
+  state.selectedAgent = agentId;
+  $("#agent-messages").innerHTML = "";
+  addAgentMessage(
+    "agent",
+    `已切换到${agentInfo[agentId].name}。我会带着当前 task_id、task_version 和 context_hash 回答，也会说明我能做什么和不能越过的边界。`,
+  );
+  renderAgentConsole();
 }
 
 async function saveModelConfig() {
@@ -481,7 +491,6 @@ function setupEvents() {
   $("#execute-b").addEventListener("click", executeCandidateB);
   $("#rollback-button").addEventListener("click", runRollback);
   $("#open-evidence").addEventListener("click", openEvidence);
-  $("#agent-model-button").addEventListener("click", openModelDialog);
   $("#model-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -500,15 +509,14 @@ function setupEvents() {
     input.value = "";
     await sendAgentChat(message);
   });
-  $$(".agent-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      state.selectedAgent = chip.dataset.agent;
-      $("#agent-messages").innerHTML = "";
-      addAgentMessage(
-        "agent",
-        `已切换到${agentInfo[state.selectedAgent].name}。我会带着当前task_id、task_version和context_hash回答。`,
-      );
+  $$(".agent-select").forEach((button) => {
+    button.addEventListener("click", () => selectAgent(button.dataset.agent));
+  });
+  $$(".agent-avatar").forEach((avatar) => {
+    avatar.addEventListener("click", () => {
+      state.selectedAgent = avatar.dataset.openModel;
       renderAgentConsole();
+      openModelDialog();
     });
   });
   $("#pause-button").addEventListener("click", () => {
@@ -545,10 +553,19 @@ async function restoreLatestDemo() {
     state.playbackIndex = state.events.length - 1;
     renderTask();
     renderTrace();
+    if (!$("#agent-messages .agent-message")) {
+      addAgentMessage(
+        "agent",
+        "当前任务已恢复。你可以询问我发现的异常、候选策略、审核结论，或要求我说明下一步应交给哪个角色。",
+      );
+    }
   } catch {
     renderTask();
     renderCandidates();
     renderTrace();
+    if (!$("#agent-messages .agent-message")) {
+      addAgentMessage("agent", "我已就绪。运行14:00复合变化后，我会基于同一任务上下文参与协作。");
+    }
   }
 }
 
