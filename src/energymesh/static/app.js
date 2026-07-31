@@ -521,12 +521,21 @@ function positionTutorial() {
   spotlight.style.width = `${rect.width + 12}px`;
   spotlight.style.height = `${rect.height + 12}px`;
   const cardWidth = Math.min(360, window.innerWidth - 32);
-  const left = rect.left + rect.width / 2 > window.innerWidth / 2
-    ? 16
-    : window.innerWidth - cardWidth - 16;
-  card.style.left = `${left}px`;
-  card.style.top = "auto";
-  card.style.bottom = "78px";
+  const cardHeight = card.offsetHeight;
+  const gap = 16;
+  const edge = 16;
+  const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
+  const placements = [
+    { left: rect.left, top: rect.bottom + gap },
+    { left: rect.right + gap, top: rect.top },
+    { left: rect.left - cardWidth - gap, top: rect.top },
+    { left: rect.left, top: rect.top - cardHeight - gap },
+  ];
+  const placement = placements.find(({ left, top }) => left >= edge && top >= edge && left + cardWidth <= window.innerWidth - edge && top + cardHeight <= window.innerHeight - edge)
+    || placements[0];
+  card.style.left = `${clamp(placement.left, edge, window.innerWidth - cardWidth - edge)}px`;
+  card.style.top = `${clamp(placement.top, edge, window.innerHeight - cardHeight - edge)}px`;
+  card.style.bottom = "auto";
 }
 
 function showTutorialCompletion() {

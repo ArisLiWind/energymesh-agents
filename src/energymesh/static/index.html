@@ -43,10 +43,10 @@
         <div class="conversation-heading">
           <div class="conversation-avatar"><img id="conversation-avatar" src="/static/avatars/perception.svg" alt="" /></div>
           <div><strong id="selected-agent-name">感知 Agent</strong><small id="selected-agent-skill">microgrid_context_ingest</small></div>
-          <span class="connection">连接状态：<b id="agent-model-status">未测试</b></span>
+          <div class="conversation-actions"><span class="connection">连接状态：<b id="agent-model-status">未测试</b></span><button id="view-context" class="context-button" type="button" disabled>查看感知快照</button></div>
         </div>
         <div class="conversation-context">
-          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong><button id="view-context" class="context-button" type="button" disabled>查看感知快照</button>
+          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong>
         </div>
         <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
         <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
