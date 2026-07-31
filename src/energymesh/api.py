@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
 from energymesh.audit import IndependentSafetyAuditor
+from energymesh.compound_demo import CompoundChangeDemo, DemoWorkflowError
 from energymesh.config import Settings
 from energymesh.demo import apply_operational_change, load_demo_scenario
 from energymesh.external_data import ExternalDataSimulator
@@ -18,7 +19,11 @@ from energymesh.models import (
     AgentModelConfigPublic,
     AgentModelConfigRequest,
     AgentModelTestResponse,
+    ApprovalDecisionRequest,
     ApprovalRequest,
+    DemoRunResponse,
+    ExecuteRequest,
+    ExecutionReceipt,
     ExternalDataSnapshot,
     ExternalDispatchRequest,
     ReoptimizationRequest,
@@ -29,13 +34,14 @@ from energymesh.optimizer import DispatchOptimizer
 from energymesh.orchestrator import EnergyMeshOrchestrator, WorkflowError
 from energymesh.perception import PerceptionAgent
 from energymesh.simulator import SimulationExecutor
-from energymesh.storage import EvidenceStore
+from energymesh.storage import EvidenceStore, PayloadRow, PayloadRows
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or Settings.from_env()
     active_settings.assert_safe_runtime()
     store = EvidenceStore(active_settings.db_path, active_settings.evidence_dir)
+    compound_demo = CompoundChangeDemo(store)
     orchestrator = EnergyMeshOrchestrator(
         perception=PerceptionAgent(),
         optimizer=DispatchOptimizer(),
@@ -53,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = active_settings
     app.state.store = store
+    app.state.compound_demo = compound_demo
     app.state.orchestrator = orchestrator
     app.state.scenario = scenario
     app.state.external_data = external_data
@@ -62,6 +69,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_store(request: Request) -> EvidenceStore:
         return cast(EvidenceStore, request.app.state.store)
+
+    def get_compound_demo(request: Request) -> CompoundChangeDemo:
+        return cast(CompoundChangeDemo, request.app.state.compound_demo)
 
     def get_scenario(request: Request) -> Scenario:
         return cast(Scenario, request.app.state.scenario)
@@ -172,14 +182,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except WorkflowError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-    @app.post("/api/demo/run", response_model=TaskRecord, status_code=201)
+    @app.post("/api/demo/run", response_model=DemoRunResponse, status_code=201)
     def run_demo(
-        workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
-        active_scenario: Annotated[Scenario, Depends(get_scenario)],
-    ) -> TaskRecord:
+        demo: Annotated[CompoundChangeDemo, Depends(get_compound_demo)],
+    ) -> DemoRunResponse:
         try:
-            return workflow.run(active_scenario)
-        except WorkflowError as error:
+            return demo.run()
+        except DemoWorkflowError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/api/demo/run-rollback", response_model=DemoRunResponse, status_code=201)
+    def run_demo_rollback(
+        demo: Annotated[CompoundChangeDemo, Depends(get_compound_demo)],
+    ) -> DemoRunResponse:
+        try:
+            return demo.run_rollback()
+        except DemoWorkflowError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/api/tasks/{task_id}/approval", response_model=TaskRecord)
@@ -191,6 +209,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             return workflow.decide(task_id, body)
         except WorkflowError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+
+    @app.post("/api/tasks/{task_id}/approve")
+    def approve_demo_task(
+        task_id: str,
+        body: ApprovalDecisionRequest,
+        demo: Annotated[CompoundChangeDemo, Depends(get_compound_demo)],
+    ) -> dict[str, object]:
+        try:
+            return demo.approve(task_id, body).model_dump(mode="json")
+        except DemoWorkflowError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+
+    @app.post("/api/tasks/{task_id}/execute", response_model=ExecutionReceipt)
+    def execute_demo_task(
+        task_id: str,
+        body: ExecuteRequest,
+        demo: Annotated[CompoundChangeDemo, Depends(get_compound_demo)],
+    ) -> ExecutionReceipt:
+        try:
+            return demo.execute(task_id, body)
+        except DemoWorkflowError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409
             raise HTTPException(status_code=status, detail=message) from error
@@ -235,6 +279,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return task
+
+    @app.get("/api/tasks/{task_id}/events")
+    def get_task_events(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> PayloadRows:
+        if evidence_store.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        return evidence_store.list_task_events(task_id)
+
+    @app.get("/api/tasks/{task_id}/context")
+    def get_task_context(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> PayloadRow:
+        context = evidence_store.get_context_snapshot(task_id)
+        if context is None:
+            raise HTTPException(status_code=404, detail="context snapshot not found")
+        return context
+
+    @app.get("/api/tasks/{task_id}/candidates")
+    def get_task_candidates(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> PayloadRows:
+        if evidence_store.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        return evidence_store.list_candidate_plans(task_id)
+
+    @app.get("/api/tasks/{task_id}/audit")
+    def get_task_audit(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> PayloadRows:
+        if evidence_store.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        return evidence_store.list_audit_verdicts(task_id)
+
+    @app.get("/api/tasks/{task_id}/evidence")
+    def get_task_evidence(
+        task_id: str,
+        demo: Annotated[CompoundChangeDemo, Depends(get_compound_demo)],
+    ) -> dict[str, object]:
+        try:
+            return demo.evidence(task_id)
+        except (DemoWorkflowError, KeyError) as error:
+            raise HTTPException(status_code=404, detail="task not found") from error
 
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static_dir), name="static")

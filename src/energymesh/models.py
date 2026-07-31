@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -8,18 +8,26 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TaskState(StrEnum):
-    RECEIVED = "received"
-    CONTEXT_READY = "context_ready"
-    PLANS_GENERATED = "plans_generated"
-    AUDITED = "audited"
-    AWAITING_APPROVAL = "awaiting_approval"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    EXECUTING = "executing"
-    COMPLETED = "completed"
-    SAFE_FALLBACK = "safe_fallback"
-    HUMAN_HANDOFF = "human_handoff"
-    FAILED = "failed"
+    TASK_RECEIVED = "TASK_RECEIVED"
+    SENSING = "SENSING"
+    CONTEXT_VALIDATED = "CONTEXT_VALIDATED"
+    REPLANNING_REQUIRED = "REPLANNING_REQUIRED"
+    PLANNING = "PLANNING"
+    AUDITING = "AUDITING"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+    ROLLBACK = "ROLLBACK"
+    FAILED = "FAILED"
+    RECEIVED = "TASK_RECEIVED"
+    CONTEXT_READY = "CONTEXT_VALIDATED"
+    PLANS_GENERATED = "PLANNING"
+    AUDITED = "AUDITING"
+    APPROVED = "AWAITING_APPROVAL"
+    SAFE_FALLBACK = "ROLLBACK"
+    HUMAN_HANDOFF = "FAILED"
 
 
 class AuditDecision(StrEnum):
@@ -233,6 +241,10 @@ class TaskRecord(BaseModel):
     scenario_id: str
     scenario_snapshot: Scenario
     state: TaskState
+    task_version: int = 1
+    trace_id: str | None = None
+    context_id: str | None = None
+    context_hash: str | None = None
     created_at: datetime
     updated_at: datetime
     trigger: str = "day_ahead_schedule"
@@ -253,6 +265,193 @@ class ApprovalRequest(BaseModel):
     approved: bool
     approver: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=2, max_length=500)
+
+
+class DemoRunResponse(BaseModel):
+    task_id: str
+    task_version: int
+    trace_id: str
+    state: TaskState
+    context_id: str | None = None
+    context_hash: str | None = None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    candidate_id: str
+    task_version: int
+    context_hash: str
+    approved: bool = True
+    approver: str = Field(default="human-operator", min_length=2, max_length=80)
+    reason: str = Field(default="人工确认审核通过方案可执行", min_length=2, max_length=500)
+
+
+class ExecuteRequest(BaseModel):
+    candidate_id: str
+    task_version: int
+    context_hash: str
+    idempotency_key: str = Field(min_length=8, max_length=160)
+    force_deviation_percent: float | None = Field(default=None, ge=0, le=100)
+
+
+class ContextSnapshot(BaseModel):
+    context_id: str
+    task_id: str
+    task_version: int
+    timestamp: datetime
+    changes: dict[str, Any]
+    data_quality: dict[str, str]
+    previous_plan_status: str
+    automation_permission: str
+    constraint_set_version: str
+    context_hash: str
+
+
+class TaskEvent(BaseModel):
+    event_id: str
+    task_id: str
+    task_version: int
+    from_state: TaskState | None = None
+    to_state: TaskState
+    actor: str
+    timestamp: datetime
+    reason: str
+    trace_id: str
+    input_reference: str | None = None
+    output_reference: str | None = None
+    skill_name: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentHandoff(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    from_agent: str
+    to_agent: str
+    status: str
+    input_reference: str
+    output_reference: str
+    skill_name: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SkillInvocation(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    agent: str
+    skill_name: str
+    status: str
+    input_reference: str
+    output_reference: str
+    started_at: datetime
+    ended_at: datetime
+    duration_ms: int
+    error: str | None = None
+
+
+class CandidatePlanRecord(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    context_id: str
+    context_hash: str
+    candidate_id: str
+    name: str
+    priority: str
+    status: str
+    cost_yuan: float
+    max_power_kw: float
+    soc_min_percent: float
+    soc_max_percent: float
+    transformer_load_percent: float
+    reserve_capacity_kwh: float
+    actions: list[dict[str, Any]]
+    created_at: datetime
+
+
+class AuditVerdictRecord(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    candidate_id: str
+    context_hash: str
+    verdict: str
+    reason: str
+    transformer_load_percent: float
+    safety_limit_percent: float
+    checks: dict[str, Any]
+    created_at: datetime
+
+
+class ApprovalRecordV2(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    candidate_id: str
+    context_hash: str
+    approved: bool
+    valid: bool
+    approver: str
+    reason: str
+    created_at: datetime
+
+
+class ExecutionCommandRecord(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    candidate_id: str
+    idempotency_key: str
+    target_system: str
+    resource_id: str
+    command: str
+    value: float
+    unit: str
+    status: str
+    created_at: datetime
+
+
+class ExecutionReceipt(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    candidate_id: str
+    idempotency_key: str
+    status: str
+    command_count: int
+    simulated: bool
+    created_at: datetime
+
+
+class VerificationResult(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    candidate_id: str
+    status: str
+    max_deviation_percent: float
+    evidence_hash: str
+    created_at: datetime
+
+
+class RollbackRecord(BaseModel):
+    id: str
+    task_id: str
+    task_version: int
+    trace_id: str
+    reason: str
+    baseline_restored: bool
+    fallback_policy: dict[str, Any]
+    created_at: datetime
 
 
 class ReoptimizationRequest(BaseModel):

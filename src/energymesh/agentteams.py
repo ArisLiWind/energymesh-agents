@@ -160,14 +160,20 @@ def build_agentteams_manifest(
             ),
             AgentTeamsSkillSpec(
                 name="dispatch_audit_verify",
-                description="静态审查策略脚本，沙箱回放输出，并独立复算 SOC、功率、变压器、并网、生产计划和收益约束。",
+                description=(
+                    "静态审查策略脚本，沙箱回放输出，并独立复算 SOC、功率、"
+                    "变压器、并网、生产计划和收益约束。"
+                ),
                 local_module="energymesh.audit.IndependentSafetyAuditor",
                 tool_contract="TaskRecord.audits",
                 safety_boundary="不可验证时默认不放行；安全优先于经济收益。",
             ),
             AgentTeamsSkillSpec(
                 name="execution_mapping",
-                description="将获批策略脚本的确定性输出映射为 EMS、PCS、负荷控制系统的结构化幂等指令。",
+                description=(
+                    "将获批策略脚本的确定性输出映射为 EMS、PCS、"
+                    "负荷控制系统的结构化幂等指令。"
+                ),
                 local_module="energymesh.simulator.SimulationExecutor",
                 tool_contract="POST /api/tasks/{task_id}/approval",
                 safety_boundary="当前 MVP 仅本地模拟，真实设备接触数必须为 0。",

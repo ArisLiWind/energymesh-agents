@@ -4,13 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b121b" />
-    <title>EnergyMesh Agents · 园区能源控制台</title>
+    <title>EnergyMesh Agents · AgentTeams 调度演示控制台</title>
     <script>
       if (window.location.protocol === "file:") {
         window.location.replace("http://127.0.0.1:8000/");
       }
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260729a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260731-demo2" />
   </head>
   <body>
     <header class="topbar">
@@ -19,172 +19,114 @@
         <span><strong>EnergyMesh</strong><small>AGENTS</small></span>
       </a>
       <div class="site-heading">
-        <span class="site-kicker">PARK CONTROL / AGENTTEAMS SIMULATION</span>
-        <strong id="scenario-name">正在载入园区</strong>
+        <span class="site-kicker">PARK CONTROL / AGENTTEAMS DISPATCH DEMO</span>
+        <strong>14:00 复合变化 · 多 Agent 可审计调度闭环</strong>
       </div>
       <div class="header-actions">
-        <span class="runtime"><i></i><span><strong>AgentTeams 沙盘</strong><small>生产写入关闭</small></span></span>
-        <button id="reoptimize-button" class="command-button ghost" type="button" hidden>注入变化</button>
-        <button id="run-button" class="command-button primary" type="button"><span>▶</span>运行调度</button>
+        <span class="runtime"><i></i><span><strong>Simulation</strong><small>生产写入关闭</small></span></span>
+        <button id="pause-button" class="command-button ghost" type="button">暂停播放</button>
+        <button id="rollback-button" class="command-button ghost" type="button">运行回滚场景</button>
+        <button id="run-button" class="command-button primary" type="button"><span>▶</span>运行14:00复合变化</button>
       </div>
     </header>
 
-    <main class="app-shell">
-      <aside class="session-sidebar" aria-label="Agent 会话列表">
-        <div class="sidebar-heading">
-          <span class="panel-index">AGENTS</span>
-          <strong>选择会话</strong>
-          <small>像选择联系人一样切换 Agent</small>
+    <main class="demo-console">
+      <section class="panel scenario-panel" aria-label="现实场景">
+        <div class="panel-heading">
+          <div><span>SCENARIO</span><strong>现实场景</strong></div>
+          <small>Simulation · EMS/BMS/PCS/PV/Load/Tariff</small>
         </div>
-        <button id="collaboration-mode" class="mode-button active" type="button" title="恢复多智能体自动协同">
-          <span>✣</span><strong>自动协同</strong><small>四Agent共享上下文</small>
-        </button>
-        <div class="agents-strip" id="agents-strip">
-          <div class="agent-card" role="button" tabindex="0" data-agent="perception"><span class="agent-avatar avatar-perception" data-agent-settings="perception" role="button" tabindex="0" title="模型设置" aria-label="感知Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>感知Agent</strong><small>数据核验 · 异常判断</small></span><i></i></div>
-          <div class="agent-card" role="button" tabindex="0" data-agent="dispatch"><span class="agent-avatar avatar-dispatch" data-agent-settings="dispatch" role="button" tabindex="0" title="模型设置" aria-label="调度Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>调度Agent</strong><small>策略脚本 · 成本权衡</small></span><i></i></div>
-          <div class="agent-card" role="button" tabindex="0" data-agent="audit"><span class="agent-avatar avatar-audit" data-agent-settings="audit" role="button" tabindex="0" title="模型设置" aria-label="审核Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>审核Agent</strong><small>约束审计 · 风险拦截</small></span><i></i></div>
-          <div class="agent-card" role="button" tabindex="0" data-agent="execute"><span class="agent-avatar avatar-execute" data-agent-settings="execute" role="button" tabindex="0" title="模型设置" aria-label="执行Agent模型设置"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span><span><strong>执行Agent</strong><small>模拟下发 · 结果核对</small></span><i></i></div>
+        <div class="chart-stack">
+          <canvas id="scenario-chart" aria-label="96点负荷、光伏、电价曲线"></canvas>
+          <div class="event-line"><i></i><span>14:00</span></div>
         </div>
-        <div class="sidebar-status">
-          <span id="task-state" class="status-pill idle">待运行</span>
-          <small>本地模拟 · 生产写入关闭</small>
+        <div class="signal-grid">
+          <div><span>新增生产负荷</span><strong>+420 kW</strong></div>
+          <div><span>光伏实际偏差</span><strong>-18.6%</strong></div>
+          <div><span>变压器温度</span><strong>传感器冲突</strong></div>
+          <div><span>电价时段</span><strong>峰值</strong></div>
         </div>
-      </aside>
-      <div class="splitter" data-resize="sidebar" role="separator" aria-orientation="vertical" aria-label="调整会话列表宽度"></div>
-
-      <section class="conversation">
-        <div class="conversation-heading">
-          <div><span id="conversation-icon">✣</span><strong id="conversation-title">多智能体协同会话</strong><small id="conversation-subtitle">四类Agent共享上下文并自动协商</small></div>
-          <button id="clear-selection" class="text-button" type="button" hidden>退出单聊</button>
+        <div class="systems">
+          <article><span>EMS</span><strong>baseline invalidated</strong></article>
+          <article><span>BMS</span><strong>SOC 55%</strong></article>
+          <article><span>PCS</span><strong>可控 320 kW</strong></article>
+          <article><span>变压器</span><strong>传感器冲突</strong></article>
+          <article><span>生产计划</span><strong>急单插入</strong></article>
         </div>
-        <div id="messages" class="messages" aria-live="polite"></div>
-        <form id="chat-form" class="chat-composer">
-          <input id="chat-input" aria-label="对话消息" placeholder="描述你的调度目标或询问当前决策..." autocomplete="off" />
-          <button type="submit" title="发送消息" aria-label="发送消息">➤</button>
-        </form>
       </section>
-      <div class="splitter" data-resize="operations" role="separator" aria-orientation="vertical" aria-label="调整可视化面板宽度"></div>
 
-      <aside class="operations-panel">
-        <div class="ops-tabs" aria-label="可视化管理面板">
-          <button class="panel-tab active" type="button" data-panel="scene">沙盘</button>
-          <button class="panel-tab" type="button" data-panel="audit">审计</button>
+      <section class="panel decision-panel" aria-label="当前任务与决策">
+        <div class="panel-heading">
+          <div><span>DECISION</span><strong>当前任务与决策</strong></div>
+          <div class="segmented"><button class="active" type="button" data-mode="demo">演示模式</button><button type="button" data-mode="audit">审计模式</button></div>
         </div>
-
-        <section class="scene-panel ops-view ops-card" data-view="scene" data-card="scene">
-          <div class="panel-bar" data-drag-handle aria-label="拖移沙盘卡片">
-            <div>
-              <span class="panel-index">VISUAL</span>
-              <strong>园区能源数字沙盘</strong>
-              <small id="scenario-description">光伏、储能、负荷与电网协同状态</small>
-            </div>
-            <div class="scene-status"><span id="data-source-status"><i></i>等待外部数据</span></div>
-          </div>
+        <div class="task-strip">
+          <div><span>Task ID</span><strong id="task-id">未创建</strong></div>
+          <div><span>Version</span><strong id="task-version">--</strong></div>
+          <div><span>Task State</span><strong id="task-state">IDLE</strong></div>
+          <div><span>Current Agent</span><strong id="current-agent">--</strong></div>
+          <div><span>Skill</span><strong id="current-skill">--</strong></div>
+        </div>
+        <div class="baseline">
+          <div><span>EMS 基线</span><strong>14:00 前计划已失效</strong></div>
+          <p>基线未包含 +420 kW 生产插单，也未处理光伏偏差和变压器传感器冲突。Team Leader 只能维护状态和编排，不能直接生成方案或下发指令。</p>
+        </div>
+        <div id="candidate-list" class="candidate-list">
+          <p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p>
+        </div>
+        <div class="decision-actions">
+          <button id="approve-b" class="command-button primary" type="button" disabled>批准 Candidate B</button>
+          <button id="execute-b" class="command-button ghost" type="button" disabled>执行获批方案</button>
+        </div>
+        <div class="campus-shell">
           <div class="campus">
-            <canvas id="campus-3d" aria-label="可拖拽旋转和缩放的园区三维场景"></canvas>
+            <canvas id="campus-3d" aria-label="极简白色园区能源沙盘"></canvas>
             <button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button>
+            <article class="asset" data-anchor="factory"><span>生产车间</span><strong>502 kW</strong></article>
+            <article class="asset" data-anchor="solar"><span>屋顶光伏</span><strong>335 kW</strong></article>
+            <article class="asset" data-anchor="storage"><span>储能系统</span><strong>SOC 55%</strong></article>
+            <article class="asset" data-anchor="grid"><span>公共电网</span><strong>475 kW</strong></article>
+            <article class="asset" data-anchor="charge"><span>充电设施</span><strong>65 kW</strong></article>
+            <article class="asset" data-anchor="compute"><span>算力中心</span><strong>243 kW</strong></article>
             <div class="scene-hint">拖拽旋转 · 标签跟随建筑</div>
-
-            <article class="asset asset-factory" data-anchor="factory"><span>生产车间</span><strong id="factory-power">-- kW</strong></article>
-            <article class="asset asset-solar" data-anchor="solar"><span>屋顶光伏</span><strong id="solar-power">-- kW</strong></article>
-            <article class="asset asset-storage" data-anchor="storage"><span>储能系统</span><strong id="storage-power">SOC --</strong></article>
-            <article class="asset asset-grid" data-anchor="grid"><span>公共电网</span><strong id="grid-power">-- kW</strong></article>
-            <article class="asset asset-charge" data-anchor="charge"><span>充电设施</span><strong id="charge-power">-- kW</strong></article>
-            <article class="asset asset-compute" data-anchor="compute"><span>算力中心</span><strong id="compute-power">-- kW</strong></article>
-
-            <div class="flow-legend"><span><i></i>动态能量流</span><span><b></b>模拟设备</span></div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="telemetry-panel ops-view ops-card" data-view="metrics" data-card="metrics">
-          <div class="panel-bar compact" data-drag-handle aria-label="拖移指标卡片">
-            <div><span class="panel-index">METRICS</span><strong>运行指标</strong></div>
-          </div>
+      <section class="panel trace-panel" aria-label="AgentTeams Trace">
+        <div class="panel-heading">
+          <div><span>TRACE</span><strong>AgentTeams Trace</strong></div>
+          <small id="trace-count">0 条事件</small>
+        </div>
+        <div id="trace-list" class="trace-list"><p class="empty">运行后展示真实后端事件记录。</p></div>
+      </section>
 
-        <section class="quick-metrics">
-          <div><span>园区负荷</span><strong id="load-live">--</strong></div>
-          <div><span>电网购电</span><strong id="import-live">--</strong></div>
-          <div><span>光伏出力</span><strong id="pv-live">--</strong></div>
-          <div><span>储能功率</span><strong id="battery-live">0 kW</strong></div>
-          <div><span>电池 SOC</span><strong id="soc-live">--</strong></div>
-          <div><span>可用容量</span><strong id="capacity-live">--</strong></div>
-          <span id="pv-energy" hidden></span><span id="self-use-live" hidden></span><span id="peak-live" hidden></span>
-        </section>
-
-        <section class="trend-section">
-          <div class="subhead"><strong>今日功率趋势</strong><span>00:00 - 24:00</span></div>
-          <div class="trend-legend"><span><i class="load"></i>负荷</span><span><i class="pv"></i>光伏</span><span><i class="grid"></i>购电</span><span><i class="soc"></i>SOC</span></div>
-          <canvas id="realtime-chart" aria-label="负荷、光伏、购电和SOC折线统计"></canvas>
-          <div class="trend-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
-        </section>
-
-        <section class="constraint-section">
-          <div class="subhead"><strong>约束余量</strong><span>独立审计</span></div>
-          <div class="constraints" id="constraints">
-            <div><span>变压器</span><strong>--</strong><i style="--value:0%"></i></div>
-            <div><span>电池 SOC</span><strong>--</strong><i style="--value:0%"></i></div>
-            <div><span>并网功率</span><strong>--</strong><i style="--value:0%"></i></div>
-          </div>
-        </section>
-
-        <section class="impact-section">
-          <div class="subhead"><strong>优化前后</strong><span id="impact-badge" class="impact-badge">等待方案</span></div>
-          <div class="compare-legend"><span><i class="before"></i>基线</span><span><i class="after"></i>优化</span></div>
-          <div id="impact-bars" class="impact-bars">
-            <div class="impact-row" data-key="cost"><div><strong>调度成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-            <div class="impact-row" data-key="peak"><div><strong>峰值购电</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-            <div class="impact-row" data-key="solar"><div><strong>光伏自用</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-            <div class="impact-row" data-key="efficiency"><div><strong>供能成本</strong><span>--</span></div><div class="bars"><i></i><b></b></div><em>--</em></div>
-          </div>
-        </section>
-        </section>
-
-        <section class="decision-panel ops-view ops-card" data-view="audit" data-card="audit">
-          <div class="decision-heading" data-drag-handle aria-label="拖移审计卡片"><span>当前决策</span><strong id="decision-status">等待运行</strong></div>
-          <div id="decision-summary" class="decision-summary"><p>运行后显示选定方案、审核结论和执行门禁。</p></div>
-          <div class="mini-trace">
-            <div class="mini-heading"><strong>协作轨迹</strong><span id="trace-count">0 项</span></div>
-            <div id="trace" class="trace-list"><p>尚无任务轨迹</p></div>
-          </div>
-        </section>
-      </aside>
+      <footer class="evidence-bar">
+        <div><span>Task State</span><strong id="evidence-state">IDLE</strong></div>
+        <div><span>Task Version</span><strong id="evidence-version">--</strong></div>
+        <div><span>Context ID</span><strong id="context-id">--</strong></div>
+        <div><span>Context Hash</span><strong id="context-hash">--</strong></div>
+        <div><span>Trace ID</span><strong id="trace-id">--</strong></div>
+        <div><span>Evidence</span><strong id="evidence-status">未生成</strong></div>
+        <button id="open-evidence" class="command-button ghost" type="button" disabled>查看任务证据</button>
+      </footer>
     </main>
 
-    <dialog id="approval-dialog">
-      <form method="dialog" id="approval-form">
-        <div class="dialog-heading"><div><span class="panel-index">APPROVAL GATE</span><h2>确认柔性负荷响应</h2></div><button id="close-dialog" class="icon-button" type="button" aria-label="关闭">×</button></div>
-        <p id="approval-summary" class="dialog-copy"></p>
-        <label>审批人<input id="approver" value="演示审批员" required minlength="2" /></label>
-        <label>审批理由<textarea id="approval-reason" required minlength="2">演示环境中确认安全约束与影响范围。</textarea></label>
-        <div class="dialog-actions"><button id="reject-button" class="command-button ghost danger" type="button">拒绝</button><button class="command-button primary" type="submit">批准并模拟执行</button></div>
+    <dialog id="trace-dialog">
+      <form method="dialog">
+        <div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div>
+        <pre id="trace-json"></pre>
       </form>
     </dialog>
-    <dialog id="model-dialog">
-      <form method="dialog" id="model-form">
-        <div class="dialog-heading"><div><span class="panel-index">MODEL SETTINGS</span><h2 id="model-dialog-title">模型设置</h2></div><button id="close-model-dialog" class="icon-button" type="button" aria-label="关闭">×</button></div>
-        <div class="model-profile">
-          <span id="model-avatar-preview" class="agent-avatar avatar-perception" aria-hidden="true"><span class="avatar-hair"></span><span class="avatar-face"><span class="avatar-eyes"></span><span class="avatar-mouth"></span></span></span>
-          <div><strong id="model-agent-name">感知Agent</strong><small id="model-agent-role">数据核验 · 异常判断</small></div>
-          <button id="random-avatar-button" class="command-button ghost" type="button">随机头像</button>
-        </div>
-        <section class="model-section">
-          <strong>模型设置</strong>
-          <label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label>
-          <label>API Key<input id="model-api-key" type="password" placeholder="•••••••••••••••" autocomplete="off" /></label>
-          <label>模型名称<input id="model-name" value="deepseek-chat" required /></label>
-          <div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div>
-          <p class="connection-line">连接状态：<span id="connection-status">未测试</span></p>
-          <p id="connection-error" class="connection-error" hidden></p>
-        </section>
-        <section class="model-section chat-test">
-          <strong>测试对话</strong>
-          <label>用户：<textarea id="model-test-message">请介绍你的职责</textarea></label>
-          <div class="model-actions"><button id="send-model-chat" class="command-button primary" type="button">发送</button></div>
-          <p class="agent-test-reply">Agent：<span id="model-test-reply">等待发送</span></p>
-        </section>
+
+    <dialog id="evidence-dialog">
+      <form method="dialog">
+        <div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div>
+        <pre id="evidence-json"></pre>
       </form>
     </dialog>
+
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260729a"></script>
+    <script type="module" src="/static/app.js?v=20260731-demo2"></script>
   </body>
 </html>

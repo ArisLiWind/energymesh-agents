@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -44,9 +43,10 @@ def test_health_and_demo_workflow(settings) -> None:
 
         page = client.get("/")
         assert page.status_code == 200
-        assert re.search(r'id="close-dialog"[^>]*type="button"', page.text)
+        assert "运行14:00复合变化" in page.text
+        assert 'id="trace-list"' in page.text
         script = client.get("/static/app.js")
-        assert '"#close-dialog").addEventListener("click"' in script.text
+        assert '"/api/demo/run"' in script.text
 
         scenario = client.get("/api/demo/scenario")
         assert scenario.status_code == 200
@@ -88,26 +88,45 @@ def test_health_and_demo_workflow(settings) -> None:
 
         created = client.post("/api/demo/run")
         assert created.status_code == 201
-        task = created.json()
-        assert task["state"] == "awaiting_approval"
-        assert task["perception"]["original_task_valid"] is False
-        assert task["perception"]["recommended_action"] == "redefine_and_optimize"
-        assert task["trace"][0]["detail"]["agentteams_worker"] == "energymesh_team_leader"
+        created_body = created.json()
+        assert created_body["task_id"] == "TASK-20260731-014"
+        assert created_body["task_version"] == 2
+        assert created_body["state"] == "AWAITING_APPROVAL"
+        context = client.get(f"/api/tasks/{created_body['task_id']}/context").json()
+        assert context["previous_plan_status"] == "invalidated"
+        candidates = client.get(f"/api/tasks/{created_body['task_id']}/candidates").json()
+        assert len(candidates) == 3
+        audit = client.get(f"/api/tasks/{created_body['task_id']}/audit").json()
+        assert audit[0]["verdict"] == "rejected"
+        assert audit[0]["transformer_load_percent"] == 103.8
 
-        completed = client.post(
-            f"/api/tasks/{task['task_id']}/approval",
+        approval = client.post(
+            f"/api/tasks/{created_body['task_id']}/approve",
             json={
-                "approved": True,
+                "candidate_id": "Candidate-B",
+                "task_version": context["task_version"],
+                "context_hash": context["context_hash"],
                 "approver": "api-test",
                 "reason": "integration test approval",
             },
         )
+        assert approval.status_code == 200
+        completed = client.post(
+            f"/api/tasks/{created_body['task_id']}/execute",
+            json={
+                "candidate_id": "Candidate-B",
+                "task_version": context["task_version"],
+                "context_hash": context["context_hash"],
+                "idempotency_key": "IDEMP-API-TEST-B",
+            },
+        )
         assert completed.status_code == 200
-        assert completed.json()["state"] == "completed"
-        assert completed.json()["execution_summary"]["real_devices_contacted"] == 0
+        final_task = client.get(f"/api/tasks/{created_body['task_id']}").json()
+        assert final_task["state"] == "COMPLETED"
+        assert final_task["execution_summary"]["real_devices_contacted"] == 0
 
         changed = client.post(
-            f"/api/tasks/{task['task_id']}/reoptimize",
+            f"/api/tasks/{created_body['task_id']}/reoptimize",
             json={
                 "trigger": "LOAD_FORECAST_CHANGED",
                 "load_scale": 1.05,
@@ -118,9 +137,9 @@ def test_health_and_demo_workflow(settings) -> None:
         )
         assert changed.status_code == 201
         changed_task = changed.json()
-        assert changed_task["parent_task_id"] == task["task_id"]
+        assert changed_task["parent_task_id"] == created_body["task_id"]
         assert changed_task["trigger"] == "LOAD_FORECAST_CHANGED"
-        assert changed_task["state"] == "awaiting_approval"
+        assert changed_task["state"] == "AWAITING_APPROVAL"
 
 
 def test_agent_model_config_test_and_chat(settings, monkeypatch) -> None:
