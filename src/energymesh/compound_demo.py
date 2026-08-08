@@ -771,7 +771,6 @@ class CompoundChangeDemo:
         task = self._get_task(task_id)
         task.evidence_sha256 = str(evidence["sha256"])
         self.store.save(task)
-        evidence = self.store.demo_evidence(task_id)
         target = self.store.evidence_dir / f"{task_id}.json"
         descriptor, temporary = tempfile.mkstemp(
             prefix=f".{task_id}-", suffix=".tmp", dir=self.store.evidence_dir

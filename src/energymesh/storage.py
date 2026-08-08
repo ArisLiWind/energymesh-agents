@@ -635,7 +635,7 @@ class EvidenceStore:
                 "real_devices_contacted": 0,
                 "data_source": "Simulation",
             },
-            "task_record": task.model_dump(mode="json"),
+            "task_record": task.model_dump(mode="json", exclude={"evidence_sha256"}),
             "context_snapshot": self.get_context_snapshot(task_id),
             "agent_handoffs": self.list_agent_handoffs(task_id),
             "skill_invocations": self.list_skill_invocations(task_id),

@@ -64,13 +64,14 @@ def chat_with_agent_config(config: StoredModelConfig, message: str) -> str:
     except ImportError as error:
         raise RuntimeError("openai package is not installed") from error
 
-    client = OpenAI(api_key=config.api_key, base_url=config.base_url)
+    client = OpenAI(api_key=config.api_key, base_url=config.base_url, timeout=30)
     response = client.chat.completions.create(
         model=config.model,
         messages=[
             {"role": "system", "content": AGENT_SYSTEM_PROMPTS[config.agent_id]},
             {"role": "user", "content": message},
         ],
+        timeout=30,
     )
     content = response.choices[0].message.content
     return content or ""

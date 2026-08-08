@@ -65,7 +65,7 @@ Updated: 2026-07-28
 
 - Ruff format and lint: passed.
 - mypy strict type check: passed for 14 source modules.
-- pytest unit and API integration tests: 13 passed, including external-data dispatch, model
+- pytest unit and API integration tests: 16 passed, including external-data dispatch, model
   settings, approval, and workflow coverage.
 - Browser workflow: Three.js scene rendered at 802 x 696 canvas pixels; nonblank screenshot crop
   measured entropy 3.35. Camera zoom, 96-point trend chart, single-Agent selection, and
