@@ -92,7 +92,7 @@ AGENTTEAMS_ENABLED=true
 
 ## AgentTeams 开源框架对接
 
-- 开源框架：`agentscope-ai/AgentTeams`
+- 开源框架：`agentscope-ai/AgentTeams`（官网：<https://hiclaw.io/>，原名 Hiclaw）
 - AgentTeams quickstart 验证入口：`http://127.0.0.1:18088`（框架级验证入口；需另行启动
   AgentTeams quickstart。本地 FastAPI Demo 可独立复现能源业务闭环，完整参赛验证应启动
   quickstart 并加载本仓库声明式资源）
