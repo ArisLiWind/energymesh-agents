@@ -18,7 +18,7 @@ test:
 	python3 -m pytest
 
 run:
-	python3 -m uvicorn energymesh.api:app --app-dir src --reload
+	set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m uvicorn energymesh.api:app --app-dir src --reload
 
 agentteams-resources:
 	@printf "%s\n" "Apply agentteams/agentteams-resources.yaml with the open-source agentscope-ai/AgentTeams controller after installing its quickstart runtime."

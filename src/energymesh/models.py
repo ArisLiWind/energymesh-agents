@@ -495,3 +495,60 @@ class AgentChatResponse(BaseModel):
     agent_id: str
     model: str
     response: str
+
+
+class AgentMessage(BaseModel):
+    message_id: str
+    session_id: str
+    task_id: str | None = None
+    agent_id: str
+    role: str
+    content: str
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentRuntimeChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = Field(default=None, min_length=3, max_length=120)
+    task_id: str | None = Field(default=None, min_length=3, max_length=120)
+
+
+class AgentRuntimeStep(BaseModel):
+    agent_id: str
+    model: str
+    response: str
+    input_artifacts: list[str] = Field(default_factory=list)
+    output_artifact: str | None = None
+
+
+class AgentRuntimeChatResponse(BaseModel):
+    session_id: str
+    task_id: str | None
+    routed_agents: list[str]
+    steps: list[AgentRuntimeStep]
+    messages: list[AgentMessage]
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RuntimeArtifact(BaseModel):
+    artifact_id: str
+    session_id: str
+    task_id: str
+    agent_id: str
+    artifact_type: str
+    name: str
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class RuntimeToolCall(BaseModel):
+    call_id: str
+    session_id: str
+    task_id: str
+    agent_id: str
+    tool_type: str
+    tool_name: str
+    input_payload: dict[str, Any]
+    output_payload: dict[str, Any]
+    created_at: datetime

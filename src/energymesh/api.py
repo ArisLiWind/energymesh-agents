@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 from typing import Annotated, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
@@ -16,9 +17,12 @@ from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
 from energymesh.models import (
     AgentChatRequest,
     AgentChatResponse,
+    AgentMessage,
     AgentModelConfigPublic,
     AgentModelConfigRequest,
     AgentModelTestResponse,
+    AgentRuntimeChatRequest,
+    AgentRuntimeChatResponse,
     ApprovalDecisionRequest,
     ApprovalRequest,
     DemoRunResponse,
@@ -27,12 +31,15 @@ from energymesh.models import (
     ExternalDataSnapshot,
     ExternalDispatchRequest,
     ReoptimizationRequest,
+    RuntimeArtifact,
+    RuntimeToolCall,
     Scenario,
     TaskRecord,
 )
 from energymesh.optimizer import DispatchOptimizer
 from energymesh.orchestrator import EnergyMeshOrchestrator, WorkflowError
 from energymesh.perception import PerceptionAgent
+from energymesh.runtime import AgentRuntimeError, PersistentAgentRuntime
 from energymesh.simulator import SimulationExecutor
 from energymesh.storage import EvidenceStore, PayloadRow, PayloadRows
 
@@ -42,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings.assert_safe_runtime()
     store = EvidenceStore(active_settings.db_path, active_settings.evidence_dir)
     compound_demo = CompoundChangeDemo(store)
+    agent_runtime = PersistentAgentRuntime(store)
     orchestrator = EnergyMeshOrchestrator(
         perception=PerceptionAgent(),
         optimizer=DispatchOptimizer(),
@@ -60,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = active_settings
     app.state.store = store
     app.state.compound_demo = compound_demo
+    app.state.agent_runtime = agent_runtime
     app.state.orchestrator = orchestrator
     app.state.scenario = scenario
     app.state.external_data = external_data
@@ -69,6 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_store(request: Request) -> EvidenceStore:
         return cast(EvidenceStore, request.app.state.store)
+
+    def get_agent_runtime(request: Request) -> PersistentAgentRuntime:
+        return cast(PersistentAgentRuntime, request.app.state.agent_runtime)
 
     def get_compound_demo(request: Request) -> CompoundChangeDemo:
         return cast(CompoundChangeDemo, request.app.state.compound_demo)
@@ -151,6 +163,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
         return AgentChatResponse(agent_id=normalized, model=config.model, response=reply)
+
+    @app.post("/api/runtime/chat", response_model=AgentRuntimeChatResponse)
+    def chat_with_runtime(
+        body: AgentRuntimeChatRequest,
+        runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+    ) -> AgentRuntimeChatResponse:
+        try:
+            return runtime.chat(body.message, body.session_id, body.task_id)
+        except AgentRuntimeError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post("/api/runtime/chat/stream")
+    def stream_chat_with_runtime(
+        body: AgentRuntimeChatRequest,
+        runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+    ) -> StreamingResponse:
+        def sse_event(event: dict[str, object]):
+            yield f"event: {event['type']}\n"
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        def events():
+            try:
+                for event in runtime.stream_chat(body.message, body.session_id, body.task_id):
+                    yield from sse_event(event)
+            except AgentRuntimeError as error:
+                yield from sse_event({"type": "runtime_error", "detail": str(error)})
+            except Exception as error:
+                yield from sse_event({"type": "runtime_error", "detail": str(error)})
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.get("/api/runtime/sessions/{session_id}/messages", response_model=list[AgentMessage])
+    def list_runtime_messages(
+        session_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+        limit: int = 50,
+    ) -> list[AgentMessage]:
+        return evidence_store.list_agent_messages(session_id, limit=limit)
+
+    @app.get("/api/runtime/tasks/{task_id}/artifacts", response_model=list[RuntimeArtifact])
+    def list_runtime_artifacts(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> list[RuntimeArtifact]:
+        return evidence_store.list_runtime_artifacts(task_id)
+
+    @app.get("/api/runtime/tasks/{task_id}/tool-calls", response_model=list[RuntimeToolCall])
+    def list_runtime_tool_calls(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> list[RuntimeToolCall]:
+        return evidence_store.list_runtime_tool_calls(task_id)
 
     @app.get("/api/demo/scenario", response_model=Scenario)
     def demo_scenario(
@@ -341,10 +409,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/app.js", include_in_schema=False)
     def root_app_script() -> FileResponse:
         return FileResponse(static_dir / "app.js")
-
-    @app.get("/campus3d.js", include_in_schema=False)
-    def root_campus_script() -> FileResponse:
-        return FileResponse(static_dir / "campus3d.js")
 
     return app
 

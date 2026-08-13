@@ -1,88 +1,122 @@
 # EnergyMesh Agents
 
-超境创新自研的多智能体能源调度系统，让能源调度从固定规则执行和自动滚动优化，走向
-自主协同决策。
+2026 GOAI 新智基座 AI infra：面向工业园区、算力中心与分布式能源的多 Agent 电力自主协同调度系统。
 
-## 一、没有被充分利用的电力
+EnergyMesh Agents 是 TRANSREALM 超境创新为真实能源场景构建的 AgentTeams 业务团队。它不让单一
+大模型直接控制设备，而是在既有 EMS、BMS、PCS、SCADA、气象和 MES 系统之上增加一层可审计的
+自主协同：当负荷、电价、光伏、储能、生产计划或设备状态发生变化时，系统重新判断原任务是否
+仍然成立，由 Team Leader 指挥多个 Worker Agent 完成感知、规划、审核、审批、执行、验证、
+回滚与证据沉淀。
 
-在 AI 算力持续扩大、电力越来越短缺的同时，大量已经建设的光伏、储能和可调负荷，仍然
-没有被真正充分利用起来。
+> 传统 EMS 会执行规则；优化型 EMS 会重算方案；EnergyMesh Agents 要解决的是变化发生后，
+> 系统能否重新理解任务、拆分责任、独立审核、受控执行，并把每一次决策沉淀为可复用经验。
 
-大量园区、工业中心和算力中心已经部署能源管理系统，但这些系统的能力并不相同：
+## 核心问题
 
-EnergyMesh Agents 基于 AgentTeams 构建 Team Leader 与「感知 Agent、调度 Agent、审核 Agent、执行 Agent」四类 Worker 协作链路：Team Leader 拆解任务并监督进度，感知 Agent 核验运行上下文，调度 Agent 不是简单选择已有策略，而是根据新情况生成可解释的策略脚本草案，审核 Agent 对脚本、回放结果、执行动作和证据进行安全审计，执行 Agent 只将获批脚本的确定性输出转换成具体设备、策略参数和执行位置。系统最终形成从任务输入、脚本生成、确定性验证、执行落位、审计验证到复盘沉淀的端到端闭环。
+AI 算力正在推高数据中心和工业园区的用电需求，新能源、储能、电价机制和生产计划又让电力系统
+的运行条件持续变化。很多园区已经接入 EMS 或 SCADA，但这些系统更擅长采集、展示、执行规则和
+求解预设优化问题。真正困难的是：当现实条件改变以后，原来的调度任务是否还成立，哪些数据可信，
+目标优先级是否需要重排，应该调用哪些工具，哪些方案必须被拦截，什么时候必须交给人。
 
-- **基础型 EMS** 主要依靠工程师预先设置运行时段、控制阈值和充放电规则，再按照固定策略
-  自动执行。电价低时充电、电价高时放电，负荷超过阈值时削峰，光伏富余时优先储存。一旦
-  设备、负荷、生产计划或电价机制变化，工程师需要重新调整规则和参数。
-- **高级 EMS** 可以预测负荷、光伏出力和电价变化，并通过优化算法滚动生成新的调度方案。
-  它不再只执行固定规则，但仍然在预先定义的目标、模型和约束内重新计算。
+EnergyMesh Agents 的设计目标不是替代已有系统，而是把工程师原本分散完成的判断、核验、重算、
+审核、审批和复盘过程组织成标准闭环。它把高风险能源调度拆成多个权限分离的 Agent 角色，让任意
+单个 Agent 都不能同时提案、审核自己并执行设备。
 
-## 二、真正没有解决的问题
+## 正确架构：Leader 指挥 Workers
 
-现实中的能源系统，并不总是一道已经定义好的数学题。
+本项目的运行形态是 AgentTeams 的 Leader + Workers 协作架构：
 
-光伏出力、用电负荷、电价、生产计划、算力需求和设备状态每天都在变化。一次紧急生产任务、
-一台设备异常升温、一组失真的传感器数据或一次突变天气，都可能让原来的调度目标和运行方案
-同时失效。
+```text
+任务输入
+  ↓
+Team Leader：理解目标、拆解任务、分派 Worker、监督状态、保持人工在环
+  ↓
+感知 Worker：读取外部态势，核验可信上下文，判断原任务是否失效
+  ↓
+调度 Worker：在可信上下文上生成候选策略脚本和 96 点调度方案
+  ↓
+审核 Worker：独立复算安全、业务和收益约束，fail closed
+  ↓
+风险判断：高风险进入 Human Operator 审批，低风险继续执行
+  ↓
+执行 Worker：只映射已审核、已审批或明确免审的方案，模拟执行并验证偏差
+  ↓
+证据沉淀：Trace / Metrics / Evidence
+  ↓
+经验沉淀：历史任务 / 策略模板 / RAG 知识库
+  ↓
+安全回退：偏差超阈值时停止策略、交还人工，并回到感知重新核验
+```
 
-基础型 EMS 依赖工程师修改策略；高级 EMS 可以重新优化，但仍需要一个已经被正确定义的问题：
-优化目标是什么，哪些数据可信，约束是否变化，应调用什么模型，异常以后如何处理。
+这条链路对应官网架构图中的 14 个节点：任务输入、Team Leader、感知 Agent、可信上下文、调度
+Agent、审核 Agent、风险判断、Human Operator、执行 Agent、证据沉淀、结果验证、安全回退、
+回到感知、经验沉淀。核心原则是提案权、审核权、审批权、执行权分离。
 
-真正困难的是：现实变化以后，系统能否主动判断发生了什么、原任务是否仍然成立、还缺少哪些
-信息，以及接下来应组织哪些系统采取行动。
+## Agent 清单
 
-## 三、EnergyMesh Agents
+| 角色 | AgentTeams 资源 | 身份定位 | 核心职责 | 权限边界 |
+| --- | --- | --- | --- | --- |
+| Team Leader | `energymesh_team_leader` | 调度团队指挥层 | 接收任务、拆解步骤、分派 Worker、汇总上下文、监督状态、触发人工审批和回滚 | 不直接生成设备控制命令，不跳过 Worker 审核 |
+| Perception Worker | `perception_worker` | 电力运行上下文校验 | 核验 96 点负荷、光伏、SOC、电价、设备状态、生产计划和变压器温度，判断原 EMS 任务是否失效 | 只读，不生成调度方案，不写设备 |
+| Dispatch Worker | `dispatch_worker` | 策略生成与候选方案 | 构建原 EMS 基线，生成经济优先、安全均衡、保守保供等候选策略脚本和 96 点调度计划 | 只提案，不审批，不执行，不越过审核 |
+| Audit Worker | `audit_worker` | 独立安全审计 | 复算 SOC、PCS 功率、变压器容量、并网功率、生产最小负荷、能量守恒和相对基线收益 | fail closed；不可验证即拒绝；经济收益不覆盖硬约束 |
+| Execution Worker | `execution_worker` | 获批计划映射与验证 | 将通过审核和审批的方案映射为幂等 EMS / PCS / 负荷控制命令，在模拟器中执行并验证计划与实际偏差 | 当前只模拟，真实设备接触数必须为 0，偏差超限即回退 |
+| Human Operator | `park-operator` | 人工审批与接管 | 对高风险柔性负荷、越权边界和异常回退进行人工确认或驳回 | 审批绑定 `task_version` 与 `context_hash`，旧审批不能复用 |
 
-EnergyMesh Agents 不替代已有 EMS 和优化算法，而是在它们之上构建自主协同层，把原本分散在
-工程师、能源管理系统、生产系统和设备控制系统之间的工作，组织成持续运行的闭环：
+## Skill 清单
 
-- **感知 Agent** 收集并核验负荷、光伏、储能 SOC、电价、设备状态和生产计划，发现数据缺失、
-  异常和相互冲突，判断原调度任务是否仍然有效，并提出缺失信息与下一步动作。
-- **调度 Agent** 根据重新确定的任务和目标优先级，选择并调用负荷预测、光伏预测、传感器一致性
-  检查、热降额模型和优化算法，生成不需要编译器的受限策略脚本草案。脚本表达“何时充电、何时
-  放电、保留多少备用容量、遇到异常如何降级”，而不是直接写设备。
-- **审核 Agent** 先对策略脚本做静态审查，再在沙箱中确定性回放，独立复算储能 SOC、充放电功率、
-  变压器热容量、并网功率、生产安全、能量守恒等约束，并在相同输入下判断新脚本是否真正优于
-  原 EMS 方案。
-- **执行 Agent** 只接收审核通过的脚本输出，将其映射为 EMS、储能 PCS 和负荷控制系统的结构化
-  幂等指令，持续比较计划结果与实际结果。偏差超限时停止原策略、回退安全策略并把控制权交还
-  工程师。
+| Skill | 由谁调用 | 输入 | 输出 | 安全边界 |
+| --- | --- | --- | --- | --- |
+| `microgrid_context_ingest` | Perception Worker / Team Leader | EMS、BMS、PCS、气象、MES、设备状态、生产约束 | 可信上下文、异常、冲突、目标优先级、所需工具 | 只读；缺数据或冲突时阻断自动调度 |
+| `dispatch_plan_generate` | Dispatch Worker | 可信上下文、目标优先级、原 EMS 基线 | 候选策略脚本、96 点调度计划、成本/峰值/SOC 指标 | 只生成方案；无审批和执行权限 |
+| `dispatch_audit_verify` | Audit Worker | 候选计划、场景约束、原 EMS 基线 | 审核结论、拒绝原因、约束复算、改进指标 | 关键约束失败即拒绝；柔性负荷动作需审批 |
+| `execution_mapping` | Execution Worker | 获批计划、审核报告、审批记录、幂等键 | EMS / PCS / 负荷控制模拟命令、执行摘要、验证结果 | `SIMULATION_MODE=true`；不接触真实设备 |
+| `approval_rollback` | Team Leader / Execution Worker | 审批请求、执行摘要、重优化触发 | 审批记录、回滚状态、安全策略、证据包 | 旧审批不可复用；偏差超阈值交还人工 |
 
-当负荷、天气、生产任务、传感器或设备状态再次变化时，系统创建新的子任务，重新经历感知、
-任务判断、工具调用、策略脚本生成、脚本审核、审批、执行和验证；旧任务的审批绝不复用。
+## 电力闭环如何运行
 
-## 四、智能发生在变化之中
+演示场景中，14:00 工业园区出现复合变化：生产任务增加 420 kW，光伏实际出力低于预测 18.6%，
+变压器双路温度读数冲突，并即将进入高峰电价。此时原 EMS 基线计划不再可信。
 
-演示场景中，工业园区突然增加一项不可延期的生产任务，光伏出力低于预测，变压器温度异常，
-并即将进入电价高峰。
+1. **任务输入**：告警、工单、外部数据或人工目标进入 Team Leader。
+2. **任务拆解**：Team Leader 创建任务，要求 Perception Worker 先核验外部态势。
+3. **感知核验**：Perception Worker 校验负荷、光伏、SOC、电价、设备状态、生产计划和温度冲突，
+   生成可信上下文，判断原计划失效。
+4. **可信上下文**：系统固化 `context_id`、`context_hash`、目标优先级、所需工具和自动化权限。
+5. **策略生成**：Dispatch Worker 基于可信上下文生成候选调度策略，而不是直接控制设备。
+6. **独立审核**：Audit Worker 对每个候选方案做静态审查、沙箱回放和确定性复算。
+7. **风险判断**：高风险动作进入 Human Operator 审批；低风险且审核通过的动作才允许执行。
+8. **人工审批**：审批绑定当前任务版本和上下文哈希，外部条件变化后必须重新审批。
+9. **执行映射**：Execution Worker 将获批计划映射为幂等模拟命令。
+10. **证据沉淀**：Trace、Metrics、Evidence、审批记录、执行回执和 SHA-256 证据包被保存。
+11. **结果验证**：系统比较计划与实际，偏差超过阈值则停止策略。
+12. **安全回退**：回退到零充放电、零负荷削减等安全策略，交还人工。
+13. **重新感知**：回退或外部变化会创建新任务，回到感知环节。
+14. **经验沉淀**：历史任务、策略模板、失败原因和审计证据进入后续 RAG / 知识库。
 
-感知 Agent 先判断原任务已经失效，再使用双路温度读数核验异常究竟是传感器错误还是设备风险。
-读数冲突且无法消解时，系统停止自动调度并交还工程师；双路读数一致超限时，系统确认热风险，
-降低变压器可用容量，并将优先级重排为“生产安全 → 设备热负载 → 关键负荷连续性 → 用电成本”。
+## 为什么需要多 Agent
 
-调度 Agent 据此生成多个策略脚本草案。审核 Agent 拦截包含越权动作、低 SOC、变压器过载、
-违反生产计划或没有证明优于原策略的脚本。获批脚本在模拟执行后持续核对购电功率、SOC 和设备
-状态；实际结果偏离计划超过 5% 时，系统激活零充放电、零负荷削减的安全回退，并把控制权交还
-工程师。
+能源系统不能让一个模型既制定方案、又审核自己、再直接控制设备。EnergyMesh Agents 的多 Agent
+不是为了让 AI 更自由，而是为了让任何一个 AI 都没有独自犯下严重错误的权力。
 
-> 基础型 EMS 执行预先配置的规则；高级 EMS 在预先定义的目标和约束中动态优化；
-> EnergyMesh Agents 进一步根据现实变化，组织数据核验、任务判断、工具调用、安全审核、
-> 跨系统执行和结果验证。
+- 感知和调度分离：数据是否可信先被确认，再允许生成方案。
+- 调度和审核分离：方案必须由独立 Worker 复算和拦截。
+- 审核和审批分离：高风险动作必须由 Human Operator 绑定版本确认。
+- 审批和执行分离：Execution Worker 只能执行获批方案，不能改写目标。
+- 执行和验证分离：计划与实际偏差超限时进入安全回退。
+- 当前版本只做模拟执行：真实设备接触数为 0，所有写入进入本地模拟适配器。
 
-对于园区，它让光伏、储能、充电设施和建筑负荷持续协同；对于工业中心，它让能源调度主动
-适应生产计划和设备状态；对于算力中心，它可以协调算力负载、制冷、储能和供电容量，以更少
-的实际电力支撑更多有效计算。
+## 当前实现
 
-## 当前实现边界
+当前仓库包含两个层次：
 
-当前版本使用开源 `agentscope-ai/AgentTeams` 的 Manager-Workers 协作框架作为多 Agent 运行
-与治理底座。仓库提供 `agentteams/agentteams-resources.yaml` 声明式 Team/Human 资源，以及
-Team Leader、四类 Worker、SOUL.md、AGENTS.md 和 Skill 资产；本地 FastAPI 服务承担能源业务
-工具/API 层，并通过 `/api/agentteams/manifest` 暴露运行清单。当前通过
-`/api/external/snapshot` 模拟 EMS、BMS、PCS、气象和 MES 外部数据输入，通过
-`/api/external/dispatch` 触发完整多 Agent 调度闭环。当前不连接真实 EMS、BMS、PCS 或生产数据库，
-不进行电芯控制、继电保护、潮流计算和线路故障控制。所有结构化“下发”只进入本地模拟适配器：
+- **AgentTeams 资产层**：`agentteams/agentteams-resources.yaml` 声明 Team、Leader、Workers、Human；
+  `agentteams/team-leader/`、`agentteams/workers/*/` 和 `agentteams/skills/*/SKILL.md` 描述角色、灵魂、
+  能力边界和 Skill 契约。
+- **能源业务工具层**：本地 FastAPI 服务提供外部态势模拟、任务编排、候选方案生成、独立审核、
+  审批、执行模拟、证据存储和 `/api/agentteams/manifest` 清单。
+
+重要安全配置：
 
 ```text
 SIMULATION_MODE=true
@@ -90,7 +124,8 @@ ALLOW_PRODUCTION_WRITE=false
 AGENTTEAMS_ENABLED=true
 ```
 
-## AgentTeams 开源框架对接
+当前不连接真实 EMS、BMS、PCS、SCADA 或生产数据库，不进行电芯控制、继电保护、潮流计算和线路
+故障控制。所有结构化“下发”只进入本地模拟器。
 
 - 开源框架：`agentscope-ai/AgentTeams`（官网：<https://hiclaw.io/>，原名 Hiclaw）
 - AgentTeams quickstart 验证入口：`http://127.0.0.1:18088`（框架级验证入口；需另行启动
@@ -103,36 +138,21 @@ AGENTTEAMS_ENABLED=true
 - Workers：`agentteams/workers/perception|dispatch|audit|execution`
 - Skills：`agentteams/skills/*/SKILL.md`
 
-这套实现把 EnergyMesh 业务闭环明确映射到 AgentTeams 的 Manager-Workers 模式：Team Leader
-负责任务拆解、上下文汇总和状态追踪，感知、调度、审核、执行四类 Worker 只处理各自职责内的
-Skill。评审可先运行 FastAPI 控制台复现能源业务闭环，再在 AgentTeams quickstart 中加载
-`agentteams/agentteams-resources.yaml` 验证角色编排、Skill 包、Worker 包和人工参与边界。
-EnergyMesh 自身不构建通用 Agent 底座，而是作为园区微电网调度这个实际行业问题的
-AgentTeams 业务团队和工具层。
+## API 与验证入口
 
-## 评审核验入口
-
-- **场景价值**：README 第一至四部分说明园区、工业中心和算力中心的真实问题、目标用户、痛点和收益；
-  `docs/JUDGING_ALIGNMENT.md` 对应评分矩阵逐项给出证据。
-- **外部数据输入**：`GET /api/external/snapshot` 模拟负荷、光伏、储能、电价、变压器、并网限制、
-  设备故障和生产计划；`POST /api/external/dispatch` 用这些外部态势触发策略脚本生成和闭环调度。
-- **多 Agent 协同**：`agentteams/agentteams-resources.yaml`、`agentteams/team-leader/*`、
-  `agentteams/workers/*` 和 `/api/agentteams/manifest` 对应 AgentTeams 的角色编排、任务拆解、
-  上下文传递、协同执行与状态追踪。
-- **策略脚本信息流**：`docs/STRATEGY_SCRIPT_FLOW.md` 说明 Agent 之间如何传递事实、约束、脚本草案、
-  静态审查结果、沙箱回放结果、审批记录和执行证据。
-- **Agent Identity**：`docs/AGENT_IDENTITY.md` 说明每个 Agent 的身份、能力边界、输入输出和协同关系。
-- **Skill 工程**：`agentteams/skills/*/SKILL.md` 与 `docs/SKILL_CONTRACTS.md` 说明 Skill 的用途、
-  输入输出、调用条件、依赖工具、失败处理、安全边界、验证方式和复用价值。
-- **MCP / RAG / 可观测 / 云工具链**：`docs/TOOLING_AND_CLOUD_INTEGRATION.md` 说明 FastAPI/OpenAPI
-  等价工具契约、后续 MCP 迁移、共享状态、Trace、Metrics、PolarDB、Higress、Nacos、RocketMQ
-  和 AgentLoop/LoongSuite 的必要性与替换边界。
-- **工程运行与审计**：`make verify`、`tests/`、`runs/`、SQLite 状态、SHA-256 evidence、审批 gate
-  和安全回退共同证明 Demo 可运行、动作可追踪、高风险步骤可审计。
+| 入口 | 用途 |
+| --- | --- |
+| `GET /` | 本地演示界面 |
+| `GET /api/health` | 运行状态与安全配置 |
+| `GET /api/agentteams/manifest` | Team、Worker、Skill、Human 和模型配置清单 |
+| `GET /api/external/snapshot` | 模拟 EMS / BMS / PCS / 气象 / MES 外部态势 |
+| `POST /api/external/dispatch` | 用外部态势触发完整调度闭环 |
+| `POST /api/demo/run` | 运行 14:00 复合变化演示 |
+| `POST /api/tasks/{task_id}/approve` | 对获审方案进行人工审批 |
+| `POST /api/tasks/{task_id}/execute` | 模拟执行获批方案 |
+| `GET /api/tasks/{task_id}/evidence` | 查看证据包 |
 
 ## 一键运行
-
-### 本地 Python
 
 需要 Python 3.12 或更高版本：
 
@@ -148,59 +168,35 @@ make run
 打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。OpenAPI 文档位于
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。
 
-当前仓库还包含 Vercel Python serverless preview 配置：`api/index.py`、`vercel.json`、
-`.python-version` 和 `uv.lock`。Vercel 适合公开演示；长期保存模型密钥、审计证据和运行历史时，
-应迁移到 PolarDB for PostgreSQL 或等价外部数据库，而不是依赖 Vercel 的临时 `/tmp` 存储。
-
-### AgentTeams 框架级验证
-
-本地 FastAPI Demo 用于在没有 AgentTeams runtime 的环境中复现业务闭环；AgentTeams quickstart
-用于验证协同框架接入，而不是可有可无的展示页。启动 AgentTeams quickstart 后，加载
-`agentteams/agentteams-resources.yaml`。其中 `energymesh-local-api` 指向
-`http://host.docker.internal:8000`，因此验证前应保持 FastAPI 服务运行，并确认
-`GET /api/agentteams/manifest` 可返回 Team、Worker、Skill 和工具入口清单。
-
-### Docker Compose
+Docker Compose：
 
 ```bash
 docker compose up --build
 ```
 
-Compose 以非 root、只读根文件系统、无 Linux capabilities 的方式运行服务，并固定：
+## AgentTeams 框架级验证
 
-```text
-SIMULATION_MODE=true
-ALLOW_PRODUCTION_WRITE=false
-```
+本地 FastAPI Demo 可以独立复现能源业务闭环；AgentTeams quickstart 用于验证 Leader + Workers 的
+框架接入。
 
-## 演示流程
+1. 启动 EnergyMesh API：`make run`
+2. 启动 AgentTeams quickstart / Element Web：`http://127.0.0.1:18088`
+3. 加载 `agentteams/agentteams-resources.yaml`
+4. 在 Team room 中提交园区调度任务
+5. 观察 Team Leader 如何分派 Perception、Dispatch、Audit、Execution Workers，并在高风险动作前
+   请求 Human Operator 审批
 
-1. 页面先读取 `/api/external/snapshot`，模拟 EMS、BMS、PCS、气象和 MES 外部数据。
-2. 页面通过 Three.js 加载可旋转、缩放的园区三维沙盘，并展示负荷、光伏、购电与 SOC 的
-   96 点实时趋势。
-3. 感知 Agent 判断原任务失效，核验双路传感器并重排目标优先级。
-4. 系统计算原 EMS 固定策略基线，调度 Agent 再生成经济压力测试、安全均衡和保守保供三套策略
-   脚本草案。
-5. 审核 Agent 对脚本做静态审查和沙箱回放，独立复算 SOC、功率、变压器、并网、生产计划、
-   能量守恒和相对基线收益。
-6. 包含柔性负荷响应的安全均衡方案进入人工审批。
-7. 批准后，执行 Agent 生成带幂等键的 EMS、PCS 和负荷控制命令，只在模拟器回放并确认 96 个时段。
-8. SQLite 保存状态与轨迹，`runs/` 保存带 SHA-256 的 JSON 证据包。
-9. 点击“注入变化并重调度”，验证数据变化如何触发一轮独立的新闭环。
+## 演示材料与评审核验
 
-测试还覆盖两条失败闭环：双路温度冲突时进入人工接管；模拟执行偏差超过 5% 时进入安全回退。
-
-### Agent 对话规则
-
-- 未选中任何 Agent 时，输入会进入多 Agent 协同模式，界面依次展示感知、调度、审核和执行
-  Agent 基于当前场景与任务结果的协商过程。
-- 手动选中一个 Agent 后，输入只进入该 Agent 的职责范围；点击“自动协同”或“退出单聊”
-  才会恢复多 Agent 模式。
-- 未配置模型时，对话能力使用本地、确定性的任务上下文回复，会引用实时点位、优化指标、审核
-  结论和执行状态。
-- 点击任意 Agent 头像可配置 OpenAI-compatible 模型网关参数：Base URL、API Key 和模型名称。
-  API Key 只保存在后端，前端和 manifest 只返回 masked key。配置后，该 Agent 的测试对话和
-  单聊可真实调用对应模型。
+- **官网叙事**：TRANSREALM 官网将 EnergyMesh Agents 定义为面向工业园区、算力中心、储能与分布式
+  能源的多智能体调度系统，强调约束核验、决策生成、执行验证和可审计证据闭环。
+- **架构图对应**：本 README 的闭环流程对应官网“多 Agent 电力闭环架构图”。
+- **Agent Identity**：见 `docs/AGENT_IDENTITY.md`。
+- **Skill 契约**：见 `docs/SKILL_CONTRACTS.md` 与 `agentteams/skills/*/SKILL.md`。
+- **策略脚本流**：见 `docs/STRATEGY_SCRIPT_FLOW.md`。
+- **工具与云集成**：见 `docs/TOOLING_AND_CLOUD_INTEGRATION.md`。
+- **安全模型**：见 `SECURITY.md`。
+- **实现状态**：见 `STATUS.md`。
 
 ## 常用命令
 
@@ -215,15 +211,12 @@ make verify       # lint + typecheck + test
 ## 目录
 
 ```text
-src/energymesh/   领域模型、外部数据模拟、优化、审计、编排、API 与控制台
-tests/            优化、安全状态机与 API 测试
+agentteams/       AgentTeams Team、Leader、Workers、Human、Skills 声明资产
+src/energymesh/   领域模型、外部数据模拟、优化、审计、编排、API 与静态界面
+tests/            优化、安全状态机与 API 集成测试
 runs/             运行时证据包（默认不提交）
-docs/             评审对齐、Agent Identity、Skill 契约、工具集成、架构与历史方案材料
+docs/             架构、Agent Identity、Skill 契约、策略流、评审材料
 ```
 
-工程边界与信任关系见 [ARCHITECTURE.md](ARCHITECTURE.md)，安全模型见
-[SECURITY.md](SECURITY.md)，实际完成状态与限制见 [STATUS.md](STATUS.md)。参赛评审材料见
-[docs/JUDGING_ALIGNMENT.md](docs/JUDGING_ALIGNMENT.md)、[docs/AGENT_IDENTITY.md](docs/AGENT_IDENTITY.md)、
-[docs/SKILL_CONTRACTS.md](docs/SKILL_CONTRACTS.md) 与
-[docs/TOOLING_AND_CLOUD_INTEGRATION.md](docs/TOOLING_AND_CLOUD_INTEGRATION.md)。前端所含 Three.js
-许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+EnergyMesh Agents 的核心价值不是“AI 替人按按钮”，而是把电力系统在变化后的判断、规划、审核、
+审批、执行、验证和经验沉淀做成可复用、可追踪、可回退的 AI infra。

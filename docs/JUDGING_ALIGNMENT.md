@@ -72,7 +72,7 @@
 
 **当前判断：符合本地可运行 Demo，生产化存储和真实设备接入仍保持安全边界。**
 
-- 本地运行：FastAPI + static console + Three.js 3D 沙盘。
+- 本地运行：FastAPI + static console + 极简调度工作台。
 - 部署：本地 Python、Docker Compose、Vercel Python serverless preview 均有配置；Vercel build 已通过。
 - 模型配置：每个 Agent 可配置 OpenAI-compatible Base URL、API Key、model，API Key 只保存在后端 SQLite，前端只返回 masked key。
 - Trace：每个 Agent 行为写入 `TaskRecord.trace`，并映射到 AgentTeams worker。

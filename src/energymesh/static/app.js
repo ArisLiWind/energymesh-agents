@@ -1,4 +1,5 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260729a";
+import { createCampus3D } from "/static/campus3d.js?v=20260806-energy-pool";
+import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
   run: null,
@@ -9,128 +10,607 @@ const state = {
   events: [],
   evidence: null,
   approval: null,
-  selectedAgent: "perception_agent",
-  modelConfigs: {},
-  playbackIndex: -1,
-  playbackTimer: null,
-  paused: false,
   campus3d: null,
-  avatarSelection: {},
-  tutorial: { active: false, step: 0, target: null },
+  selectedAgent: "team_leader",
+  gateways: {},
+  language: "en",
+  chartTick: 56,
+  liveTimer: null,
+  activeHistory: "new",
+  activeScenario: null,
+  agentThreads: {},
+  runtimeSessionId: window.localStorage.getItem("energymesh.runtimeSessionId") || null,
+  campusSimulation: {
+    optimized: false,
+    cost: "¥10,000",
+    saved: "待优化",
+    waste: "20%",
+    stability: "82%",
+    generation: "30 MW",
+    generationNote: "PV + Generator",
+    storage: "SOC 20%",
+    storageNote: "待充电",
+    load: "25 MW",
+    loadNote: "Factory + Data",
+  },
+  pendingExecutionScenario: null,
+  selectedDeviceId: "pcs",
+  selectedDeviceMode: "runtime",
 };
 
-const agentInfo = {
-  perception_agent: {
-    name: "感知 Agent",
-    skill: "microgrid_context_ingest",
+const agentProfiles = {
+  team_leader: {
+    name: "EnergyMesh Runtime",
+    nameZh: "EnergyMesh Runtime",
+    role: "Autonomous agent scheduler",
+    roleZh: "自治 Agent 调度器",
+    defaultModel: "deepseek-chat",
+    initials: "EM",
     avatar: "/static/avatars/perception.svg",
-    defaultPrompt: "请基于当前CTX解释你发现了哪些异常，以及为什么V1计划失效。",
+    tone: "leader",
+  },
+  perception_agent: {
+    name: "Perception Worker",
+    nameZh: "感知 Worker",
+    role: "Context validation",
+    roleZh: "运行上下文校验",
+    defaultModel: "deepseek-chat",
+    initials: "P",
+    avatar: "/static/avatars/perception.svg",
+    tone: "perception",
   },
   dispatch_agent: {
-    name: "调度 Agent",
-    skill: "dispatch_plan_generate",
+    name: "Dispatch Worker",
+    nameZh: "调度 Worker",
+    role: "Candidate planning",
+    roleZh: "候选方案生成",
+    defaultModel: "deepseek-chat",
+    initials: "D",
     avatar: "/static/avatars/dispatch.svg",
-    defaultPrompt: "请说明三套候选方案的差异，以及为什么你不能批准自己的方案。",
+    tone: "dispatch",
   },
   audit_agent: {
-    name: "审核 Agent",
-    skill: "dispatch_audit_verify",
+    name: "Audit Worker",
+    nameZh: "审核 Worker",
+    role: "Independent safety audit",
+    roleZh: "独立安全审核",
+    defaultModel: "deepseek-chat",
+    initials: "A",
     avatar: "/static/avatars/audit.svg",
-    defaultPrompt: "请解释Candidate A为什么被否决，并列出你独立复算的硬约束。",
+    tone: "audit",
   },
   execution_agent: {
-    name: "执行 Agent",
-    skill: "execution_mapping",
+    name: "Execution Worker",
+    nameZh: "执行 Worker",
+    role: "Approved command mapping",
+    roleZh: "获批指令映射",
+    defaultModel: "deepseek-chat",
+    initials: "E",
     avatar: "/static/avatars/execution.svg",
-    defaultPrompt: "请说明你只能执行已审核且已审批方案的原因，以及幂等键如何使用。",
+    tone: "execution",
   },
 };
 
-const agentByActor = {
-  "Team Leader": "Team Leader",
-  "Perception Agent": "Perception Agent",
-  "Dispatch Agent": "Dispatch Agent",
-  "Audit Agent": "Audit Agent",
-  "Human Approval": "Human Approval",
-  "Execution Agent": "Execution Agent",
-  Verification: "Verification",
+const agentIntroMessages = {
+  team_leader: {
+    en: "I am the EnergyMesh leader. What dispatch task would you like to assign?",
+    zh: "我是EnergyMesh leader，目前您要下达什么调度任务？",
+  },
+  perception_agent: {
+    en: "I am the Perception Worker. Ask me about load, PV, SOC, tariff, transformer telemetry, device state, or production constraints.",
+    zh: "我是感知 Worker。你可以问我负荷、光伏、SOC、电价、变压器遥测、设备状态或生产约束。",
+  },
+  dispatch_agent: {
+    en: "I am the Dispatch Worker. Ask me to compare candidate schedules, flexible-load moves, storage use, or peak-tariff strategies.",
+    zh: "我是调度 Worker。你可以让我比较候选调度、柔性负荷迁移、储能使用或峰段电价策略。",
+  },
+  audit_agent: {
+    en: "I am the Audit Worker. Ask me to verify a plan against safety, SOC, transformer, grid-import, and production constraints.",
+    zh: "我是审核 Worker。你可以让我按安全、SOC、变压器、购电和生产约束复核方案。",
+  },
+  execution_agent: {
+    en: "I am the Execution Worker. Ask me about approved command mapping, idempotency, execution receipts, verification, or rollback.",
+    zh: "我是执行 Worker。你可以问我获批指令映射、幂等性、执行回执、验证或回滚。",
+  },
 };
 
-const avatarOptions = Object.values(agentInfo).map((agent) => agent.avatar);
-
-const tutorialSteps = [
-  {
-    event: "run",
-    target: "#run-button",
-    title: "14:00 复合异常",
-    story: "生产负荷增加 420 kW，光伏低于预测 18.6%，变压器温度传感器冲突，同时进入峰值电价。原 EMS 基线不能再直接执行。",
-    objective: "创建一次安全重新调度任务",
-    action: "点击“运行14:00复合变化”。Team Leader 会创建真实任务，并把它交给感知 Agent。",
+const deviceDetails = {
+  pcs: {
+    name: "PCS-01 储能变流器",
+    status: "正常",
+    metrics: [
+      ["实时功率", "0.00 kW"],
+      ["SOC", "55%"],
+      ["日充电量", "0.00 kWh"],
+      ["日放电量", "0.00 kWh"],
+      ["电池温度", "31.6°C"],
+      ["可放电功率", "1.10 MW"],
+    ],
+    runtime: "PCS 在线，BMS 通讯正常，当前处于待命状态，可参与短时削峰和应急缓冲。",
+    alerts: ["无活动告警", "SOC 低于 35% 时禁止长时放电"],
+    operations: ["01:45 Agent 读取储能状态", "01:45 维持待命，不下发充放电指令"],
   },
-  {
-    event: "context",
-    target: "#view-context",
-    title: "理解自动交接的感知快照",
-    story: "感知 Agent 已自动将 EMS、BMS、PCS、光伏、生产与传感器质量结果固化为同一个 ContextSnapshot，并使 V1 计划失效。",
-    objective: "查看 V2 感知快照",
-    action: "点击“查看感知快照”。这不会触发交接，交接已经完成；你是在复核调度、审核、审批和执行共同引用的 context_hash。",
+  pv: {
+    name: "PV-Array-02 光伏阵列",
+    status: "低于预测",
+    metrics: [
+      ["实时功率", "335 kW"],
+      ["预测偏差", "-18.6%"],
+      ["日发电量", "0.00 kWh"],
+      ["月发电量", "4.40 MWh"],
+      ["逆变器温度", "42.8°C"],
+      ["可用率", "98.7%"],
+    ],
+    runtime: "光伏出力低于预测，疑似云影遮挡；逆变器在线，未发现脱网。",
+    alerts: ["出力低于预测阈值", "建议在调度中降低午后光伏可用假设"],
+    operations: ["01:45 感知 Agent 读取光伏预测偏差", "01:46 调度 Agent 下调可用发电曲线"],
   },
-  {
-    event: "review",
-    target: "#review-candidates",
-    title: "审查重新调度候选方案",
-    story: "Dispatch Agent 已用 V2 上下文生成经济优先、安全均衡和保供优先三套策略，但它没有批准自己的权限。",
-    objective: "进入候选方案审查",
-    action: "点击“查看方案”，定位到真实的审核结果。",
+  dg: {
+    name: "DG-01 发电机",
+    status: "待命",
+    metrics: [
+      ["可用功率", "457.44 kW"],
+      ["当前输出", "0.00 kW"],
+      ["日发电量", "2,726.00 kWh"],
+      ["月发电量", "27.47 MWh"],
+      ["缸套水温", "76.2°C"],
+      ["燃油余量", "68%"],
+    ],
+    runtime: "发电机处于热备状态，可在电网受限或储能不足时接入保供。",
+    alerts: ["无活动告警", "连续运行超过 4 小时需复核油量"],
+    operations: ["01:45 Agent 标记为保供备用", "01:46 审核 Agent 校验启机边界"],
   },
-  {
-    event: "candidate-a",
-    target: '[data-candidate-id="Candidate-A"]',
-    title: "理解审核门禁",
-    story: "Audit Agent 独立重算硬约束。经济优先方案的变压器负载率为 103.8%，超过 95% 安全上限，必须否决。",
-    objective: "查看被拒绝的 Candidate A",
-    action: "点击 Candidate A，查看它为什么不能进入人工审批。",
-  },
-  {
-    event: "approve",
-    target: "#approve-b",
-    title: "人工确认安全方案",
-    story: "Candidate B 通过了 SOC、PCS、变压器、并网和生产约束。高风险执行仍需由人绑定 task_version 与 context_hash 批准。",
-    objective: "批准安全均衡方案",
-    action: "点击“批准 Candidate B”。未通过审核的方案不会获得这个入口。",
-  },
-  {
-    event: "execute",
-    target: "#execute-b",
-    title: "映射模拟执行指令",
-    story: "Execution Agent 只能把已经审核并批准的方案映射为幂等模拟指令，不能自行改写目标或跳过门禁。",
-    objective: "执行获批方案",
-    action: "点击“执行获批方案”，进入确定性验证。",
-  },
-  {
-    event: "evidence",
-    target: "#open-evidence",
-    title: "封存可审计证据",
-    story: "验证完成后，状态迁移、交接、Skill 调用、审批与执行回执被纳入同一个证据包。",
-    objective: "查看任务证据",
-    action: "点击“查看任务证据”，完成本次安全调度任务。",
-  },
-];
+};
 
 const stateLabels = {
-  TASK_RECEIVED: "任务接收",
-  SENSING: "感知中",
-  CONTEXT_VALIDATED: "上下文已校验",
-  REPLANNING_REQUIRED: "需重新规划",
-  PLANNING: "规划中",
-  AUDITING: "审核中",
-  AWAITING_APPROVAL: "等待审批",
-  EXECUTING: "执行中",
-  VERIFYING: "验证中",
-  COMPLETED: "已完成",
-  REJECTED: "已拒绝",
-  ROLLBACK: "已回滚",
-  FAILED: "失败",
+  en: {
+    TASK_RECEIVED: "Task received",
+    SENSING: "Sensing",
+    CONTEXT_VALIDATED: "Context validated",
+    REPLANNING_REQUIRED: "Replanning required",
+    PLANNING: "Planning",
+    AUDITING: "Auditing",
+    AWAITING_APPROVAL: "Awaiting approval",
+    EXECUTING: "Executing",
+    VERIFYING: "Verifying",
+    COMPLETED: "Completed",
+    REJECTED: "Rejected",
+    ROLLBACK: "Rollback",
+    FAILED: "Failed",
+    IDLE: "IDLE",
+  },
+  zh: {
+    TASK_RECEIVED: "任务已接收",
+    SENSING: "感知中",
+    CONTEXT_VALIDATED: "上下文已校验",
+    REPLANNING_REQUIRED: "需要重规划",
+    PLANNING: "规划中",
+    AUDITING: "审核中",
+    AWAITING_APPROVAL: "等待人工审批",
+    EXECUTING: "执行中",
+    VERIFYING: "验证中",
+    COMPLETED: "已完成",
+    REJECTED: "已拒绝",
+    ROLLBACK: "安全回滚",
+    FAILED: "失败",
+    IDLE: "空闲",
+  },
+};
+
+const actorLabels = {
+  en: {
+    "Team Leader": "Team Leader",
+    "Perception Agent": "Perception Worker",
+    "Dispatch Agent": "Dispatch Worker",
+    "Audit Agent": "Audit Worker",
+    "Human Approval": "Human Operator",
+    "Execution Agent": "Execution Worker",
+    Verification: "Verification",
+  },
+  zh: {
+    "Team Leader": "Team Leader",
+    "Perception Agent": "感知 Worker",
+    "Dispatch Agent": "调度 Worker",
+    "Audit Agent": "审核 Worker",
+    "Human Approval": "人工审批",
+    "Execution Agent": "执行 Worker",
+    Verification: "结果验证",
+  },
+};
+
+const translations = {
+  en: {
+    homeTitle: "All insights",
+    homeSubtitle: "Recent tasks",
+    homeSearchPlaceholder: "Search tasks",
+    historyCritical: "Critical",
+    historyHigh: "High",
+    historyApproved: "Awaiting approval",
+    historyTraceReady: "Trace ready",
+    historyRejected: "Rejected",
+    historyRollback: "Rollback",
+    historyCurrentTitle: "14:00 compound change dispatch loop",
+    historyCurrentText: "PV drops below forecast, production load rises, transformer readings conflict, and peak tariff starts.",
+    historyContextTitle: "Transformer sensor conflict review",
+    historyContextText: "Perception Worker found two incompatible temperature streams and blocked direct replanning.",
+    historyAuditTitle: "Candidate A failed safety audit",
+    historyAuditText: "Audit Worker rejected the plan because transformer load and minimum production constraints diverged.",
+    historyRollbackTitle: "Safe fallback after approval denial",
+    historyRollbackText: "Execution was stopped, evidence was sealed, and control returned to the human operator.",
+    workspaceTitle: "New workspace",
+    agentDirectory: "Agent directory",
+    workersLabel: "Workers",
+    perceptionBrief: "Context validation",
+    dispatchBrief: "Candidate planning",
+    auditBrief: "Independent safety audit",
+    executionBrief: "Approved command mapping",
+    operatorPrompt: "When park operating conditions change, determine whether the original dispatch task still holds.",
+    diagP1: "The current run indicates the original EMS baseline is no longer reliable. Production load increased, PV output fell below forecast, transformer temperature readings conflict, and the tariff is entering peak period.",
+    diagP2: "Team Leader should command the Worker Agents in sequence: validate context first, generate candidates only after the context is trusted, audit every plan independently, then request human approval before execution.",
+    step1Strong: "Validate the context:",
+    step1Text: "Perception Worker checks load, PV, SOC, tariff, transformer sensors, device state, and MES production constraints before any optimization.",
+    step2Strong: "Generate bounded plans:",
+    step2Text: "Dispatch Worker authors candidate scripts and 96-point schedules, but does not approve or execute equipment commands.",
+    step3Strong: "Audit before action:",
+    step3Text: "Audit Worker recomputes SOC, grid import, transformer load, production minimums, and improvement against baseline. Unsafe plans fail closed.",
+    step4Strong: "Execute only approved work:",
+    step4Text: "Execution Worker maps the approved plan to idempotent simulated EMS / PCS / load-control commands and verifies actual-vs-plan deviation.",
+    plotChip: "▥ Plot",
+    runButton: "Run 14:00 compound change",
+    approveButton: "Approve B",
+    executeButton: "Execute",
+    rollbackButton: "Rollback scene",
+    visualTitle: "Console",
+    visualSubtitle: "",
+    taskLabel: "Task",
+    plotTitle: "",
+    assetFactory: "Factory",
+    assetFactoryNote: "MES +420 kW",
+    assetPv: "PV",
+    assetPvNote: "-18.6% forecast",
+    assetStorage: "Storage",
+    assetStorageNote: "simulated PCS",
+    assetGrid: "Grid",
+    assetGridNote: "import limited",
+    assetCharge: "Charging",
+    assetChargeNote: "flexible load",
+    assetCompute: "Compute",
+    assetComputeNote: "critical load",
+    relatedTitle: "Related insights",
+    taskVersionLabel: "Task version",
+    riskGateLabel: "Risk gate",
+    riskGateText: "High-risk flexible-load actions require Human Operator approval.",
+    evidenceLabel: "Evidence",
+    evidenceText: "Trace, metrics, execution receipt, and SHA-256 package.",
+    candidatePlansTitle: "Candidate plans",
+    focusButton: "Focus",
+    candidateEmpty: "Run the scenario to generate audited candidates.",
+    traceTitle: "Trace",
+    evidenceButton: "Evidence",
+    traceEmpty: "Backend events will appear here.",
+    chatKicker: "Team Leader",
+    chatTitle: "AI dispatch conversation",
+    chatIntro: "I am the EnergyMesh leader. What dispatch task would you like to assign?",
+    chatPlaceholder: "Ask the Team Leader...",
+    chatSend: "Send",
+    chatButton: "Chat",
+    gatewayButton: "Gateway",
+    gatewayBaseUrl: "Base URL",
+    gatewayApiKey: "API Key",
+    gatewayModel: "Model",
+    gatewayTest: "Test",
+    gatewaySave: "Save gateway",
+    gatewayStored: "Gateway settings are stored locally for now.",
+    you: "You",
+    noTask: "not created",
+    noCandidates: "no candidates yet",
+    waiting: "Waiting",
+    needsHuman: "Needs human",
+    approved: "Approved",
+    notSealed: "Not sealed",
+    ready: "Ready",
+    sealed: "Sealed",
+    pendingAudit: "Pending audit",
+    auditPassed: "Audit passed",
+    rejected: "Rejected",
+    events: "events",
+    contextPending: "Context hash pending",
+  },
+  zh: {
+    homeTitle: "全部洞察",
+    homeSubtitle: "最近任务",
+    homeSearchPlaceholder: "搜索任务",
+    historyCritical: "严重",
+    historyHigh: "高",
+    historyApproved: "等待审批",
+    historyTraceReady: "Trace 已就绪",
+    historyRejected: "已拒绝",
+    historyRollback: "已回滚",
+    historyCurrentTitle: "14:00 复合变化调度闭环",
+    historyCurrentText: "光伏低于预测、生产负荷上升、变压器读数冲突，并进入峰段电价。",
+    historyContextTitle: "变压器传感器冲突复核",
+    historyContextText: "感知 Worker 发现两路温度流不一致，阻断直接重规划。",
+    historyAuditTitle: "Candidate A 未通过安全审核",
+    historyAuditText: "审核 Worker 因变压器负载和生产最小约束偏离而拒绝该方案。",
+    historyRollbackTitle: "审批拒绝后的安全回退",
+    historyRollbackText: "执行被停止，证据被封存，控制权返回人工操作员。",
+    workspaceTitle: "新工作区",
+    agentDirectory: "Agent 通讯录",
+    workersLabel: "Worker Agents",
+    perceptionBrief: "运行上下文校验",
+    dispatchBrief: "候选方案生成",
+    auditBrief: "独立安全审核",
+    executionBrief: "获批指令映射",
+    operatorPrompt: "当园区运行条件发生变化时，判断原调度任务是否仍然成立。",
+    diagP1: "当前运行表明原 EMS 基线已不再可靠。生产负荷增加，光伏出力低于预测，变压器温度读数冲突，并且电价即将进入高峰时段。",
+    diagP2: "Team Leader 应按顺序指挥 Worker Agents：先校验上下文，只有上下文可信后才生成候选方案，再独立审核每个计划，最后在执行前请求人工审批。",
+    step1Strong: "校验上下文：",
+    step1Text: "Perception Worker 在任何优化前检查负荷、光伏、SOC、电价、变压器传感器、设备状态和 MES 生产约束。",
+    step2Strong: "生成受限方案：",
+    step2Text: "Dispatch Worker 编写候选策略脚本和 96 点调度计划，但不审批、不执行设备命令。",
+    step3Strong: "行动前审核：",
+    step3Text: "Audit Worker 复算 SOC、购电功率、变压器负载、生产最小负荷和相对基线收益；不安全方案默认关闭。",
+    step4Strong: "只执行获批工作：",
+    step4Text: "Execution Worker 只把获批计划映射为幂等的模拟 EMS / PCS / 负荷控制命令，并验证计划与实际偏差。",
+    plotChip: "▥ 图表",
+    runButton: "运行14:00复合变化",
+    approveButton: "审批 B",
+    executeButton: "执行",
+    rollbackButton: "回滚场景",
+    visualTitle: "控制台",
+    visualSubtitle: "",
+    taskLabel: "任务",
+    plotTitle: "",
+    assetFactory: "工厂",
+    assetFactoryNote: "MES +420 kW",
+    assetPv: "光伏",
+    assetPvNote: "较预测 -18.6%",
+    assetStorage: "储能",
+    assetStorageNote: "模拟 PCS",
+    assetGrid: "电网",
+    assetGridNote: "购电受限",
+    assetCharge: "充电",
+    assetChargeNote: "柔性负荷",
+    assetCompute: "算力",
+    assetComputeNote: "关键负荷",
+    relatedTitle: "相关洞察",
+    taskVersionLabel: "任务版本",
+    riskGateLabel: "风险闸门",
+    riskGateText: "高风险柔性负荷动作必须经过人工操作员审批。",
+    evidenceLabel: "证据",
+    evidenceText: "Trace、Metrics、执行回执与 SHA-256 证据包。",
+    candidatePlansTitle: "候选方案",
+    focusButton: "聚焦",
+    candidateEmpty: "运行场景后生成带审核结论的候选方案。",
+    traceTitle: "Trace",
+    evidenceButton: "证据",
+    traceEmpty: "后端事件会显示在这里。",
+    chatKicker: "Team Leader",
+    chatTitle: "AI 调度对话",
+    chatIntro: "我是EnergyMesh leader，目前您要下达什么调度任务？",
+    chatPlaceholder: "向 Team Leader 提问...",
+    chatSend: "发送",
+    chatButton: "对话",
+    gatewayButton: "网关",
+    gatewayBaseUrl: "Base URL",
+    gatewayApiKey: "API Key",
+    gatewayModel: "模型",
+    gatewayTest: "测试",
+    gatewaySave: "保存网关",
+    gatewayStored: "网关设置目前保存在本地。",
+    you: "你",
+    noTask: "未创建",
+    noCandidates: "暂无候选方案",
+    waiting: "等待",
+    needsHuman: "需要人工",
+    approved: "已审批",
+    notSealed: "未封存",
+    ready: "已就绪",
+    sealed: "已封存",
+    pendingAudit: "等待审核",
+    auditPassed: "审核通过",
+    rejected: "已拒绝",
+    events: "个事件",
+    contextPending: "上下文哈希待生成",
+  },
+};
+
+const historyThreads = {
+  current: {
+    agentId: "team_leader",
+    en: {
+      opener: "Reopen current task",
+      messages: [
+        { role: "user", text: "Open the 14:00 compound-change dispatch task." },
+        { role: "agent", agentId: "team_leader", text: "I reopened TASK-20260731-014. The original EMS baseline no longer holds because PV output fell below forecast, production load rose, transformer readings conflict, and peak tariff has started." },
+        { role: "agent", agentId: "perception_agent", text: "Context status: load +420 kW, PV -18.6%, SOC 55%, grid import constrained, and two transformer temperature streams disagree. I marked the context as needing replanning." },
+        { role: "agent", agentId: "dispatch_agent", text: "I generated bounded candidates only after the context hash was fixed. Candidate B is the balanced plan; Candidate A is cheaper but violates transformer headroom." },
+        { role: "agent", agentId: "audit_agent", text: "Candidate B passed independent audit and is waiting for Human Operator approval. Execution remains locked until approval is bound to this task version and context hash." },
+      ],
+    },
+    zh: {
+      opener: "打开当前任务",
+      messages: [
+        { role: "user", text: "打开 14:00 复合变化调度任务。" },
+        { role: "agent", agentId: "team_leader", text: "已重新打开 TASK-20260731-014。原 EMS 基线不再成立：光伏低于预测、生产负荷上升、变压器读数冲突，并且已进入峰段电价。" },
+        { role: "agent", agentId: "perception_agent", text: "上下文状态：负荷 +420 kW，光伏 -18.6%，SOC 55%，购电受限，且两路变压器温度流不一致。我已把上下文标记为需要重规划。" },
+        { role: "agent", agentId: "dispatch_agent", text: "我在上下文哈希固定后才生成受限候选。Candidate B 是安全均衡方案；Candidate A 成本更低，但违反变压器余量。" },
+        { role: "agent", agentId: "audit_agent", text: "Candidate B 已通过独立审核，等待人工操作员审批。只有审批绑定当前任务版本和上下文哈希后，执行才会解锁。" },
+      ],
+    },
+  },
+  context: {
+    agentId: "perception_agent",
+    en: {
+      opener: "Open sensor conflict review",
+      messages: [
+        { role: "user", text: "Why did the transformer sensor conflict block dispatch?" },
+        { role: "agent", agentId: "perception_agent", text: "I compared SCADA transformer temperature, cabinet telemetry, PCS operating state, and recent maintenance tags. Two temperature streams diverged beyond the trust threshold." },
+        { role: "agent", agentId: "perception_agent", text: "Because load-control plans depend on transformer headroom, I invalidated direct replanning and emitted a context-risk event instead of letting Dispatch optimize from uncertain data." },
+        { role: "agent", agentId: "team_leader", text: "Leader decision: keep the task in review, request fresh telemetry through MCP, retrieve similar sensor-conflict cases with RAG, and preserve trace evidence for audit." },
+      ],
+    },
+    zh: {
+      opener: "打开传感器冲突复核",
+      messages: [
+        { role: "user", text: "为什么变压器传感器冲突会阻断调度？" },
+        { role: "agent", agentId: "perception_agent", text: "我对比了 SCADA 变压器温度、柜体遥测、PCS 运行状态和近期检修标签。两路温度流的偏差超过可信阈值。" },
+        { role: "agent", agentId: "perception_agent", text: "因为负荷控制方案依赖变压器余量，我没有让 Dispatch 基于不确定数据优化，而是使直接重规划失效并发出上下文风险事件。" },
+        { role: "agent", agentId: "team_leader", text: "Leader 决策：任务保持复核，通过 MCP 请求新遥测，通过 RAG 召回相似传感器冲突案例，并保留 trace 证据给审核。" },
+      ],
+    },
+  },
+  audit: {
+    agentId: "audit_agent",
+    en: {
+      opener: "Open Candidate A audit",
+      messages: [
+        { role: "user", text: "Show why Candidate A failed the independent safety audit." },
+        { role: "agent", agentId: "audit_agent", text: "Candidate A minimized cost by pushing flexible load and battery discharge too aggressively. My recomputation found transformer loading above the safety ceiling." },
+        { role: "agent", agentId: "audit_agent", text: "It also reduced production reserve below the minimum allowed by MES constraints. The plan therefore failed closed: rejected, not eligible for approval, and never executable." },
+        { role: "agent", agentId: "team_leader", text: "Leader summary: Candidate A remains in the history record as a negative example. Candidate B is the only plan that can proceed to Human Operator approval." },
+      ],
+    },
+    zh: {
+      opener: "打开 Candidate A 审核",
+      messages: [
+        { role: "user", text: "说明 Candidate A 为什么没有通过独立安全审核。" },
+        { role: "agent", agentId: "audit_agent", text: "Candidate A 为了降低成本，过度推动柔性负荷和电池放电。我独立复算后发现变压器负载超过安全上限。" },
+        { role: "agent", agentId: "audit_agent", text: "它还把生产备用压低到 MES 约束允许的最小值以下。因此该方案默认关闭：已拒绝、不可审批、也永远不可执行。" },
+        { role: "agent", agentId: "team_leader", text: "Leader 总结：Candidate A 作为反例保留在历史记录中。只有 Candidate B 可以进入人工操作员审批。" },
+      ],
+    },
+  },
+  rollback: {
+    agentId: "execution_agent",
+    en: {
+      opener: "Open rollback conversation",
+      messages: [
+        { role: "user", text: "What happened after approval was denied?" },
+        { role: "agent", agentId: "execution_agent", text: "No equipment command was executed. I received a denied approval state, stopped command mapping, and kept all EMS / PCS / load-control operations at safe defaults." },
+        { role: "agent", agentId: "execution_agent", text: "I sealed the execution receipt as a no-op, attached trace and metrics evidence, and returned control to the Human Operator." },
+        { role: "agent", agentId: "team_leader", text: "Leader summary: rollback is not a UI state only. It is a closed operational path with evidence, reason, and recovery ownership." },
+      ],
+    },
+    zh: {
+      opener: "打开回滚对话",
+      messages: [
+        { role: "user", text: "审批被拒绝后发生了什么？" },
+        { role: "agent", agentId: "execution_agent", text: "没有任何设备命令被执行。我收到审批拒绝状态后，停止指令映射，并让 EMS / PCS / 负荷控制保持安全默认值。" },
+        { role: "agent", agentId: "execution_agent", text: "我把执行回执封存为 no-op，附上 trace 与 metrics 证据，并把控制权交还人工操作员。" },
+        { role: "agent", agentId: "team_leader", text: "Leader 总结：回滚不只是 UI 状态，而是一条闭合的运行路径，包含证据、原因和恢复责任。" },
+      ],
+    },
+  },
+};
+
+const naturalScenarios = {
+  production_load: {
+    match: (text) => /生产一区|800\s*kw|800kW|增加.*负荷|能源策略/i.test(text),
+    title: "生产一区 800kW 负荷增加评估",
+    taskId: "DEMO-PROD-800KW",
+    selectedAgent: "team_leader",
+    tools: ["get_energy_state", "get_production_rules", "generate_dispatch_plan"],
+    endpoint: "GET /energy/state?zone=production-1&date=tomorrow",
+    apiResponse: "Current load 6.8MW / Available margin 2.4MW / Storage SOC 61% / Peak tariff 18:00-22:00",
+    rag: ["生产一区保供规则", "峰段削峰策略模板", "历史 800kW 增产调度案例"],
+    cards: [
+      { title: "MCP", text: "读取当前负荷、储能 SOC、光伏预测和明日电价窗口。" },
+      { title: "RAG", text: "检索生产一区连续供电规则与增产最低保障约束。" },
+      { title: "Agent", text: "调度 Worker 生成移峰填谷方案，审核 Worker 验证变压器与 SOC 安全边界。" },
+    ],
+    steps: [
+      ["Task Understanding", "识别：生产一区明天新增 800kW 负荷，需要判断是否调整能源策略。"],
+      ["Tool Selection", "选择工具：get_energy_state、get_production_rules、generate_dispatch_plan。"],
+      ["MCP Gateway Request", "GET /energy/state?zone=production-1&date=tomorrow"],
+      ["API Response", "可用容量 2.4MW，储能 SOC 61%，18:00 后进入峰段电价。"],
+      ["Knowledge Retrieval", "RAG：检索生产规则、峰段调度模板、历史增产案例。"],
+      ["Planning Agent", "生成方案：午间提高储能充电，17:30 前完成关键产线预冷和柔性负荷前移。"],
+      ["Audit Agent", "验证：变压器负载峰值 86%，SOC 最低 38%，满足生产保供约束。"],
+      ["Leader Response", "结论：需要调整能源策略，建议采用受限削峰方案，避免峰段购电增加。"],
+    ],
+    reply: "我识别到这是“生产负荷变化后的能源策略调整”任务。当前可用容量可以覆盖新增 800kW，但如果不调整策略，18:00 后峰段购电会明显上升。建议：明天中午优先利用光伏给储能补能，17:30 前把可前移负荷完成，峰段由储能承担约 520kW，剩余 280kW 由电网补足。审核结果显示变压器峰值约 86%，SOC 最低约 38%，可以执行，但需要保留生产一区最低供电约束。",
+    executionPurpose: "执行方案 B 后，新增 800kW 生产负荷可被纳入明日计划，18:00-22:00 峰段购电被压低，变压器峰值控制在 86% 左右，储能 SOC 最低保持约 38%。",
+  },
+  ai_center: {
+    match: (text) => /AI|算力中心|6\s*mw|6MW|电力.*支持|容量/i.test(text),
+    title: "AI 算力中心 6MW 接入评估",
+    taskId: "DEMO-AIDC-6MW",
+    selectedAgent: "team_leader",
+    tools: ["get_power_capacity", "get_transformer_status", "get_storage_status"],
+    endpoint: "GET /energy/capacity?load=6MW&type=ai-datacenter",
+    apiResponse: "Current Capacity 10MW / Available 3.2MW / Transformer spare 3.6MW / Storage firm support 0.8MW",
+    rag: ["数据中心供电标准", "AI 算力中心 N+1 供电建议", "园区历史扩容案例"],
+    cards: [
+      { title: "MCP", text: "查询总容量、变压器余量、储能可支撑时长和当前负荷曲线。" },
+      { title: "RAG", text: "检索数据中心供电规范、N+1 冗余要求和历史扩容案例。" },
+      { title: "Agent", text: "规划 Agent 判断 6MW 不能直接接入，需分阶段扩容和配套储能。" },
+    ],
+    steps: [
+      ["Task Understanding", "识别：AI 算力中心新增接入评估，目标负荷 6MW。"],
+      ["Tool Selection", "选择工具：get_power_capacity、get_transformer_status、get_storage_status。"],
+      ["MCP Gateway Request", "GET /energy/capacity?load=6MW&type=ai-datacenter"],
+      ["API Response", "Current Capacity: 10MW；Available: 3.2MW；稳定支撑缺口约 2.8MW。"],
+      ["Knowledge Retrieval", "RAG：检索数据中心供电标准、N+1 冗余要求、历史扩容案例。"],
+      ["Planning Agent", "生成方案：新增 4MW 变压器容量，配置 2MWh 储能，分两阶段接入算力负荷。"],
+      ["Audit Agent", "验证安全约束：现状不支持一次性 6MW 接入；扩容后可满足冗余和峰段约束。"],
+      ["Leader Response", "结论：当前园区不支持直接新增 6MW，需要先做电力基础设施扩容。"],
+    ],
+    reply: "我识别到这是“AI 算力中心接入容量评估”任务。MCP 查询显示园区当前总容量约 10MW，可用余量约 3.2MW；你提出的 6MW 负荷超过当前可用容量，稳定缺口约 2.8MW。结合 RAG 检索到的数据中心供电标准，我不建议直接接入。建议先新增至少 4MW 变压器容量，并配置约 2MWh 储能或等效备用能力，再按 2MW + 4MW 两阶段接入。",
+    executionPurpose: "确认后将生成扩容实施任务：新增至少 4MW 变压器容量、配置约 2MWh 储能或备用能力，并把 AI 算力中心接入拆成 2MW + 4MW 两阶段，避免一次性接入造成容量风险。",
+  },
+  transformer_temperature: {
+    match: (text) => /2号变压器|2 号变压器|温度异常|变压器.*异常|发热/i.test(text),
+    title: "2号变压器温度异常分析",
+    taskId: "DEMO-TR02-TEMP",
+    selectedAgent: "team_leader",
+    tools: ["get_transformer_status", "get_thermal_history", "get_load_curve"],
+    endpoint: "GET /equipment/transformers/TR-02/status",
+    apiResponse: "TR-02 temp 92°C / Load 91% / Fan group B offline / Ambient 34°C / Oil temp rising 1.8°C per 10min",
+    rag: ["变压器温升故障案例", "风机组异常处置手册", "高温天气降载策略"],
+    cards: [
+      { title: "MCP", text: "读取 2号变压器温度、负载率、风机组、环境温度与历史曲线。" },
+      { title: "RAG", text: "检索历史温升故障、风冷系统处置手册和高温降载策略。" },
+      { title: "Agent", text: "感知 Worker 定位风险，审核 Worker 给出处置边界和降载建议。" },
+    ],
+    steps: [
+      ["Task Understanding", "识别：设备异常诊断任务，目标设备为 2号变压器。"],
+      ["Tool Selection", "选择工具：get_transformer_status、get_thermal_history、get_load_curve。"],
+      ["MCP Gateway Request", "GET /equipment/transformers/TR-02/status"],
+      ["API Response", "温度 92°C，负载率 91%，B 组风机离线，油温仍在上升。"],
+      ["Knowledge Retrieval", "RAG：检索变压器温升故障、风机组异常和高温天气降载案例。"],
+      ["Planning Agent", "生成处理建议：先切换备用风机，10 分钟内将非关键负荷下调 600kW。"],
+      ["Audit Agent", "验证：若温升继续超过 95°C，应进入人工确认和保护降载。"],
+      ["Leader Response", "结论：高概率为风机组故障叠加高负载导致，应立即降载并派检修。"],
+    ],
+    reply: "我识别到这是“设备异常诊断与风险处置”任务。MCP 返回显示 2号变压器温度约 92°C、负载率 91%，B 组风机离线，油温仍在上升。结合历史故障 RAG，最可能原因是风冷能力下降叠加高负载。建议立即切换备用风机，并在 10 分钟内下调约 600kW 非关键负荷；如果温度继续接近 95°C，应进入人工确认和保护降载流程。",
+    executionPurpose: "确认后将执行安全处置：切换备用风机、下调约 600kW 非关键负荷并创建检修工单，目标是在 10 分钟内阻止温度继续逼近 95°C 保护阈值。",
+  },
+  storage_status: {
+    match: (text) => /储能状态|当前.*储能|查询.*储能|storage status/i.test(text),
+    title: "园区储能状态查询",
+    taskId: "DEMO-MCP-STORAGE",
+    selectedAgent: "team_leader",
+    tools: ["get_storage_status"],
+    endpoint: "GET /energy/storage/status",
+    apiResponse: "SOC 55% / Available discharge 1.1MW / Available charge 0.9MW / PCS healthy / Estimated duration 42min",
+    rag: ["储能运行边界", "PCS 健康检查规则"],
+    cards: [
+      { title: "MCP", text: "基础测试：通过 MCP Gateway 查询当前储能状态。" },
+      { title: "RAG", text: "读取储能 SOC 和 PCS 健康边界说明，用于解释查询结果。" },
+      { title: "Agent", text: "Leader 返回状态摘要，并说明可放电功率和可支撑时长。" },
+    ],
+    steps: [
+      ["Task Understanding", "识别：基础状态查询，不需要生成调度方案。"],
+      ["Tool Selection", "选择工具：get_storage_status。"],
+      ["MCP Gateway Request", "GET /energy/storage/status"],
+      ["API Response", "SOC 55%，可放电 1.1MW，可充电 0.9MW，PCS healthy。"],
+      ["Knowledge Retrieval", "RAG：检索储能运行边界与 PCS 健康检查规则。"],
+      ["Leader Response", "结论：储能状态正常，可用于短时削峰，但不建议承担长时间 1MW 以上负荷。"],
+    ],
+    reply: "我已通过 MCP Gateway 查询当前园区储能状态：SOC 约 55%，PCS 健康，可放电功率约 1.1MW，可充电功率约 0.9MW，按当前状态约可稳定支撑 42 分钟。结论：储能可用于短时削峰或应急缓冲，但不建议在未补能前承担长时间 1MW 以上负荷。",
+    executable: false,
+  },
 };
 
 function $(selector) {
@@ -148,32 +628,1064 @@ function escapeHTML(value) {
     .replaceAll(">", "&gt;");
 }
 
+function t(key) {
+  return translations[state.language]?.[key] || translations.en[key] || key;
+}
+
+function agentName(agentId) {
+  const profile = agentProfiles[agentId] || agentProfiles.team_leader;
+  return state.language === "zh" ? profile.nameZh : profile.name;
+}
+
+function agentRole(agentId) {
+  const profile = agentProfiles[agentId] || agentProfiles.team_leader;
+  return state.language === "zh" ? profile.roleZh : profile.role;
+}
+
+function agentProfile(agentId) {
+  return agentProfiles[agentId] || agentProfiles.team_leader;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function request(url, options = {}) {
-  const response = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `请求失败 (${response.status})`);
+    throw new Error(body.detail || `Request failed (${response.status})`);
   }
   return response.json();
 }
 
-function agentContextPrompt(message) {
-  const taskLine = state.task
-    ? `当前任务 ${state.task.task_id}/V${state.task.task_version}，状态 ${state.task.state}。`
-    : "当前尚未创建任务。";
-  const contextLine = state.context
-    ? `当前上下文 ${state.context.context_id}，context_hash=${state.context.context_hash}。`
-    : "当前尚未生成ContextSnapshot。";
-  const candidateLine = state.candidates.length
-    ? `候选方案：${state.candidates.map((item) => `${item.candidate_id}:${item.name}`).join("；")}。`
-    : "当前尚未生成候选方案。";
-  return `${taskLine}\n${contextLine}\n${candidateLine}\n用户问题：${message}`;
+async function requestAllowingError(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const body = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, body };
 }
 
 function toast(message) {
   $("#toast").textContent = message;
   $("#toast").classList.add("visible");
-  window.setTimeout(() => $("#toast").classList.remove("visible"), 2600);
+  window.setTimeout(() => $("#toast").classList.remove("visible"), 2400);
+}
+
+function applyLanguage(language) {
+  state.language = language;
+  const dictionary = translations[language];
+  $$("[data-i18n]").forEach((element) => {
+    const text = dictionary[element.dataset.i18n];
+    if (text) element.textContent = text;
+  });
+  $$("[data-i18n-placeholder]").forEach((element) => {
+    const text = dictionary[element.dataset.i18nPlaceholder];
+    if (text) element.placeholder = text;
+  });
+  const button = $("#translate-button");
+  button.classList.toggle("active", language === "zh");
+  button.textContent = language === "zh" ? "A" : "文";
+  button.title = language === "zh" ? "Switch to English" : "翻译为中文";
+  button.setAttribute("aria-label", language === "zh" ? "Switch to English" : "Translate to Chinese");
+  document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  window.localStorage.setItem("energymesh.language", language);
+  $$("[data-agent-name]").forEach((element) => {
+    element.textContent = agentName(element.dataset.agentName);
+  });
+  $$("[data-agent-role]").forEach((element) => {
+    element.textContent = agentRole(element.dataset.agentRole);
+  });
+  renderSelectedAgent();
+  renderTask();
+  renderCandidates();
+  renderTrace();
+  renderOpsReport();
+  if (!$(".home-view").hidden) drawHomeCharts();
+  if (historyThreads[state.activeHistory]) renderThreadMessages(state.activeHistory);
+  else renderAgentThread(state.selectedAgent);
+  drawScenarioChart();
+}
+
+function toggleLanguage() {
+  const next = document.documentElement.lang === "zh-CN" ? "en" : "zh";
+  applyLanguage(next);
+}
+
+function toggleAgentDirectory() {
+  const drawer = $("#agent-directory-drawer");
+  const willOpen = drawer.hidden;
+  drawer.hidden = !willOpen;
+  setActiveRail("nav-agents");
+}
+
+function setAgentDirectory(open) {
+  $("#agent-directory-drawer").hidden = !open;
+}
+
+function setChatPanel(open) {
+  $("#ai-chat-panel").hidden = !open;
+}
+
+function setActiveRail(id) {
+  $$(".rail-item").forEach((button) => {
+    button.classList.toggle("active", button.id === id);
+  });
+  if (document.documentElement.lang === "zh-CN") $("#translate-button").classList.add("active");
+}
+
+function setStationView(view) {
+  $$("[data-station-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.stationTab === view);
+  });
+  $$("[data-station-view]").forEach((panel) => {
+    panel.hidden = panel.dataset.stationView !== view;
+  });
+  if (view === "devices") renderDeviceDetail("pcs");
+}
+
+function renderDeviceDetail(deviceId = "pcs") {
+  state.selectedDeviceId = deviceId;
+  const detail = deviceDetails[deviceId] || deviceDetails.pcs;
+  $$("[data-device-id]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.deviceId === deviceId);
+  });
+  const target = $("#device-detail");
+  if (!target) return;
+  const mode = state.selectedDeviceMode;
+  const filteredMetrics = mode === "power" ? detail.metrics.filter(([label]) => /功率|输出|可用/.test(label))
+    : mode === "energy" ? detail.metrics.filter(([label]) => /电量|发电量|充电量|放电量/.test(label))
+    : mode === "temperature" ? detail.metrics.filter(([label]) => /温度/.test(label))
+    : mode === "soc" ? detail.metrics.filter(([label]) => /SOC|可用率|燃油/.test(label))
+    : detail.metrics;
+  const metrics = filteredMetrics.length ? filteredMetrics : detail.metrics;
+  target.innerHTML = `
+    <header>
+      <div><span>设备详情</span><strong>${escapeHTML(detail.name)}</strong></div>
+      <em>${escapeHTML(detail.status)}</em>
+    </header>
+    <div class="device-metrics">
+      ${metrics.map(([label, value]) => `
+        <div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>
+      `).join("")}
+    </div>
+    <p>${escapeHTML(detail.runtime)}</p>
+    <div class="device-log-grid">
+      <section><span>${mode === "history" ? "历史数据" : "告警记录"}</span>${(mode === "history" ? [`上一小时平均功率：${metrics[0]?.[1] || "--"}`, "采样周期：15 分钟", "数据源：MCP / station.telemetry"] : detail.alerts).map((item) => `<small>${escapeHTML(item)}</small>`).join("")}</section>
+      <section><span>操作记录</span>${detail.operations.map((item) => `<small>${escapeHTML(item)}</small>`).join("")}</section>
+    </div>
+  `;
+}
+
+function setDeviceMode(mode) {
+  state.selectedDeviceMode = mode;
+  $$("[data-signal-mode], [data-device-view-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.signalMode === mode || button.dataset.deviceViewMode === mode);
+  });
+  renderDeviceDetail(state.selectedDeviceId);
+}
+
+function scrollWithin(element, selector) {
+  const target = $(selector);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  element?.focus?.();
+}
+
+function ensureAgentThread(agentId = state.selectedAgent) {
+  if (!state.agentThreads[agentId]) {
+    const intro = agentIntroMessages[agentId] || agentIntroMessages.team_leader;
+    state.agentThreads[agentId] = [{
+      role: "agent",
+      agentId,
+      text: state.language === "zh" ? intro.zh : intro.en,
+      intro: true,
+    }];
+  }
+  return state.agentThreads[agentId];
+}
+
+function appendChatMessage(role, text, agentId = state.selectedAgent, meta = {}) {
+  const message = document.createElement("article");
+  const profile = agentProfile(agentId);
+  message.className = `chat-message ${role} tone-${profile.tone || "leader"}${meta.action ? " actionable" : ""}`;
+  const label = role === "user" ? t("you") : agentName(agentId);
+  const avatar = document.createElement("div");
+  avatar.className = "chat-avatar";
+  if (role === "agent" && profile.avatar) {
+    const image = document.createElement("img");
+    image.src = profile.avatar;
+    image.alt = "";
+    avatar.append(image);
+  } else {
+    avatar.textContent = role === "user" ? "你" : profile.initials || "AI";
+  }
+  const content = document.createElement("div");
+  content.className = "chat-content";
+  const heading = document.createElement("header");
+  heading.className = "chat-message-head";
+  const labelNode = document.createElement("strong");
+  labelNode.className = "chat-speaker";
+  labelNode.textContent = label;
+  const roleNode = document.createElement("small");
+  roleNode.className = "chat-role";
+  roleNode.textContent = role === "user" ? "Operator" : agentRole(agentId);
+  heading.append(labelNode, roleNode);
+  const body = document.createElement("div");
+  body.className = "chat-message-body";
+  if (role === "agent") {
+    renderMarkdown(body, text);
+  } else {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = text;
+    body.append(paragraph);
+  }
+  content.append(heading, body);
+  message.append(avatar, content);
+  if (meta.action === "confirm_execution") {
+    const actions = document.createElement("div");
+    actions.className = "chat-actions";
+    actions.innerHTML = `
+      <button class="chat-action primary" type="button" data-confirm-scenario="${escapeHTML(meta.scenarioKey || "")}">
+        ${state.language === "zh" ? "确认执行方案" : "Confirm execution"}
+      </button>
+      <button class="chat-action" type="button" data-defer-scenario="${escapeHTML(meta.scenarioKey || "")}">
+        ${state.language === "zh" ? "暂不执行" : "Defer"}
+      </button>
+    `;
+    message.append(actions);
+  }
+  $("#chat-messages").append(message);
+  $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
+}
+
+function addChatMessage(role, text, agentId = state.selectedAgent, options = {}) {
+  appendChatMessage(role, text, agentId, options.meta || {});
+  if (options.persist === false) return;
+  ensureAgentThread(state.selectedAgent).push({ role, text, agentId, meta: options.meta || null });
+}
+
+function renderAgentThread(agentId = state.selectedAgent) {
+  const thread = ensureAgentThread(agentId);
+  $("#chat-messages").innerHTML = "";
+  thread.forEach((message) => {
+    if (message.intro) {
+      const intro = agentIntroMessages[message.agentId] || agentIntroMessages.team_leader;
+      appendChatMessage(message.role, state.language === "zh" ? intro.zh : intro.en, message.agentId);
+      return;
+    }
+    appendChatMessage(message.role, message.text, message.agentId, message.meta || {});
+  });
+}
+
+function appendRuntimeStatusMessage(agentId, text) {
+  addChatMessage("agent", text, agentId, { persist: false });
+}
+
+function updateModelStatusFromPublic(config) {
+  if (!config?.agent_id) return;
+  state.gateways[config.agent_id] = {
+    baseUrl: config.base_url,
+    apiKey: config.api_key_masked,
+    model: config.model,
+    connectionStatus: config.connection_status,
+    lastError: config.last_error,
+  };
+}
+
+async function chatWithConfiguredModel(message) {
+  const { ok, body } = await requestAllowingError("/api/runtime/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      session_id: state.runtimeSessionId,
+      task_id: state.task?.task_id || null,
+    }),
+  });
+  if (!ok) {
+    const detail = body.detail || "runtime request failed";
+    throw new Error(detail);
+  }
+  state.runtimeSessionId = body.session_id;
+  window.localStorage.setItem("energymesh.runtimeSessionId", body.session_id);
+  return body;
+}
+
+async function chatWithRuntimeStream(message, handlers = {}) {
+  const response = await fetch("/api/runtime/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      session_id: state.runtimeSessionId,
+      task_id: state.task?.task_id || null,
+    }),
+  });
+  if (!response.ok || !response.body) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `Runtime stream failed (${response.status})`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+      if (!dataLine) continue;
+      const event = JSON.parse(dataLine.slice(6));
+      if (event.type === "runtime_started") {
+        state.runtimeSessionId = event.session_id;
+        window.localStorage.setItem("energymesh.runtimeSessionId", event.session_id);
+        handlers.onStart?.(event);
+      } else if (event.type === "route_decided") {
+        handlers.onRoute?.(event);
+      } else if (event.type === "stage_start") {
+        handlers.onStage?.(event);
+      } else if (event.type === "agent_step") {
+        handlers.onStep?.(event);
+      } else if (event.type === "runtime_completed") {
+        completed = event;
+        handlers.onComplete?.(event);
+      } else if (event.type === "runtime_error") {
+        throw new Error(event.detail || "runtime stream failed");
+      }
+    }
+  }
+  return completed;
+}
+
+async function chatWithSelectedAgent(agentId, message) {
+  const { ok, body } = await requestAllowingError(`/api/agents/${agentId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+  if (!ok) {
+    throw new Error(body.detail || "agent chat request failed");
+  }
+  return body;
+}
+
+async function revealRuntimeSteps(runtime, runtimeStatus) {
+  for (const step of runtime.steps) {
+    runtimeStatus.querySelector("span").textContent = state.language === "zh"
+      ? `${agentName(step.agent_id)} 正在输出`
+      : `${agentName(step.agent_id)} is responding`;
+    await sleep(260);
+    addChatMessage("agent", step.response, step.agent_id, {
+      meta: { model: step.model, runtimeSessionId: runtime.session_id },
+    });
+    await sleep(420);
+  }
+}
+
+function confirmScenarioExecution() {
+  const scenario = state.pendingExecutionScenario || state.activeScenario;
+  if (!scenario || scenario.executable === false) return;
+  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((button) => {
+    button.disabled = true;
+  });
+  state.approval = { status: "approved_by_user" };
+  state.task = {
+    ...(state.task || {}),
+    task_id: state.task?.task_id || scenario.taskId,
+    task_version: state.task?.task_version || 1,
+    state: "COMPLETED",
+    trace_id: state.task?.trace_id || `TRACE-${scenario.taskId}`,
+    evidence_sha256: `demo-${scenario.taskId.toLowerCase()}-executed-sha256`,
+  };
+  state.evidence = {
+    ...(state.evidence || {}),
+    execution_confirmed: true,
+    execution_purpose: scenario.executionPurpose,
+    confirmed_at: new Date().toISOString(),
+  };
+  state.pendingExecutionScenario = null;
+  renderTask();
+  renderTrace();
+  renderOpsReport();
+  addChatMessage("agent", `@执行Agent 已收到确认。方案 B 已映射为模拟控制指令，执行回执已生成，证据包已封存。`, "execution_agent");
+  addChatMessage("agent", `执行完成。${scenario.executionPurpose}`, "team_leader");
+}
+
+function deferScenarioExecution() {
+  const scenario = state.pendingExecutionScenario || state.activeScenario;
+  if (!scenario || scenario.executable === false) return;
+  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((button) => {
+    button.disabled = true;
+  });
+  state.task = {
+    ...(state.task || {}),
+    state: "AWAITING_APPROVAL",
+  };
+  renderTask();
+  addChatMessage("agent", "已暂不执行。我会保留当前方案、Trace 和证据，任务继续停在等待人工确认状态。", "team_leader");
+}
+
+function renderThreadMessages(threadKey = state.activeHistory) {
+  const thread = historyThreads[threadKey];
+  if (!thread) return;
+  const transcript = thread[state.language] || thread.en;
+  $("#chat-messages").innerHTML = "";
+  transcript.messages.forEach((message) => {
+    appendChatMessage(message.role, message.text, message.agentId || thread.agentId);
+  });
+}
+
+function findNaturalScenario(message) {
+  const match = Object.entries(naturalScenarios).find(([, scenario]) => scenario.match(message));
+  if (!match) return null;
+  const [key, scenario] = match;
+  return { ...scenario, key };
+}
+
+function buildScenarioEvents(scenario) {
+  return scenario.steps.map(([label, detail], index) => ({
+    event_id: `STEP-${String(index + 1).padStart(2, "0")}`,
+    timestamp: new Date(Date.now() + index * 1000).toISOString(),
+    actor: index === 0 || label === "Leader Response" ? "Team Leader"
+      : label.includes("Planning") ? "Dispatch Agent"
+      : label.includes("Audit") ? "Audit Agent"
+      : label.includes("Knowledge") ? "Perception Agent"
+      : "Team Leader",
+    to_state: index === scenario.steps.length - 1 ? "COMPLETED" : index >= 5 ? "AUDITING" : "SENSING",
+    reason: `${label}: ${detail}`,
+  }));
+}
+
+function applyNaturalScenario(scenario) {
+  state.activeScenario = scenario;
+  state.activeHistory = "new";
+  state.selectedAgent = scenario.selectedAgent || "team_leader";
+  state.task = {
+    task_id: scenario.taskId,
+    task_version: 1,
+    state: scenario.executable === false ? "COMPLETED" : "AWAITING_APPROVAL",
+    trace_id: `TRACE-${scenario.taskId}`,
+    evidence_sha256: scenario.executable === false ? `demo-${scenario.taskId.toLowerCase()}-sha256` : null,
+  };
+  state.context = {
+    context_hash: `ctx-${scenario.taskId.toLowerCase()}-mcp-rag-observable`,
+    task_version: 1,
+  };
+  state.candidates = scenario.cards.map((card, index) => ({
+    candidate_id: `Capability-${index + 1}`,
+    name: card.title,
+    cost_yuan: 0,
+    max_power_kw: index === 0 ? 0 : 800 + index * 180,
+    soc_min_percent: 38,
+    soc_max_percent: 82,
+    transformer_load_percent: scenario.taskId.includes("AIDC") ? 96 : 86,
+    summary: card.text,
+  }));
+  state.audit = scenario.cards.map((card, index) => ({
+    candidate_id: `Capability-${index + 1}`,
+    verdict: "audit_approved",
+    reason: card.text,
+  }));
+  state.events = buildScenarioEvents(scenario);
+  state.evidence = {
+    task_id: scenario.taskId,
+    mcp_gateway: scenario.endpoint,
+    api_response: scenario.apiResponse,
+    rag_sources: scenario.rag,
+    trace_steps: scenario.steps,
+  };
+  state.approval = scenario.executable === false ? { status: "not_required_for_demo" } : null;
+  state.pendingExecutionScenario = scenario.executable === false ? null : scenario;
+  setWorkspaceMode("nav-chat");
+  renderSelectedAgent();
+  renderTask();
+  renderCandidates();
+  renderTrace();
+  renderOpsReport();
+}
+
+function scenarioConversation(scenario) {
+  const finalPrompt = scenario.executable === false
+    ? "这次是基础查询任务，不需要执行设备策略。我已经把结果写入 Trace 和证据区。"
+    : `我建议执行方案 B。目标是：${scenario.executionPurpose}`;
+  return [
+    {
+      agentId: "team_leader",
+      text: `Task Received: ${scenario.title}\nTask Type: ${scenario.taskId === "DEMO-TR02-TEMP" ? "Fault diagnosis + emergency dispatch" : scenario.taskId === "DEMO-AIDC-6MW" ? "Capacity planning + infrastructure dispatch" : "Operational dispatch assessment"}\nAssigned Agents: Perception Agent, Knowledge Agent, Planning Agent, Safety Audit Agent, Execution Agent\nCurrent State: ANALYZING`,
+    },
+    {
+      agentId: "team_leader",
+      text: `Analysis Complete.\n\n${scenario.reply}\n\nStructured artifacts have been written to State / Constraint / Plan / Action / Evidence. Worker Agents did not produce chat messages; they produced auditable objects.`,
+    },
+    {
+      agentId: "team_leader",
+      text: finalPrompt,
+      meta: scenario.executable === false ? null : { action: "confirm_execution", scenarioKey: scenario.key },
+    },
+  ];
+}
+
+async function runScenarioConversation(scenario) {
+  applyNaturalScenario(scenario);
+  addChatMessage("agent", scenario.taskId === "DEMO-MCP-STORAGE"
+    ? "Task Received: Storage state query\nCurrent State: COLLECTING_STATE"
+    : `Task Received: ${scenario.title}\nCurrent State: COLLECTING_STATE`, "team_leader");
+  const messages = scenarioConversation(scenario);
+  for (const message of messages) {
+    await sleep(420);
+    addChatMessage("agent", message.text, message.agentId, { meta: message.meta });
+  }
+}
+
+function scenarioFollowupConversation(message, scenario) {
+  const lower = message.toLowerCase();
+  const asksPerception = /@?感知|perception|外部数据|实时|状态|容量|上下文/.test(lower);
+  const asksEstimate = /估算|继续|可以|方案|重新|保守|经济|测算|support|支持/.test(lower);
+  if (!asksPerception && !asksEstimate) {
+    return [
+      {
+        agentId: "team_leader",
+        text: `我会沿用当前任务上下文继续分析：${scenario.title}。当前可用外部数据为演示预设数据：${scenario.apiResponse}。`,
+      },
+      {
+        agentId: "team_leader",
+        text: localLeaderReply(message),
+      },
+    ];
+  }
+  return [
+    {
+      agentId: "team_leader",
+      text: `Runtime Continue.\n\nState updated by Perception Agent.\nKnowledge constraints applied by Knowledge Agent.\nPlan candidates regenerated by Planning Agent.\nSafety verdict produced by Audit Agent.\nAction object prepared by Execution Agent.\n\n右侧已更新 State / Constraint / Plan / Action / Evidence。`,
+    },
+    {
+      agentId: "team_leader",
+      text: `最终建议：采用方案 B。${scenario.executionPurpose}`,
+      meta: scenario.executable === false ? null : { action: "confirm_execution", scenarioKey: scenario.key },
+    },
+  ];
+}
+
+function scenarioStrategyCode(scenario) {
+  if (scenario.taskId === "DEMO-AIDC-6MW") {
+    return `policy "AIDC_6MW_PHASED_ACCESS" {
+  require capacity.available >= 3.2MW
+  require transformer.add_capacity >= 4MW
+  require storage.reserve >= 2MWh
+
+  phase_1 {
+    connect_load = 2MW
+    reserve_margin >= 20%
+  }
+
+  phase_2 {
+    connect_load = 4MW
+    condition = audit.passed && transformer.temperature < 85C
+  }
+
+  fallback {
+    shed_flexible_load = 600kW
+    notify = HumanOperator
+  }
+}`;
+  }
+  if (scenario.taskId === "DEMO-TR02-TEMP") {
+    return `policy "TR02_THERMAL_PROTECTION" {
+  if transformer.TR02.temperature >= 92C {
+    fan.backup = ON
+    shed.non_critical_load = 600kW
+    create_work_order = true
+  }
+
+  if transformer.TR02.temperature >= 95C {
+    require HumanOperator.approval
+    enter_protection_derating = true
+  }
+}`;
+  }
+  return `policy "PRODUCTION_1_800KW_SHIFT" {
+  require production.zone == "一区"
+  require added_load == 800kW
+  charge_storage.window = "11:00-15:30"
+  discharge_storage.window = "18:00-22:00"
+  discharge_storage.power = 520kW
+  shift_flexible_load = 280kW
+
+  constraints {
+    transformer.peak_load <= 86%
+    storage.soc_min >= 38%
+    production_min_load = protected
+  }
+}`;
+}
+
+function scenarioStateObject(scenario) {
+  if (scenario.taskId === "DEMO-TR02-TEMP") {
+    return {
+      asset_id: "TR-02",
+      timestamp: "2026-08-06T13:40:00+08:00",
+      temperature_c: 92,
+      load_ratio: 0.91,
+      oil_temp_rise_c_per_10min: 1.8,
+      cooling_status: { fan_group_A: "online", fan_group_B: "offline" },
+      risk_level: "high",
+    };
+  }
+  if (scenario.taskId === "DEMO-AIDC-6MW") {
+    return {
+      request_load_mw: 6,
+      current_capacity_mw: 10,
+      available_capacity_mw: 3.2,
+      transformer_spare_mw: 3.6,
+      storage_firm_support_mw: 0.8,
+      capacity_gap_mw: 2.8,
+      risk_level: "high",
+    };
+  }
+  return {
+    zone: "production-1",
+    added_load_kw: 800,
+    current_load_mw: 6.8,
+    available_margin_mw: 2.4,
+    storage_soc_percent: 61,
+    peak_tariff_window: "18:00-22:00",
+    risk_level: "medium",
+  };
+}
+
+function scenarioKnowledgeObject(scenario) {
+  if (scenario.taskId === "DEMO-TR02-TEMP") {
+    return {
+      rule: "Transformer cooling failure",
+      source: "Maintenance Manual v3.2",
+      constraint: "If oil temperature rising > 1.5C / 10min, avoid overload operation.",
+      applied: true,
+    };
+  }
+  if (scenario.taskId === "DEMO-AIDC-6MW") {
+    return {
+      rule: "AI data center power onboarding",
+      source: "Data Center Power Standard v2.1",
+      constraint: "Critical compute load requires reserved margin and staged commissioning.",
+      applied: true,
+    };
+  }
+  return {
+    rule: "Production continuity during peak tariff",
+    source: "Production Zone 1 Dispatch Rulebook",
+    constraint: "Protect minimum production load and keep storage SOC above emergency reserve.",
+    applied: true,
+  };
+}
+
+function scenarioPlanObject(scenario) {
+  if (scenario.taskId === "DEMO-AIDC-6MW") {
+    return {
+      objective: "Support 6MW AI compute load without violating capacity constraints.",
+      selected_plan: "B",
+      alternatives: {
+        A: "direct connection, rejected",
+        B: "4MW transformer expansion + 2MWh storage + phased access",
+        C: "larger redundancy, approved but high cost",
+      },
+    };
+  }
+  if (scenario.taskId === "DEMO-TR02-TEMP") {
+    return {
+      objective: "Stop transformer thermal rise while preserving critical load.",
+      selected_plan: "B",
+      actions: ["turn_on_backup_fan", "shed_non_critical_load_600kw", "create_work_order"],
+    };
+  }
+  return {
+    objective: "Minimize peak energy cost while preserving production priority.",
+    selected_plan: "B",
+    optimization: "0.7 * electricity_price + 0.3 * transformer_temperature_risk",
+  };
+}
+
+function scenarioActionObject(scenario) {
+  if (scenario.executable === false) {
+    return { action_required: false, reason: "read-only status query" };
+  }
+  return {
+    approval_required: true,
+    execution_mode: "simulated EMS / PCS / load-control command mapping",
+    idempotency_key: `IDEMP-${scenario.taskId}-PLAN-B`,
+    expected_effect: scenario.executionPurpose,
+  };
+}
+
+function scenarioEvidenceObject(scenario) {
+  return {
+    trace_id: `TRACE-${scenario.taskId}`,
+    context_hash: `ctx-${scenario.taskId.toLowerCase()}-mcp-rag-observable`,
+    mcp_call: scenario.endpoint,
+    rag_source_count: scenario.rag.length,
+    audit_verdict: scenario.executable === false ? "not_required" : "plan_b_passed",
+  };
+}
+
+function scenarioAuditReport(scenario) {
+  if (scenario.taskId === "DEMO-AIDC-6MW") {
+    return "审核报告：A 直接接入未通过，原因是当前可用余量 3.2MW 小于 6MW。B 分阶段扩容通过：新增 4MW 变压器容量与 2MWh 储能后，容量、冗余和峰段约束可满足。C 通过但投资冗余偏高。";
+  }
+  if (scenario.taskId === "DEMO-TR02-TEMP") {
+    return "审核报告：温度 92°C、负载率 91%、B 组风机离线。建议动作不直接越权执行，只允许备用风机切换、非关键负荷下调和检修工单；若接近 95°C 必须进入人工确认。";
+  }
+  if (scenario.taskId === "DEMO-MCP-STORAGE") {
+    return "审核报告：本次为状态查询，没有设备动作，不需要执行审批。储能 SOC 55%、PCS 健康，可支撑短时削峰。";
+  }
+  return "审核报告：方案 B 通过。容量可覆盖新增 800kW，但峰段成本风险需要削峰；变压器峰值约 86%，SOC 最低约 38%，满足生产一区保供约束。";
+}
+
+function scenarioAgentArtifacts(scenario) {
+  return [
+    ["State", scenarioStateObject(scenario)],
+    ["Retrieved Knowledge", scenarioKnowledgeObject(scenario)],
+    ["Constraint", {
+      soc_min_percent: scenario.taskId === "DEMO-AIDC-6MW" ? 45 : 30,
+      transformer_load_max_percent: scenario.taskId === "DEMO-TR02-TEMP" ? 85 : 90,
+      production_priority: scenario.taskId === "DEMO-PROD-800KW" ? "HIGH" : "NORMAL",
+      human_approval_required: scenario.executable !== false,
+    }],
+    ["Plan", scenarioPlanObject(scenario)],
+    ["Action", scenarioActionObject(scenario)],
+    ["Evidence", scenarioEvidenceObject(scenario)],
+  ];
+}
+
+async function continueScenarioConversation(message) {
+  const scenario = state.activeScenario;
+  if (!scenario) return false;
+  const messages = scenarioFollowupConversation(message, scenario);
+  state.pendingExecutionScenario = scenario.executable === false ? null : scenario;
+  state.task = {
+    ...(state.task || {}),
+    state: scenario.executable === false ? "COMPLETED" : "AWAITING_APPROVAL",
+  };
+  renderTask();
+  renderTrace();
+  for (const item of messages) {
+    await sleep(420);
+    addChatMessage("agent", item.text, item.agentId, { meta: item.meta });
+  }
+  return true;
+}
+
+function localLeaderReply(message) {
+  const lower = message.toLowerCase();
+  const zh = state.language === "zh";
+  if (state.activeScenario) {
+    if (lower.includes("为什么") || lower.includes("原因") || lower.includes("why")) {
+      return `基于刚才这次「${state.activeScenario.title}」的上下文，我的判断依据不是单点数据，而是三类证据：第一，MCP 返回的实时状态是 ${state.activeScenario.apiResponse}；第二，RAG 召回了 ${state.activeScenario.rag.join("、")}；第三，审核 Worker 已经检查容量、设备和安全约束。所以我才给出刚才的建议。`;
+    }
+    if (lower.includes("风险") || lower.includes("risk")) {
+      return `这次任务的主要风险边界有三个：容量余量是否足够、关键设备是否被推到过载区间、策略是否违反生产或运行规则。右侧 Trace 里的 Audit Agent 步骤就是专门用来约束这些风险的。`;
+    }
+    if (lower.includes("trace") || lower.includes("步骤") || lower.includes("mcp") || lower.includes("rag")) {
+      return `这次 Trace 的关键链路是：${state.activeScenario.steps.map(([label]) => label).join(" -> ")}。MCP 请求是 ${state.activeScenario.endpoint}，RAG 来源是 ${state.activeScenario.rag.join("、")}。`;
+    }
+    return `我还在沿用刚才「${state.activeScenario.title}」的长上下文。你可以继续改约束、追问原因、要求看风险，或让我基于同一上下文重新给一个更保守/更激进的方案。`;
+  }
+  const taskState = state.task ? stateLabels[state.language][state.task.state] || state.task.state : t("noTask");
+  const task = state.task ? `${state.task.task_id} / V${state.task.task_version} / ${taskState}` : t("noTask");
+  const candidateSummary = state.candidates.length
+    ? state.candidates.map((candidate) => {
+      const verdict = state.audit.find((item) => item.candidate_id === candidate.candidate_id);
+      const status = verdict?.verdict === "rejected" ? t("rejected") : verdict ? t("auditPassed") : t("pendingAudit");
+      return `${candidate.candidate_id} ${candidate.name}: ${status}`;
+    }).join("; ")
+    : t("noCandidates");
+  const profile = agentProfiles[state.selectedAgent] || agentProfiles.team_leader;
+  if (lower.includes("mcp") || lower.includes("rag") || lower.includes("观测") || lower.includes("trace") || lower.includes("metrics") || lower.includes("evidence") || lower.includes("报告") || lower.includes("变化")) {
+    return zh
+      ? `变化报告：MCP 模拟调用读取 EMS 快照、PCS 状态、MES 生产约束和审批证据；RAG 检索相似历史任务、峰段电价策略模板和安全闸门规则；可观测性记录 trace、metrics、context hash 与 evidence SHA。结论是原调度任务不再成立，需要先校验上下文，再生成受限候选方案，独立审核后请求人工审批。当前任务：${task}。`
+      : `Change report: simulated MCP calls read EMS snapshots, PCS state, MES constraints, and approval evidence; RAG retrieves similar historical tasks, peak-tariff strategy templates, and safety gate rules; observability records trace, metrics, context hash, and evidence SHA. The original dispatch task no longer holds, so context must be validated before bounded plans, independent audit, and human approval. Current task: ${task}.`;
+  }
+  if (state.selectedAgent === "perception_agent") {
+    return zh
+      ? `感知 Worker：我在规划前校验上下文。当前上下文哈希为 ${state.context?.context_hash?.slice(0, 20) || "待生成"}。我检查负荷、光伏、SOC、电价、设备状态、生产约束和传感器冲突。`
+      : `Perception Worker view: I validate context before planning. Current context hash is ${state.context?.context_hash?.slice(0, 20) || "pending"}. I check load, PV, SOC, tariff, device state, production constraints, and sensor conflicts.`;
+  }
+  if (state.selectedAgent === "dispatch_agent") {
+    return zh
+      ? `调度 Worker：只有上下文可信后，我才生成受限候选方案。当前候选：${candidateSummary}。我不能审批，也不能执行设备命令。`
+      : `Dispatch Worker view: I can generate bounded candidate plans after context is trusted. Current candidates: ${candidateSummary}. I cannot approve or execute equipment commands.`;
+  }
+  if (state.selectedAgent === "audit_agent") {
+    return zh
+      ? "审核 Worker：我独立复算 SOC、PCS 功率、变压器负载、购电功率、生产最小负荷和相对基线收益。任何不安全或无法验证的候选方案都会默认关闭。"
+      : "Audit Worker view: I independently recompute SOC, PCS power, transformer loading, grid import, production minimums, and improvement over baseline. Unsafe or unverifiable candidates fail closed.";
+  }
+  if (state.selectedAgent === "execution_agent") {
+    return zh
+      ? "执行 Worker：我只把已审核、已审批的方案映射为幂等的模拟 EMS / PCS / 负荷控制命令。如果实际与计划偏差超过阈值，我会触发安全回退。"
+      : "Execution Worker view: I only map audited and approved plans to idempotent simulated EMS / PCS / load-control commands. If actual-vs-plan deviation exceeds threshold, I trigger safe fallback.";
+  }
+  if (lower.includes("agent") || lower.includes("worker") || lower.includes("职责") || lower.includes("通讯")) {
+    return zh
+      ? "EnergyMesh Runtime 会把任务分配给自治 Agent：感知产出状态对象，规划产出候选方案，审核产出安全裁决，执行产出动作对象。高风险动作必须经过人工操作员审批。"
+      : "EnergyMesh Runtime assigns work to autonomous Agents: Perception produces state objects, Planning produces candidate plans, Audit produces safety verdicts, and Execution produces action objects. Human Operator approval is required for high-risk actions.";
+  }
+  if (lower.includes("candidate") || lower.includes("方案") || lower.includes("audit") || lower.includes("审核")) {
+    return zh
+      ? `当前候选状态：${candidateSummary}。审核 Worker 默认关闭风险：变压器、SOC、购电、生产最小负荷和相对基线收益都必须通过，才允许进入执行。`
+      : `Current candidate state: ${candidateSummary}. Audit Worker fails closed: transformer, SOC, grid import, production minimum, and improvement over baseline must all pass before execution.`;
+  }
+  if (lower.includes("rollback") || lower.includes("回滚") || lower.includes("安全")) {
+    return zh
+      ? "回滚边界：传感器冲突无法消解、审批被拒绝，或执行偏差超过阈值时，系统停止策略，退回安全的零充放/零削减行为，并把控制权交还人工操作员。"
+      : "Rollback boundary: if sensor conflict cannot be resolved, approval is rejected, or execution deviation exceeds the threshold, the system stops the strategy, falls back to safe zero-charge/zero-curtailment behavior, and returns control to the Human Operator.";
+  }
+  if (lower.includes("task") || lower.includes("任务") || lower.includes("context") || lower.includes("上下文")) {
+    return zh
+      ? `当前任务：${task}。上下文哈希：${state.context?.context_hash?.slice(0, 20) || "待生成"}。在感知 Worker 让运行上下文可信之前，Leader 不应让调度 Worker 开始规划。`
+      : `Current task: ${task}. Context hash: ${state.context?.context_hash?.slice(0, 20) || "pending"}. The Leader should not let Dispatch work until Perception has made the operating context trustworthy.`;
+  }
+  return zh
+    ? `我正在以 ${agentName(state.selectedAgent)} 的视角跟踪调度闭环。当前任务是 ${task}。你可以继续问 Agent 职责、候选方案、审核原因、MCP/RAG/可观测性或回滚边界。`
+    : `I am tracking the dispatch loop as ${profile.name}. Current task is ${task}. Ask about Agent responsibilities, candidates, audit reasons, MCP/RAG/observability, or rollback if you want a narrower answer.`;
+}
+
+async function sendChatMessage(event) {
+  event.preventDefault();
+  const input = $("#ai-chat-input");
+  const sendButton = $("#ai-chat-form button");
+  const runtimeStatus = $("#runtime-status");
+  const message = input.value.trim();
+  if (!message) return;
+  const agentId = state.selectedAgent || "team_leader";
+  input.value = "";
+  state.activeHistory = "new";
+  state.activeScenario = null;
+  renderSelectedAgent();
+  addChatMessage("user", message, agentId);
+  input.disabled = true;
+  sendButton.disabled = true;
+  try {
+    runtimeStatus.hidden = false;
+    if (agentId === "team_leader") {
+      runtimeStatus.querySelector("span").textContent = state.language === "zh" ? "Runtime 已启动" : "Runtime started";
+      let finalLeaderStep = null;
+      const agentSteps = [];
+      let dispatchArtifact = null;
+      let auditArtifact = null;
+      let isDispatchLoop = false;
+
+      const runtime = await chatWithRuntimeStream(message, {
+        onRoute: (route) => {
+          const workerNames = (route.routing_plan?.workers || []).map(agentName).join(" → ");
+          isDispatchLoop = route.routing_plan?.mode === "dispatch_closed_loop";
+          runtimeStatus.querySelector("span").textContent = state.language === "zh"
+            ? `Leader 已决定路由：${workerNames || "直接回答"}`
+            : `Leader routed the task: ${workerNames || "direct response"}`;
+        },
+        onStage: (stage) => {
+          const statusText = state.language === "zh"
+            ? `${agentName(stage.agent_id)} 正在处理：${stage.stage}`
+            : `${agentName(stage.agent_id)} is working: ${stage.stage}`;
+          runtimeStatus.querySelector("span").textContent = statusText;
+        },
+        onStep: (event) => {
+          const step = event.step;
+          runtimeStatus.querySelector("span").textContent = state.language === "zh"
+            ? `${agentName(step.agent_id)} 已完成`
+            : `${agentName(step.agent_id)} completed`;
+          agentSteps.push(step);
+
+          let chatText = step.response || "";
+          const artifact = event.artifacts?.find(a => a.artifact_id === step.output_artifact);
+          if (artifact?.payload) {
+            const payload = artifact.payload;
+            if (payload.energy_state || payload.plans || payload.verification || payload.task_brief) {
+              chatText += `\n\n\`\`\`json\n${JSON.stringify(payload, null, 2).substring(0, 2000)}\n\`\`\``;
+            }
+          }
+
+          if (step.agent_id === "dispatch_agent" && event.artifacts) {
+            dispatchArtifact = event.artifacts.find(a => a.artifact_type === "candidate_plan");
+          }
+          if (step.agent_id === "audit_agent" && event.artifacts) {
+            auditArtifact = event.artifacts.find(a => a.artifact_type === "verification");
+          }
+
+          addChatMessage("agent", chatText, step.agent_id, {
+            meta: { model: step.model, runtimeSessionId: event.session_id },
+            persist: false,
+          });
+        },
+        onComplete: (event) => {
+          runtimeStatus.querySelector("span").textContent = state.language === "zh" ? "Runtime 已完成" : "Runtime completed";
+          state.task = {
+            ...(state.task || {}),
+            task_id: event.task_id,
+            state: isDispatchLoop ? "AWAITING_APPROVAL" : "COMPLETED",
+          };
+
+          if (isDispatchLoop && dispatchArtifact && auditArtifact) {
+            const passed = auditArtifact.payload?.verification?.filter(v => v.decision === "PASS") || [];
+            const rejected = auditArtifact.payload?.verification?.filter(v => v.decision !== "PASS") || [];
+            const recommended = auditArtifact.payload?.recommended_plan_id || "Plan-B";
+            const plans = dispatchArtifact.payload?.plans || [];
+            const recPlan = plans.find(p => p.plan_id === recommended) || plans[0];
+
+            const approvalText = state.language === "zh"
+              ? `## 审批请求\n\n推荐方案：**${recPlan?.name || recommended}**\n\n- 预计峰值电网功率: ${recPlan?.expected_peak_grid_mw || "--"} MW\n- 风险: ${recPlan?.risk || "--"}\n\n审核结论:\n${passed.map(v => `- ${v.plan_id}: 通过 ✅`).join("\n")}\n${rejected.map(v => `- ${v.plan_id}: 拒绝 ❌ (${v.reason || ""})`).join("\n")}\n\n请在下方选择:`
+              : `## Approval Request\n\nRecommended: **${recPlan?.name || recommended}**\n\n- Expected peak grid: ${recPlan?.expected_peak_grid_mw || "--"} MW\n- Risk: ${recPlan?.risk || "--"}\n\nAudit:\n${passed.map(v => `- ${v.plan_id}: PASS ✅`).join("\n")}\n${rejected.map(v => `- ${v.plan_id}: REJECT ❌ (${v.reason || ""})`).join("\n")}\n\nChoose an action:`;
+
+            addChatMessage("agent", approvalText, "execution_agent", {
+              meta: { action: "confirm_execution", scenarioKey: "runtime_dispatch" },
+              persist: false,
+            });
+          }
+        },
+      });
+      if (runtime) applyRuntimeToCampus(runtime);
+    } else {
+      runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
+      const reply = await chatWithSelectedAgent(agentId, message);
+      addChatMessage("agent", reply.response, agentId, {
+        meta: { model: reply.model },
+      });
+    }
+  } catch (error) {
+    const fallback = agentId === "team_leader"
+      ? `Runtime 暂未接通：${error.message}。我先用本地演示逻辑回答：${localLeaderReply(message)}`
+      : `${agentName(agentId)} 模型网关暂未接通：${error.message}`;
+    addChatMessage("agent", fallback, agentId);
+  } finally {
+    runtimeStatus.hidden = true;
+    input.disabled = false;
+    sendButton.disabled = false;
+    input.focus();
+  }
+}
+
+function renderSelectedAgent() {
+  $("#active-agent-role").textContent = agentName(state.selectedAgent);
+  $("#active-agent-name").textContent = agentRole(state.selectedAgent);
+  $$("#agent-directory-list article").forEach((row) => {
+    row.classList.toggle("active", row.dataset.agentId === state.selectedAgent);
+  });
+}
+
+function selectAgent(agentId) {
+  state.selectedAgent = agentId;
+  state.activeHistory = "new";
+  renderSelectedAgent();
+  renderAgentThread(agentId);
+  setAgentDirectory(false);
+  setActiveRail("nav-chat");
+  $("#ai-chat-input").focus();
+}
+
+function openGateway(agentId = state.selectedAgent) {
+  state.selectedAgent = agentId;
+  state.activeHistory = "new";
+  renderSelectedAgent();
+  renderAgentThread(agentId);
+  const profile = agentProfiles[agentId] || agentProfiles.team_leader;
+  const saved = state.gateways[agentId] || {};
+  $("#gateway-title").textContent = `${agentName(agentId)} ${state.language === "zh" ? "模型网关" : "gateway"}`;
+  $("#gateway-base-url").value = saved.baseUrl || "https://api.deepseek.com";
+  $("#gateway-api-key").value = saved.apiKey || "";
+  $("#gateway-model").value = saved.model || profile.defaultModel;
+  $("#gateway-status").textContent = saved.model
+    ? (state.language === "zh" ? `已载入网关。连接状态：${saved.connectionStatus || "未测试"}。` : `Gateway loaded. Status: ${saved.connectionStatus || "untested"}.`)
+    : t("gatewayStored");
+  $("#gateway-dialog").showModal();
+}
+
+async function saveGatewayConfigFromForm() {
+  const profile = agentProfiles[state.selectedAgent] || agentProfiles.team_leader;
+  const apiKey = $("#gateway-api-key").value.trim();
+  const payload = {
+    base_url: $("#gateway-base-url").value.trim(),
+    api_key: apiKey && !apiKey.includes("•") ? apiKey : null,
+    model: $("#gateway-model").value.trim() || profile.defaultModel,
+  };
+  const { ok, body } = await requestAllowingError(`/api/agents/${state.selectedAgent}/model`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (!ok) {
+    throw new Error(body.detail || "Gateway save failed.");
+  }
+  updateModelStatusFromPublic(body);
+  $("#gateway-base-url").value = body.base_url || payload.base_url;
+  $("#gateway-api-key").value = body.api_key_masked || "";
+  $("#gateway-model").value = body.model || payload.model;
+  return body;
+}
+
+async function testGatewayConnection() {
+  $("#gateway-status").textContent = state.language === "zh"
+    ? "正在保存并测试模型连接..."
+    : "Saving and testing model connection...";
+  try {
+    await saveGatewayConfigFromForm();
+  } catch (error) {
+    $("#gateway-status").textContent = state.language === "zh"
+      ? `保存失败：${error.message}`
+      : `Save failed: ${error.message}`;
+    return;
+  }
+  const { ok, body } = await requestAllowingError(`/api/agents/${state.selectedAgent}/model/test`, {
+    method: "POST",
+  });
+  if (!ok || !body.success) {
+    const error = body.error || body.detail || "Model test failed.";
+    $("#gateway-status").textContent = state.language === "zh" ? `连接失败：${error}` : `Connection failed: ${error}`;
+    state.gateways[state.selectedAgent] = {
+      ...(state.gateways[state.selectedAgent] || {}),
+      connectionStatus: "失败",
+      lastError: error,
+    };
+    return;
+  }
+  state.gateways[state.selectedAgent] = {
+    ...(state.gateways[state.selectedAgent] || {}),
+    model: body.model,
+    connectionStatus: "正常",
+    lastError: null,
+  };
+  $("#gateway-status").textContent = state.language === "zh"
+    ? `模型接入成功：${body.model}。现在可在聊天中直接使用该模型。`
+    : `Model connected: ${body.model}. You can now chat with this model.`;
+}
+
+async function saveGateway(event) {
+  event.preventDefault();
+  const profile = agentProfiles[state.selectedAgent] || agentProfiles.team_leader;
+  $("#gateway-status").textContent = state.language === "zh" ? "正在保存模型网关..." : "Saving model gateway...";
+  let body;
+  try {
+    body = await saveGatewayConfigFromForm();
+  } catch (error) {
+    $("#gateway-status").textContent = error.message;
+    return;
+  }
+  $("#gateway-status").textContent = state.language === "zh"
+    ? `${agentName(state.selectedAgent)} 模型网关已保存，状态：${body.connection_status}。`
+    : `${profile.name} gateway saved. Status: ${body.connection_status}.`;
+  toast(state.language === "zh" ? `${agentName(state.selectedAgent)} 网关已保存` : `${profile.name} gateway saved`);
+}
+
+async function loadGateways() {
+  try {
+    const manifest = await request("/api/agentteams/manifest");
+    Object.values(manifest.model_configs || {}).forEach(updateModelStatusFromPublic);
+  } catch {
+    state.gateways = state.gateways || {};
+  }
 }
 
 function resizeCanvas(canvas) {
@@ -197,21 +1709,30 @@ function seededSeries(count, base, amplitude, phase = 0) {
 function drawScenarioChart() {
   const canvas = $("#scenario-chart");
   const { context, width, height } = resizeCanvas(canvas);
-  const load = seededSeries(96, 760, 210, 0).map((value, index) => index >= 56 ? value + 420 : value);
-  const pv = seededSeries(96, 240, 250, 1.7).map((value, index) => index >= 56 && index < 64 ? value * 0.814 : value);
+  const livePhase = state.chartTick * 0.19;
+  const load = seededSeries(96, 760, 210, livePhase).map((value, index) => {
+    const liveRipple = Math.sin(index * 0.33 + livePhase) * 24;
+    return index >= 56 ? value + 420 + liveRipple : value + liveRipple;
+  });
+  const pv = seededSeries(96, 240, 250, 1.7 + livePhase).map((value, index) => {
+    const cloudDip = index >= 56 && index < 64 ? 0.814 : 1;
+    return Math.max(0, value * cloudDip + Math.sin(index * 0.41 + livePhase) * 18);
+  });
   const tariff = Array.from({ length: 96 }, (_, index) => (index >= 56 && index <= 80 ? 980 : index > 32 && index < 56 ? 620 : 380));
   const series = [
-    { label: "负荷", color: "#25272b", values: load },
-    { label: "光伏", color: "#438fc8", values: pv },
-    { label: "电价", color: "#c68c3d", values: tariff },
+    { label: state.language === "zh" ? "负荷" : "Load", color: "#6c73e6", values: load },
+    { label: state.language === "zh" ? "光伏" : "PV", color: "#4ca3ff", values: pv },
+    { label: state.language === "zh" ? "电价" : "Tariff", color: "#d85a56", values: tariff },
   ];
   const max = Math.max(...series.flatMap((item) => item.values));
-  const inset = { left: 30, top: 18, right: 12, bottom: 18 };
+  const inset = { left: 42, top: 20, right: 18, bottom: 24 };
   const plotWidth = width - inset.left - inset.right;
   const plotHeight = height - inset.top - inset.bottom;
   context.clearRect(0, 0, width, height);
-  context.font = "10px Inter, sans-serif";
-  context.strokeStyle = "#e2e6ea";
+  context.fillStyle = "#101112";
+  context.fillRect(0, 0, width, height);
+  context.font = "11px Inter, sans-serif";
+  context.strokeStyle = "rgba(255,255,255,.07)";
   context.lineWidth = 1;
   for (let row = 0; row <= 4; row += 1) {
     const y = inset.top + (plotHeight * row) / 4;
@@ -220,9 +1741,13 @@ function drawScenarioChart() {
     context.lineTo(width - inset.right, y);
     context.stroke();
   }
-  const eventX = inset.left + (plotWidth * 56) / 95;
-  context.fillStyle = "rgba(218,91,84,.12)";
-  context.fillRect(eventX, inset.top, 2, plotHeight);
+  for (let column = 0; column <= 4; column += 1) {
+    const x = inset.left + (plotWidth * column) / 4;
+    context.beginPath();
+    context.moveTo(x, inset.top);
+    context.lineTo(x, height - inset.bottom);
+    context.stroke();
+  }
   series.forEach((item) => {
     context.beginPath();
     item.values.forEach((value, index) => {
@@ -235,26 +1760,154 @@ function drawScenarioChart() {
     context.lineWidth = 1.8;
     context.stroke();
   });
+  const currentIndex = state.chartTick % 96;
+  const currentX = inset.left + (plotWidth * currentIndex) / 95;
+  context.strokeStyle = "rgba(255,255,255,.42)";
+  context.lineWidth = 1;
+  context.setLineDash([4, 4]);
+  context.beginPath();
+  context.moveTo(currentX, inset.top);
+  context.lineTo(currentX, height - inset.bottom);
+  context.stroke();
+  context.setLineDash([]);
+  context.fillStyle = "#d7dae1";
+  context.fillText(`${String(Math.floor(currentIndex / 4)).padStart(2, "0")}:${String((currentIndex % 4) * 15).padStart(2, "0")}`, Math.min(width - 58, currentX + 6), inset.top + 12);
+  context.fillStyle = "#9a9ca3";
+  context.fillText("00:00", inset.left, height - 6);
+  context.fillText("14:00", inset.left + plotWidth * 0.58, height - 6);
+  context.fillText("24:00", width - inset.right - 34, height - 6);
   series.forEach((item, index) => {
+    const x = inset.left + index * 72;
     context.fillStyle = item.color;
-    context.fillRect(inset.left + index * 58, 4, 12, 2);
-    context.fillText(item.label, inset.left + 17 + index * 58, 8);
+    context.fillRect(x, 8, 16, 2);
+    context.fillStyle = "#c9cbd1";
+    context.fillText(item.label, x + 22, 12);
   });
 }
 
+function drawMiniChart(canvas, seed = 0) {
+  const { context, width, height } = resizeCanvas(canvas);
+  const phase = state.chartTick * 0.12 + Number(seed);
+  const top = seededSeries(72, 58, 22, phase).map((value, index) => value + Math.sin(index * 0.84 + phase) * 8);
+  const bottom = seededSeries(72, 36, 18, phase + 1.4).map((value, index) => value + Math.cos(index * 0.58 + phase) * 7);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#141519";
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = "rgba(255,255,255,.06)";
+  context.lineWidth = 1;
+  for (let row = 1; row < 4; row += 1) {
+    const y = (height * row) / 4;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  [
+    { values: top, color: "#7d80ff", scale: 82 },
+    { values: bottom, color: "#4ca3ff", scale: 72 },
+  ].forEach((item) => {
+    context.beginPath();
+    item.values.forEach((value, index) => {
+      const x = (width * index) / (item.values.length - 1);
+      const y = height - 18 - (value / item.scale) * (height - 34);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.strokeStyle = item.color;
+    context.lineWidth = 1.4;
+    context.stroke();
+  });
+}
+
+function drawHomeCharts() {
+  $$(".mini-chart").forEach((canvas) => drawMiniChart(canvas, canvas.dataset.seed || 0));
+}
+
+function startLiveCharts() {
+  if (state.liveTimer) return;
+  state.liveTimer = window.setInterval(() => {
+    state.chartTick = (state.chartTick + 1) % 96;
+    drawScenarioChart();
+    if (!$(".home-view").hidden) drawHomeCharts();
+  }, 1200);
+}
+
 function updateAssetLabels(labels) {
+  $$(".asset").forEach((element) => {
+    element.dataset.hidden = "true";
+  });
   Object.entries(labels).forEach(([key, position]) => {
-    const element = $(`.asset[data-anchor="${key}"]`);
-    if (!element) return;
+    let element = $(`.asset[data-anchor="${key}"]`);
+    if (!element) {
+      element = document.createElement("article");
+      element.className = "asset metric-card";
+      element.dataset.anchor = key;
+      $(".campus").append(element);
+    }
+    if (position.title) {
+      element.innerHTML = `
+        <span>${escapeHTML(position.title)}</span>
+        <strong>${escapeHTML(position.metric || "")}</strong>
+        <small>${escapeHTML(position.note || "")}</small>
+      `;
+    }
     element.style.setProperty("--x", `${position.x}px`);
     element.style.setProperty("--y", `${position.y}px`);
     element.dataset.hidden = position.visible ? "false" : "true";
   });
 }
 
+function renderCampusSimulation() {
+  const sim = state.campusSimulation;
+  $("#campus-cost").textContent = sim.cost;
+  $("#campus-saved").textContent = sim.saved;
+  $("#campus-waste").textContent = sim.waste;
+  $("#campus-stability").textContent = sim.stability;
+  $("#pool-generation").textContent = sim.generation;
+  $("#pool-generation-note").textContent = sim.generationNote;
+  $("#pool-storage").textContent = sim.storage;
+  $("#pool-storage-note").textContent = sim.storageNote;
+  $("#pool-load").textContent = sim.load;
+  $("#pool-load-note").textContent = sim.loadNote;
+}
+
+function applyRuntimeToCampus(runtime) {
+  const artifacts = runtime?.artifacts || [];
+  const stateArtifact = artifacts.find((artifact) => artifact.name === "state.json");
+  const planArtifact = artifacts.find((artifact) => artifact.name === "plan.json");
+  const verification = artifacts.find((artifact) => artifact.name === "verification.json");
+  const energyState = stateArtifact?.payload?.energy_state || {};
+  const recommendedPlan = verification?.payload?.recommended_plan_id || "Plan-B";
+  const currentLoad = Number(energyState.current_load_mw || 25);
+  const pvForecast = Number(energyState.pv_forecast_mw || 10);
+  const soc = Number(energyState.storage_soc_percent || 61);
+  if (!planArtifact && !verification) return;
+  state.campusSimulation = {
+    optimized: true,
+    cost: "¥7,000",
+    saved: "节省 ¥3,000",
+    waste: "5%",
+    stability: "96%",
+    generation: `${Math.max(10, pvForecast + 20).toFixed(0)} MW`,
+    generationNote: "光伏优先消纳",
+    storage: `SOC ${Math.min(88, soc + 18).toFixed(0)}%`,
+    storageNote: `${recommendedPlan} 调峰中`,
+    load: `${currentLoad.toFixed(1)} MW`,
+    loadNote: "负载已满足",
+  };
+  renderCampusSimulation();
+  state.campus3d?.applyEnergyState?.({
+    optimized: true,
+    storage: state.campusSimulation.storage,
+    waste: state.campusSimulation.waste,
+    load: state.campusSimulation.load,
+    recommendedPlan,
+  });
+}
+
 function statusClass(value) {
   if (value === "COMPLETED" || value === "approved") return "ok";
-  if (value === "ROLLBACK" || value === "rejected") return "danger";
+  if (value === "ROLLBACK" || value === "FAILED" || value === "rejected") return "danger";
   if (value === "AWAITING_APPROVAL" || value === "audit_approved") return "warn";
   return "info";
 }
@@ -262,45 +1915,69 @@ function statusClass(value) {
 function renderTask() {
   const task = state.task;
   const context = state.context;
-  const active = state.events[Math.max(0, state.playbackIndex)] || state.events.at(-1);
-  $("#task-id").textContent = task?.task_id || "未创建";
+  $("#task-id").textContent = task?.task_id || t("noTask");
   $("#task-version").textContent = task ? `V${task.task_version}` : "--";
-  $("#task-state").textContent = task ? (stateLabels[task.state] || task.state) : "IDLE";
+  $("#task-state").textContent = task ? stateLabels[state.language][task.state] || task.state : stateLabels[state.language].IDLE;
   $("#task-state").className = statusClass(task?.state);
-  $("#current-agent").textContent = active ? agentByActor[active.actor] || active.actor : "--";
-  $("#evidence-state").textContent = task ? task.state : "IDLE";
-  $("#context-id").textContent = context?.context_id || "--";
-  $("#context-hash").textContent = context?.context_hash ? `${context.context_hash.slice(0, 16)}...` : "--";
-  $("#trace-id").textContent = state.run?.trace_id || "--";
-  $("#evidence-status").textContent = task?.evidence_sha256 ? "已封存" : state.evidence ? "可查看" : "未生成";
+  $("#context-hash").textContent = context?.context_hash ? `${context.context_hash.slice(0, 20)}...` : t("contextPending");
+  $("#approval-status").textContent = state.approval ? t("approved") : task?.state === "AWAITING_APPROVAL" ? t("needsHuman") : t("waiting");
+  $("#evidence-status").textContent = task?.evidence_sha256 ? t("sealed") : state.evidence ? t("ready") : t("notSealed");
   $("#open-evidence").disabled = !state.task;
-  $("#view-context").disabled = !state.context;
   $("#review-candidates").disabled = !state.candidates.length;
-  renderAgentConsole();
+  if ($("#approve-b")) $("#approve-b").disabled = task?.state !== "AWAITING_APPROVAL";
+  if ($("#execute-b")) $("#execute-b").disabled = !state.approval || task?.state !== "AWAITING_APPROVAL";
 }
 
 function renderCandidates() {
+  if (state.activeScenario) {
+    const artifacts = scenarioAgentArtifacts(state.activeScenario);
+    $("#candidate-list").innerHTML = `
+      <article class="strategy-code">
+        <span>策略代码预览</span>
+        <pre>${escapeHTML(scenarioStrategyCode(state.activeScenario))}</pre>
+      </article>
+      <article class="audit-report">
+        <span>审核报告</span>
+        <p>${escapeHTML(scenarioAuditReport(state.activeScenario))}</p>
+      </article>
+      <div class="agent-artifacts">
+        ${artifacts.map(([artifact, detail]) => `
+          <button class="candidate approved structured-artifact" type="button">
+            <div>
+              <span>${escapeHTML(artifact)}</span>
+              <strong>${state.language === "zh" ? "对象已生成" : "Object ready"}</strong>
+            </div>
+            <pre>${escapeHTML(JSON.stringify(detail, null, 2))}</pre>
+          </button>
+        `).join("")}
+      </div>
+    `;
+    $$(".candidate").forEach((candidate, index) => {
+      candidate.addEventListener("click", () => openTraceDetail(Math.min(index + 1, state.events.length - 1)));
+    });
+    return;
+  }
   if (!state.candidates.length) {
-    $("#candidate-list").innerHTML = `<p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p>`;
+    $("#candidate-list").innerHTML = `<p class="empty">${escapeHTML(t("candidateEmpty"))}</p>`;
     return;
   }
   $("#candidate-list").innerHTML = state.candidates.map((candidate) => {
     const verdict = state.audit.find((item) => item.candidate_id === candidate.candidate_id);
     const rejected = verdict?.verdict === "rejected";
-    const status = verdict ? (rejected ? "审核拒绝" : "审核通过") : "待审核";
+    const status = verdict ? (rejected ? t("rejected") : t("auditPassed")) : t("pendingAudit");
     return `
       <button class="candidate ${rejected ? "rejected" : "approved"}" type="button" data-candidate-id="${escapeHTML(candidate.candidate_id)}">
         <div>
-          <span>${escapeHTML(candidate.candidate_id)}｜${escapeHTML(candidate.name)}</span>
-          <strong>${escapeHTML(candidate.priority)}</strong>
+          <span>${escapeHTML(candidate.candidate_id)} · ${escapeHTML(candidate.name)}</span>
+          <strong>${escapeHTML(status)}</strong>
         </div>
         <dl>
-          <div><dt>成本</dt><dd>¥${Math.round(candidate.cost_yuan).toLocaleString()}</dd></div>
-          <div><dt>最大功率</dt><dd>${Math.round(candidate.max_power_kw)} kW</dd></div>
+          <div><dt>${state.language === "zh" ? "成本" : "Cost"}</dt><dd>¥${Math.round(candidate.cost_yuan).toLocaleString()}</dd></div>
+          <div><dt>${state.language === "zh" ? "峰值" : "Peak"}</dt><dd>${Math.round(candidate.max_power_kw)} kW</dd></div>
           <div><dt>SOC</dt><dd>${candidate.soc_min_percent}% - ${candidate.soc_max_percent}%</dd></div>
-          <div><dt>变压器</dt><dd>${candidate.transformer_load_percent}%</dd></div>
+          <div><dt>${state.language === "zh" ? "变压器" : "Transformer"}</dt><dd>${candidate.transformer_load_percent}%</dd></div>
         </dl>
-        <p>${escapeHTML(status)}${verdict ? `：${escapeHTML(verdict.reason)}` : ""}</p>
+        <p>${verdict ? escapeHTML(verdict.reason) : escapeHTML(state.language === "zh" ? "等待审核结论。" : "Waiting for audit verdict.")}</p>
       </button>
     `;
   }).join("");
@@ -311,20 +1988,33 @@ function renderCandidates() {
 
 function traceText(event) {
   const time = new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour12: false });
-  return `${time} ${event.actor} ${event.reason}`;
+  return `${time} · ${actorLabels[state.language][event.actor] || event.actor}`;
 }
 
 function renderTrace() {
-  $("#trace-count").textContent = `${state.events.length} 条事件`;
+  $("#trace-count").textContent = state.language === "zh" ? `${state.events.length} ${t("events")}` : `${state.events.length} ${t("events")}`;
+  if (state.activeScenario) {
+    $("#trace-list").innerHTML = state.activeScenario.steps.map(([label, detail], index) => `
+      <button class="trace-item" type="button" data-index="${index}">
+        <i class="${index === state.activeScenario.steps.length - 1 ? "ok" : "info"}"></i>
+        <span>Step ${String(index + 1).padStart(2, "0")} · ${escapeHTML(label)}</span>
+        <small>${escapeHTML(detail)}</small>
+      </button>
+    `).join("");
+    $$(".trace-item").forEach((item) => {
+      item.addEventListener("click", () => openTraceDetail(Number(item.dataset.index)));
+    });
+    return;
+  }
   if (!state.events.length) {
-    $("#trace-list").innerHTML = `<p class="empty">运行后展示真实后端事件记录。</p>`;
+    $("#trace-list").innerHTML = `<p class="empty">${escapeHTML(t("traceEmpty"))}</p>`;
     return;
   }
   $("#trace-list").innerHTML = state.events.map((event, index) => `
-    <button class="trace-item ${index === state.playbackIndex ? "active" : ""}" type="button" data-index="${index}">
+    <button class="trace-item" type="button" data-index="${index}">
       <i class="${statusClass(event.to_state)}"></i>
       <span>${escapeHTML(traceText(event))}</span>
-      <small>${escapeHTML(event.to_state)} · V${event.task_version}</small>
+      <small>${escapeHTML(event.reason)} · ${escapeHTML(event.to_state)}</small>
     </button>
   `).join("");
   $$(".trace-item").forEach((item) => {
@@ -332,282 +2022,142 @@ function renderTrace() {
   });
 }
 
-function renderAgentConsole() {
-  const info = agentInfo[state.selectedAgent];
-  const config = state.modelConfigs[state.selectedAgent];
-  $("#selected-agent-name").textContent = info.name;
-  $("#selected-agent-skill").textContent = info.skill;
-  $("#conversation-avatar").src = state.avatarSelection[state.selectedAgent] || info.avatar;
-  $("#agent-model-status").textContent = config?.connection_status || "未测试";
-  $("#agent-chat-input").placeholder = info.defaultPrompt;
-  $$(".agent-row").forEach((row) => {
-    row.classList.toggle("active", row.dataset.agent === state.selectedAgent);
-  });
-  $$(".agent-row").forEach((row) => {
-    const avatar = row.querySelector(".agent-avatar img");
-    if (avatar) avatar.src = state.avatarSelection[row.dataset.agent] || agentInfo[row.dataset.agent].avatar;
-  });
+function renderOpsReport() {
+  return;
 }
 
-function restoreAvatarSelection() {
-  try {
-    const saved = JSON.parse(window.localStorage.getItem("energymesh.agent-avatars") || "{}");
-    state.avatarSelection = Object.fromEntries(
-      Object.entries(saved).filter(([agentId, avatar]) => agentInfo[agentId] && avatarOptions.includes(avatar)),
-    );
-  } catch {
-    state.avatarSelection = {};
-  }
+function setWorkspaceMode(activeRail = "nav-workspace") {
+  $(".app-shell").classList.remove("home-mode");
+  $("#home-view").hidden = true;
+  setActiveRail(activeRail);
 }
 
-function randomizeAgentAvatar() {
-  const current = state.avatarSelection[state.selectedAgent] || agentInfo[state.selectedAgent].avatar;
-  const alternatives = avatarOptions.filter((avatar) => avatar !== current);
-  state.avatarSelection[state.selectedAgent] = alternatives[Math.floor(Math.random() * alternatives.length)];
-  window.localStorage.setItem("energymesh.agent-avatars", JSON.stringify(state.avatarSelection));
-  renderAgentConsole();
-  toast(`${agentInfo[state.selectedAgent].name} 的头像已随机更换`);
+function openHome() {
+  setAgentDirectory(false);
+  $(".app-shell").classList.add("home-mode");
+  $("#home-view").hidden = false;
+  setActiveRail("nav-overview");
+  drawHomeCharts();
 }
 
-function addAgentMessage(role, text) {
-  const message = document.createElement("article");
-  message.className = `agent-message ${role}`;
-  message.innerHTML = `<span>${role === "user" ? "用户" : agentInfo[state.selectedAgent].name}</span><p>${escapeHTML(text)}</p>`;
-  $("#agent-messages").append(message);
-  $("#agent-messages").scrollTop = $("#agent-messages").scrollHeight;
+function resetLeaderConversation() {
+  state.activeHistory = "new";
+  state.activeScenario = null;
+  state.run = null;
+  state.task = null;
+  state.context = null;
+  state.candidates = [];
+  state.audit = [];
+  state.events = [];
+  state.evidence = null;
+  state.approval = null;
+  state.selectedAgent = "team_leader";
+  state.agentThreads = {};
+  state.pendingExecutionScenario = null;
+  renderSelectedAgent();
+  renderTask();
+  renderCandidates();
+  renderTrace();
+  renderOpsReport();
+  renderAgentThread("team_leader");
 }
 
-async function loadModelConfigs() {
-  try {
-    const manifest = await request("/api/agentteams/manifest");
-    state.modelConfigs = manifest.model_configs || {};
-    renderAgentConsole();
-  } catch {
-    state.modelConfigs = {};
-  }
+function openNewWorkspace() {
+  setAgentDirectory(false);
+  setWorkspaceMode("nav-workspace");
+  resetLeaderConversation();
+  $("#ai-chat-input").focus();
 }
 
-function openModelDialog() {
-  const info = agentInfo[state.selectedAgent];
-  const config = state.modelConfigs[state.selectedAgent];
-  $("#model-title").textContent = `${info.name} 模型设置`;
-  $("#model-base-url").value = config?.base_url || "https://api.deepseek.com";
-  $("#model-api-key").value = "";
-  $("#model-name").value = config?.model || "deepseek-chat";
-  $("#model-connection-status").textContent = config?.connection_status || "未测试";
-  $("#model-error").hidden = true;
-  $("#model-dialog").showModal();
-}
-
-function selectAgent(agentId) {
-  state.selectedAgent = agentId;
-  $("#agent-messages").innerHTML = "";
-  addAgentMessage(
-    "agent",
-    `已切换到${agentInfo[agentId].name}。我会带着当前 task_id、task_version 和 context_hash 回答，也会说明我能做什么和不能越过的边界。`,
-  );
-  renderAgentConsole();
-}
-
-async function saveModelConfig() {
-  const body = {
-    base_url: $("#model-base-url").value,
-    api_key: $("#model-api-key").value || null,
-    model: $("#model-name").value,
+function mapActorToAgentId(actor) {
+  const map = {
+    "Team Leader": "team_leader",
+    "Perception Agent": "perception_agent",
+    "Dispatch Agent": "dispatch_agent",
+    "Audit Agent": "audit_agent",
+    "Execution Agent": "execution_agent",
+    "Execution Worker": "execution_agent",
+    "Human Approval": "team_leader",
+    "Human Operator": "team_leader",
+    "Verification": "execution_agent",
   };
-  const saved = await request(`/api/agents/${state.selectedAgent}/model`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-  state.modelConfigs[state.selectedAgent] = saved;
-  renderAgentConsole();
-  toast("模型配置已保存在后端，前端不会回显完整 API Key");
+  return map[actor] || "team_leader";
 }
 
-async function testModelConnection() {
-  try {
-    await saveModelConfig();
-    const result = await request(`/api/agents/${state.selectedAgent}/model/test`, { method: "POST" });
-    $("#model-connection-status").textContent = result.success ? "正常" : "失败";
-    $("#model-error").hidden = result.success;
-    $("#model-error").textContent = result.error || "";
-    await loadModelConfigs();
-  } catch (error) {
-    $("#model-connection-status").textContent = "失败";
-    $("#model-error").hidden = false;
-    $("#model-error").textContent = error.message;
+function formatEventChatText(event) {
+  const time = new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  let text = `**${event.reason}**\n_(${time} · ${event.to_state})_\n`;
+
+  if ((event.to_state === "SENSING" || event.to_state === "CONTEXT_VALIDATED" || event.to_state === "REPLANNING_REQUIRED") && state.context) {
+    text += `\n\`\`\`json\n${JSON.stringify({
+      context_id: state.context.context_id,
+      context_hash: state.context.context_hash?.slice(0, 16) + "...",
+      changes: state.context.changes,
+      data_quality: state.context.data_quality,
+    }, null, 2)}\n\`\`\``;
   }
+
+  if (event.to_state === "PLANNING" && state.candidates?.length) {
+    text += `\n\`\`\`json\n${JSON.stringify(state.candidates.map(c => ({
+      id: c.candidate_id,
+      name: c.name,
+      priority: c.priority,
+      cost_yuan: c.cost_yuan,
+      peak_kw: c.max_power_kw,
+      transformer_pct: c.transformer_load_percent,
+      soc_range: `${c.soc_min_percent}%-${c.soc_max_percent}%`,
+      status: c.status,
+    })), null, 2)}\n\`\`\``;
+  }
+
+  if ((event.to_state === "AUDITING" || event.to_state === "AWAITING_APPROVAL") && state.audit?.length) {
+    text += `\n\`\`\`json\n${JSON.stringify(state.audit.map(a => ({
+      candidate: a.candidate_id,
+      verdict: a.verdict,
+      reason: a.reason,
+      transformer_pct: a.transformer_load_percent,
+      safety_limit_pct: a.safety_limit_percent,
+      checks: a.checks,
+    })), null, 2)}\n\`\`\``;
+  }
+
+  if (event.to_state === "EXECUTING" && state.evidence?.trace_steps) {
+    text += `\n\`\`\`json\n${JSON.stringify({
+      execution_commands: state.evidence.trace_steps?.filter(s => s[0].includes("Execution")),
+    }, null, 2)}\n\`\`\``;
+  }
+
+  return text;
 }
 
-async function sendAgentChat(message) {
-  addAgentMessage("user", message);
-  try {
-    const result = await request(`/api/agents/${state.selectedAgent}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ message: agentContextPrompt(message) }),
+function renderEventsToChat() {
+  const container = $("#chat-messages");
+  if (!state.events?.length) return;
+  if (container.querySelector("[data-run-marker]")) return;
+
+  const marker = document.createElement("div");
+  marker.dataset.runMarker = "true";
+  marker.hidden = true;
+  container.append(marker);
+
+  for (const event of state.events) {
+    const agentId = mapActorToAgentId(event.actor);
+    addChatMessage("agent", formatEventChatText(event), agentId, { persist: false });
+  }
+
+  if (state.task?.state === "AWAITING_APPROVAL") {
+    const candidateB = state.candidates.find(c => c.candidate_id === "Candidate-B");
+    const auditB = state.audit.find(a => a.candidate_id === "Candidate-B");
+    const text = state.language === "zh"
+      ? `## 等待人工审批\n\n**${candidateB?.name || "Candidate-B"}** 已通过独立审核，建议执行。\n\n- 成本: ¥${Math.round(candidateB?.cost_yuan || 0).toLocaleString()}\n- 峰值功率: ${Math.round(candidateB?.max_power_kw || 0)} kW\n- 变压器负载: ${candidateB?.transformer_load_percent || "--"}%\n- SOC 范围: ${candidateB?.soc_min_percent || "--"}% - ${candidateB?.soc_max_percent || "--"}%\n\n审核结论: ${auditB?.reason || ""}\n\n请在下方选择操作:`
+      : `## Awaiting Human Approval\n\n**${candidateB?.name || "Candidate-B"}** passed independent audit.\n\n- Cost: ¥${Math.round(candidateB?.cost_yuan || 0).toLocaleString()}\n- Peak: ${Math.round(candidateB?.max_power_kw || 0)} kW\n- Transformer: ${candidateB?.transformer_load_percent || "--"}%\n\nPlease choose an action:`;
+    addChatMessage("agent", text, "execution_agent", {
+      meta: { action: "confirm_execution", scenarioKey: state.run?.task_id || "compound_change" },
+      persist: false,
     });
-    addAgentMessage("agent", result.response);
-  } catch (error) {
-    addAgentMessage("agent", `无法连接模型：${error.message}。请先打开模型设置，保存并测试连接。`);
   }
-}
 
-function openTraceDetail(index) {
-  const event = state.events[index];
-  if (!event) return;
-  $("#trace-dialog-title").textContent = event.event_id;
-  $("#trace-json").textContent = JSON.stringify(event, null, 2);
-  $("#trace-dialog").showModal();
-}
-
-function renderContextDashboard(context) {
-  const changes = context.changes || {};
-  const quality = context.data_quality || {};
-  $("#context-summary").innerHTML = `
-    <article><span>任务版本</span><strong>V${escapeHTML(context.task_version)}</strong></article>
-    <article><span>原计划</span><strong>${context.previous_plan_status === "invalidated" ? "已失效" : escapeHTML(context.previous_plan_status)}</strong></article>
-    <article><span>自动化权限</span><strong>${context.automation_permission === "restricted" ? "受限执行" : escapeHTML(context.automation_permission)}</strong></article>
-    <article><span>约束版本</span><strong>${escapeHTML(context.constraint_set_version)}</strong></article>
-  `;
-  const changeCards = [
-    ["生产负荷", `+${changes.production_load_added_kw} kW`, "急单插入"],
-    ["光伏实际偏差", `${changes.pv_actual_vs_forecast_percent}%`, "低于预测"],
-    ["变压器温度", changes.transformer_temperature_conflict ? "数据冲突" : "正常", "需安全降级"],
-    ["电价时段", changes.tariff_period === "peak" ? "峰值" : escapeHTML(changes.tariff_period), "需重新评估成本"],
-  ];
-  $("#context-changes").innerHTML = changeCards.map(([label, value, note]) => `<article><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join("");
-  const validSources = Object.entries(quality).filter(([, value]) => value === "valid").map(([name]) => name.toUpperCase());
-  $("#context-quality").innerHTML = `
-    <article class="quality-ok"><span>可信数据源</span><strong>${validSources.join(" · ") || "--"}</strong><small>时间戳与完整性校验通过</small></article>
-    <article class="quality-warning"><span>需人工关注</span><strong>变压器传感器冲突</strong><small>两路温度数据不一致，自动化权限已收紧</small></article>
-    <article><span>快照标识</span><strong>${escapeHTML(context.context_id)}</strong><small>${escapeHTML(context.context_hash).slice(0, 20)}...</small></article>
-  `;
-}
-
-function openContext() {
-  if (!state.context) return;
-  renderContextDashboard(state.context);
-  $("#context-json").textContent = JSON.stringify(state.context, null, 2);
-  $("#context-dialog").showModal();
-}
-
-function openCandidateDetail(candidateId) {
-  const candidate = state.candidates.find((item) => item.candidate_id === candidateId);
-  const verdict = state.audit.find((item) => item.candidate_id === candidateId);
-  if (!candidate) return;
-  $("#candidate-dialog-title").textContent = `${candidate.candidate_id}｜${candidate.name}`;
-  $("#candidate-json").textContent = JSON.stringify({ candidate, audit_verdict: verdict || null }, null, 2);
-  $("#candidate-dialog").showModal();
-}
-
-function reviewCandidates() {
-  $("#candidate-list").scrollIntoView({ behavior: "smooth", block: "center" });
-  tutorialAdvance("review");
-}
-
-function clearTutorialTarget() {
-  if (state.tutorial.target) state.tutorial.target.classList.remove("tutorial-target");
-  state.tutorial.target = null;
-}
-
-function positionTutorial() {
-  const target = state.tutorial.target;
-  if (!target) return;
-  const spotlight = $("#tutorial-spotlight");
-  const card = $("#tutorial-card");
-  const rect = target.getBoundingClientRect();
-  spotlight.style.left = `${Math.max(4, rect.left - 6)}px`;
-  spotlight.style.top = `${Math.max(4, rect.top - 6)}px`;
-  spotlight.style.width = `${rect.width + 12}px`;
-  spotlight.style.height = `${rect.height + 12}px`;
-  const cardWidth = Math.min(360, window.innerWidth - 32);
-  const cardHeight = card.offsetHeight;
-  const gap = 16;
-  const edge = 16;
-  const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
-  const placements = [
-    { left: rect.left, top: rect.bottom + gap },
-    { left: rect.right + gap, top: rect.top },
-    { left: rect.left - cardWidth - gap, top: rect.top },
-    { left: rect.left, top: rect.top - cardHeight - gap },
-  ];
-  const placement = placements.find(({ left, top }) => left >= edge && top >= edge && left + cardWidth <= window.innerWidth - edge && top + cardHeight <= window.innerHeight - edge)
-    || placements[0];
-  card.style.left = `${clamp(placement.left, edge, window.innerWidth - cardWidth - edge)}px`;
-  card.style.top = `${clamp(placement.top, edge, window.innerHeight - cardHeight - edge)}px`;
-  card.style.bottom = "auto";
-}
-
-function showTutorialCompletion() {
-  clearTutorialTarget();
-  $("#tutorial-overlay").hidden = false;
-  $("#tutorial-spotlight").style.cssText = "";
-  $("#tutorial-step").textContent = "任务完成";
-  $("#tutorial-count").textContent = "07 / 07";
-  $("#tutorial-title").textContent = "安全调度闭环已完成";
-  $("#tutorial-story").textContent = "你已亲手完成感知、上下文交接、候选方案审计、人工审批、模拟执行与证据封存。每一个关键节点均来自真实后端任务记录。";
-  $("#tutorial-objective").textContent = "查看证据并复盘本次任务";
-  $("#tutorial-action").textContent = "可重新开始本教程，或继续用 Agent 会话探索当前园区任务。";
-  $("#tutorial-restart").hidden = false;
-  document.body.classList.add("tutorial-active");
-  window.localStorage.setItem("energymesh.tutorial-completed", "true");
-}
-
-function showTutorialStep() {
-  const step = tutorialSteps[state.tutorial.step];
-  if (!step) return showTutorialCompletion();
-  const target = $(step.target);
-  if (!target) return;
-  clearTutorialTarget();
-  state.tutorial.target = target;
-  target.classList.add("tutorial-target");
-  $("#tutorial-overlay").hidden = false;
-  $("#tutorial-step").textContent = "安全调度任务";
-  $("#tutorial-count").textContent = `${String(state.tutorial.step + 1).padStart(2, "0")} / ${String(tutorialSteps.length).padStart(2, "0")}`;
-  $("#tutorial-title").textContent = step.title;
-  $("#tutorial-story").textContent = step.story;
-  $("#tutorial-objective").textContent = step.objective;
-  $("#tutorial-action").textContent = step.action;
-  $("#tutorial-restart").hidden = true;
-  document.body.classList.add("tutorial-active");
-  window.requestAnimationFrame(positionTutorial);
-}
-
-function beginTutorial() {
-  state.tutorial = { active: true, step: 0, target: null };
-  showTutorialStep();
-}
-
-function tutorialAdvance(event) {
-  if (!state.tutorial.active) return;
-  const step = tutorialSteps[state.tutorial.step];
-  if (!step || step.event !== event) return;
-  state.tutorial.step += 1;
-  showTutorialStep();
-}
-
-function stopTutorial() {
-  state.tutorial.active = false;
-  clearTutorialTarget();
-  $("#tutorial-overlay").hidden = true;
-  document.body.classList.remove("tutorial-active");
-}
-
-function startPlayback() {
-  window.clearInterval(state.playbackTimer);
-  state.playbackIndex = -1;
-  state.paused = false;
-  $("#pause-button").textContent = "暂停播放";
-  state.playbackTimer = window.setInterval(() => {
-    if (state.paused) return;
-    state.playbackIndex += 1;
-    if (state.playbackIndex >= state.events.length - 1) {
-      state.playbackIndex = state.events.length - 1;
-      window.clearInterval(state.playbackTimer);
-    }
-    renderTask();
-    renderTrace();
-  }, 620);
+  container.scrollTop = container.scrollHeight;
 }
 
 async function refreshTask(taskId) {
@@ -625,21 +2175,20 @@ async function refreshTask(taskId) {
   state.audit = audit;
   state.events = events;
   state.evidence = evidence;
-  $("#approve-b").disabled = task.state !== "AWAITING_APPROVAL";
-  $("#execute-b").disabled = !state.approval || task.state !== "AWAITING_APPROVAL";
   renderTask();
   renderCandidates();
   renderTrace();
+  renderOpsReport();
+  renderEventsToChat();
 }
 
 async function runDemo() {
   try {
+    state.activeScenario = null;
     state.approval = null;
     state.run = await request("/api/demo/run", { method: "POST" });
     await refreshTask(state.run.task_id);
-    startPlayback();
-    toast("14:00复合变化任务已创建，等待人工审批");
-    tutorialAdvance("run");
+    toast(state.language === "zh" ? "场景已创建，Candidate B 等待人工审批。" : "Scenario created. Candidate B is awaiting human approval.");
   } catch (error) {
     toast(error.message);
   }
@@ -654,14 +2203,12 @@ async function approveCandidateB() {
         candidate_id: "Candidate-B",
         task_version: state.context.task_version,
         context_hash: state.context.context_hash,
-        approver: "演示审批员",
-        reason: "确认Candidate B已通过Audit Agent硬约束审核，允许模拟执行。",
+        approver: "Human Operator",
+        reason: "Candidate B passed independent audit and remains bound to the current context hash.",
       }),
     });
     await refreshTask(state.run.task_id);
-    $("#execute-b").disabled = false;
-    toast("Candidate B 已绑定上下文哈希完成审批");
-    tutorialAdvance("approve");
+    toast(state.language === "zh" ? "Candidate B 已审批。" : "Candidate B approved.");
   } catch (error) {
     toast(error.message);
   }
@@ -680,9 +2227,7 @@ async function executeCandidateB() {
       }),
     });
     await refreshTask(state.run.task_id);
-    startPlayback();
-    toast("执行完成，偏差低于5%，证据已封存");
-    tutorialAdvance("execute");
+    toast(state.language === "zh" ? "执行已验证，证据已封存。" : "Execution verified. Evidence sealed.");
   } catch (error) {
     toast(error.message);
   }
@@ -690,11 +2235,11 @@ async function executeCandidateB() {
 
 async function runRollback() {
   try {
+    state.activeScenario = null;
     state.approval = null;
     state.run = await request("/api/demo/run-rollback", { method: "POST" });
     await refreshTask(state.run.task_id);
-    startPlayback();
-    toast("回滚场景已完成：执行偏差超过5%，恢复安全基线");
+    toast(state.language === "zh" ? "回滚场景已完成。" : "Rollback scenario completed.");
   } catch (error) {
     toast(error.message);
   }
@@ -707,127 +2252,56 @@ async function openEvidence() {
   $("#evidence-dialog").showModal();
 }
 
+function openTraceDetail(index) {
+  const event = state.events[index];
+  if (!event) return;
+  $("#trace-dialog-title").textContent = event.event_id;
+  $("#trace-json").textContent = JSON.stringify(event, null, 2);
+  $("#trace-dialog").showModal();
+}
+
+function openCandidateDetail(candidateId) {
+  const candidate = state.candidates.find((item) => item.candidate_id === candidateId);
+  const verdict = state.audit.find((item) => item.candidate_id === candidateId);
+  if (!candidate) return;
+  $("#candidate-dialog-title").textContent = `${candidate.candidate_id} · ${candidate.name}`;
+  $("#candidate-json").textContent = JSON.stringify({ candidate, audit_verdict: verdict || null }, null, 2);
+  $("#candidate-dialog").showModal();
+}
+
+function reviewCandidates() {
+  $("#candidate-list").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function openWorkspaceFromHistory(kind) {
+  const thread = historyThreads[kind] || historyThreads.current;
+  state.activeHistory = kind;
+  state.activeScenario = null;
+  state.selectedAgent = thread.agentId;
+  setWorkspaceMode("nav-workspace");
+  $$(".history-card").forEach((card) => {
+    card.classList.toggle("active", card.dataset.openWorkspace === kind);
+  });
+  renderSelectedAgent();
+  renderThreadMessages(kind);
+  $("#ai-chat-input").focus();
+}
+
 function setupCampus() {
   const canvas = $("#campus-3d");
   if (!canvas) return;
   state.campus3d = createCampus3D(canvas, updateAssetLabels);
+  renderCampusSimulation();
   $("#reset-camera").addEventListener("click", () => {
-    if (state.campus3d?.resetCamera) state.campus3d.resetCamera();
-    else state.campus3d?.reset?.();
+    state.campus3d?.reset?.();
   });
-}
-
-function setupPaneResizers() {
-  const workspace = $(".workspace");
-  const sidebar = $(".agent-sidebar");
-  const conversation = $(".conversation-panel");
-  if (!workspace || !sidebar || !conversation) return;
-
-  const restoreWidth = (property, fallback) => {
-    const saved = Number(window.localStorage.getItem(`energymesh.${property}`));
-    workspace.style.setProperty(property, `${Number.isFinite(saved) && saved > 0 ? saved : fallback}px`);
-  };
-  restoreWidth("--sidebar-width", 260);
-  restoreWidth("--conversation-width", 360);
-
-  $$(".pane-resizer").forEach((resizer) => {
-    const property = resizer.dataset.resizer === "sidebar" ? "--sidebar-width" : "--conversation-width";
-    resizer.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      resizer.setPointerCapture(event.pointerId);
-      resizer.classList.add("is-dragging");
-      document.body.style.cursor = "col-resize";
-
-      const move = (moveEvent) => {
-        const bounds = workspace.getBoundingClientRect();
-        const sidebarWidth = sidebar.getBoundingClientRect().width;
-        const conversationWidth = conversation.getBoundingClientRect().width;
-        const rightMinimum = 390;
-        const dividerWidth = 18;
-        const value = property === "--sidebar-width"
-          ? moveEvent.clientX - bounds.left
-          : moveEvent.clientX - bounds.left - sidebarWidth - 9;
-        const minimum = property === "--sidebar-width" ? 220 : 300;
-        const otherWidth = property === "--sidebar-width" ? conversationWidth : sidebarWidth;
-        const maximum = Math.max(minimum, bounds.width - otherWidth - rightMinimum - dividerWidth);
-        const width = Math.round(Math.min(Math.max(value, minimum), maximum));
-        workspace.style.setProperty(property, `${width}px`);
-      };
-
-      const finish = () => {
-        resizer.classList.remove("is-dragging");
-        document.body.style.cursor = "";
-        window.localStorage.setItem(`energymesh.${property}`, `${Math.round(property === "--sidebar-width" ? sidebar.getBoundingClientRect().width : conversation.getBoundingClientRect().width)}`);
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", finish, { once: true });
-    });
-  });
-}
-
-function setupEvents() {
-  $("#run-button").addEventListener("click", runDemo);
-  $("#approve-b").addEventListener("click", approveCandidateB);
-  $("#execute-b").addEventListener("click", executeCandidateB);
-  $("#rollback-button").addEventListener("click", runRollback);
-  $("#open-evidence").addEventListener("click", openEvidence);
-  $("#view-context").addEventListener("click", openContext);
-  $("#review-candidates").addEventListener("click", reviewCandidates);
-  $("#tutorial-button").addEventListener("click", beginTutorial);
-  $("#tutorial-skip").addEventListener("click", stopTutorial);
-  $("#tutorial-restart").addEventListener("click", beginTutorial);
-  $("#random-avatar-button").addEventListener("click", randomizeAgentAvatar);
-  $("#model-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try {
-      await saveModelConfig();
-      $("#model-dialog").close();
-    } catch (error) {
-      $("#model-error").hidden = false;
-      $("#model-error").textContent = error.message;
-    }
-  });
-  $("#test-model-button").addEventListener("click", testModelConnection);
-  $("#agent-chat-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#agent-chat-input");
-    const message = input.value.trim() || agentInfo[state.selectedAgent].defaultPrompt;
-    input.value = "";
-    await sendAgentChat(message);
-  });
-  $$(".agent-select").forEach((button) => {
-    button.addEventListener("click", () => selectAgent(button.dataset.agent));
-  });
-  $$(".agent-avatar").forEach((avatar) => {
-    avatar.addEventListener("click", () => {
-      state.selectedAgent = avatar.dataset.openModel;
-      renderAgentConsole();
-      openModelDialog();
-    });
-  });
-  $("#pause-button").addEventListener("click", () => {
-    state.paused = !state.paused;
-    $("#pause-button").textContent = state.paused ? "继续播放" : "暂停播放";
-  });
-  $$("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => $(`#${button.dataset.closeDialog}`).close());
-  });
-  $("#context-dialog").addEventListener("close", () => tutorialAdvance("context"));
-  $("#candidate-dialog").addEventListener("close", () => tutorialAdvance("candidate-a"));
-  $("#evidence-dialog").addEventListener("close", () => tutorialAdvance("evidence"));
-  $$(".segmented button").forEach((button) => {
+  $$(".campus-add").forEach((button) => {
     button.addEventListener("click", () => {
-      $$(".segmented button").forEach((item) => item.classList.toggle("active", item === button));
-      document.body.dataset.mode = button.dataset.mode;
-      if (button.dataset.mode === "audit" && state.task) openEvidence();
+      state.campus3d?.addModule?.(button.dataset.campusAdd);
     });
   });
-  window.addEventListener("resize", () => {
-    drawScenarioChart();
-    state.campus3d?.resize?.();
-    if (state.tutorial.active) positionTutorial();
+  $("#campus-delete").addEventListener("click", () => {
+    state.campus3d?.deleteSelected?.();
   });
 }
 
@@ -842,32 +2316,94 @@ async function restoreLatestDemo() {
       context_id: state.context.context_id,
       context_hash: state.context.context_hash,
     };
-    state.playbackIndex = state.events.length - 1;
-    renderTask();
-    renderTrace();
-    if (!$("#agent-messages .agent-message")) {
-      addAgentMessage(
-        "agent",
-        "当前任务已恢复。你可以询问我发现的异常、候选策略、审核结论，或要求我说明下一步应交给哪个角色。",
-      );
-    }
   } catch {
     renderTask();
     renderCandidates();
     renderTrace();
-    if (!$("#agent-messages .agent-message")) {
-      addAgentMessage("agent", "我已就绪。运行14:00复合变化后，我会基于同一任务上下文参与协作。");
-    }
+    renderOpsReport();
   }
 }
 
-drawScenarioChart();
-setupCampus();
-setupPaneResizers();
-restoreAvatarSelection();
-setupEvents();
-loadModelConfigs();
-restoreLatestDemo();
-if (!window.localStorage.getItem("energymesh.tutorial-completed")) {
-  window.setTimeout(beginTutorial, 450);
+function setupEvents() {
+  $("#run-button")?.addEventListener("click", runDemo);
+  $("#approve-b")?.addEventListener("click", approveCandidateB);
+  $("#execute-b")?.addEventListener("click", executeCandidateB);
+  $("#rollback-button")?.addEventListener("click", runRollback);
+  $("#open-evidence").addEventListener("click", openEvidence);
+  $("#review-candidates").addEventListener("click", reviewCandidates);
+  $("#translate-button").addEventListener("click", toggleLanguage);
+  $("#nav-overview").addEventListener("click", openHome);
+  $("#nav-workspace").addEventListener("click", openNewWorkspace);
+  $(".workspace-title").addEventListener("click", openNewWorkspace);
+  $("#nav-agents").addEventListener("click", () => {
+    setWorkspaceMode("nav-agents");
+    setAgentDirectory($("#agent-directory-drawer").hidden);
+    setActiveRail("nav-agents");
+  });
+  $("#nav-trace").addEventListener("click", () => {
+    setWorkspaceMode("nav-trace");
+    scrollWithin($("#nav-trace"), "#trace-list");
+  });
+  $("#nav-chat").addEventListener("click", () => {
+    setWorkspaceMode("nav-chat");
+    scrollWithin($("#nav-chat"), "#ai-chat-panel");
+    $("#ai-chat-input").focus();
+  });
+  $("#nav-safety").addEventListener("click", () => {
+    setWorkspaceMode("nav-safety");
+    runRollback();
+  });
+  $("#agent-directory-close").addEventListener("click", () => setAgentDirectory(false));
+  $("#active-agent-gateway").addEventListener("click", () => openGateway());
+  $("#ai-chat-form").addEventListener("submit", sendChatMessage);
+  $$(".directory-chat").forEach((button) => {
+    button.addEventListener("click", () => selectAgent(button.closest("[data-agent-id]").dataset.agentId));
+  });
+  $$(".directory-gateway").forEach((button) => {
+    button.addEventListener("click", () => openGateway(button.closest("[data-agent-id]").dataset.agentId));
+  });
+  $("#gateway-form").addEventListener("submit", saveGateway);
+  $("#gateway-test").addEventListener("click", testGatewayConnection);
+  $$("[data-station-tab]").forEach((button) => {
+    button.addEventListener("click", () => setStationView(button.dataset.stationTab));
+  });
+  $$("[data-device-id]").forEach((button) => {
+    button.addEventListener("click", () => renderDeviceDetail(button.dataset.deviceId));
+  });
+  $$("[data-signal-mode]").forEach((button) => {
+    button.addEventListener("click", () => setDeviceMode(button.dataset.signalMode));
+  });
+  $$("[data-device-view-mode]").forEach((button) => {
+    button.addEventListener("click", () => setDeviceMode(button.dataset.deviceViewMode));
+  });
+  $("#chat-messages").addEventListener("click", (event) => {
+    const confirmButton = event.target.closest("[data-confirm-scenario]");
+    if (confirmButton) {
+      confirmScenarioExecution();
+      return;
+    }
+    const deferButton = event.target.closest("[data-defer-scenario]");
+    if (deferButton) deferScenarioExecution();
+  });
+  $$("[data-open-workspace]").forEach((card) => {
+    card.addEventListener("click", () => openWorkspaceFromHistory(card.dataset.openWorkspace));
+  });
+  $$("[data-close-dialog]").forEach((button) => {
+    button.addEventListener("click", () => $(`#${button.dataset.closeDialog}`).close());
+  });
+  window.addEventListener("resize", () => {
+    drawScenarioChart();
+    drawHomeCharts();
+  });
 }
+
+drawScenarioChart();
+drawHomeCharts();
+setupCampus();
+setupEvents();
+renderDeviceDetail("pcs");
+loadGateways();
+renderSelectedAgent();
+applyLanguage(window.localStorage.getItem("energymesh.language") === "zh" ? "zh" : "en");
+restoreLatestDemo();
+startLiveCharts();

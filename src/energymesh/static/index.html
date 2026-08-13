@@ -3,81 +3,334 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0b121b" />
-    <title>EnergyMesh Agents · 园区电力协同工作台</title>
+    <meta name="theme-color" content="#08090b" />
+    <title>EnergyMesh Agents · Workspace</title>
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260731-context-dashboard2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260807-agent-identity-fix2" />
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="EnergyMesh Agents 首页"><span class="brand-mark" aria-hidden="true"><b>E</b><i>M</i></span><span><strong>EnergyMesh</strong><small>AGENTS</small></span></a>
-      <div class="site-heading"><span class="site-kicker">PARK CONTROL / AGENTTEAMS</span><strong>园区能源协同调度</strong></div>
-      <div class="header-actions">
-        <span class="runtime"><i></i><span><strong>Simulation</strong><small>生产写入关闭</small></span></span>
-        <button id="tutorial-button" class="command-button ghost" type="button">任务引导</button>
-        <button id="pause-button" class="command-button ghost" type="button">暂停播放</button>
-        <button id="rollback-button" class="command-button ghost" type="button">运行回滚场景</button>
-        <button id="run-button" class="command-button primary" type="button"><span>▶</span>运行14:00复合变化</button>
-      </div>
-    </header>
+    <main class="app-shell">
+      <nav class="icon-rail" aria-label="EnergyMesh navigation">
+        <div class="rail-logo" aria-hidden="true">EM</div>
+        <button id="nav-overview" class="rail-item" type="button" aria-label="Overview" title="Overview">⌂</button>
+        <button id="nav-workspace" class="rail-item active" type="button" aria-label="Workspace" title="Workspace">▧</button>
+        <button id="nav-agents" class="rail-item" type="button" aria-label="Agent directory" title="Agent directory">☷</button>
+        <button id="nav-trace" class="rail-item" type="button" aria-label="Trace" title="Trace">↻</button>
+        <button id="nav-chat" class="rail-item" type="button" aria-label="AI chat" title="AI chat">⌁</button>
+        <button id="nav-safety" class="rail-item" type="button" aria-label="Safety rollback" title="Safety rollback">◌</button>
+        <button id="translate-button" class="rail-item translate-item" type="button" aria-label="Translate to Chinese" title="翻译为中文">文</button>
+      </nav>
 
-    <main class="workspace">
-      <aside class="panel agent-sidebar" aria-label="协作对象">
-        <div class="panel-heading"><div><span>AGENTS</span><strong>选择会话</strong></div><small>4 个角色在线</small></div>
-        <p class="sidebar-copy">选择一个 Agent，围绕当前园区任务自然交流；点击头像配置该角色使用的模型。</p>
-        <button class="team-entry active" type="button" data-agent="perception_agent"><span class="team-symbol">✦</span><span><strong>自动协同</strong><small>Team Leader 编排 · 当前任务</small></span><i>4</i></button>
-        <div id="agent-roster" class="agent-roster">
-          <article class="agent-row active" data-agent="perception_agent"><button class="agent-avatar perception" type="button" data-open-model="perception_agent" aria-label="配置感知 Agent 模型"><img src="/static/avatars/perception.svg" alt="" /></button><button class="agent-select" type="button" data-agent="perception_agent"><strong>感知 Agent</strong><small>数据核验 · 异常判断</small></button><i></i></article>
-          <article class="agent-row" data-agent="dispatch_agent"><button class="agent-avatar dispatch" type="button" data-open-model="dispatch_agent" aria-label="配置调度 Agent 模型"><img src="/static/avatars/dispatch.svg" alt="" /></button><button class="agent-select" type="button" data-agent="dispatch_agent"><strong>调度 Agent</strong><small>策略代码 · 方案生成</small></button><i></i></article>
-          <article class="agent-row" data-agent="audit_agent"><button class="agent-avatar audit" type="button" data-open-model="audit_agent" aria-label="配置审核 Agent 模型"><img src="/static/avatars/audit.svg" alt="" /></button><button class="agent-select" type="button" data-agent="audit_agent"><strong>审核 Agent</strong><small>约束审计 · 风险拦截</small></button><i></i></article>
-          <article class="agent-row" data-agent="execution_agent"><button class="agent-avatar execution" type="button" data-open-model="execution_agent" aria-label="配置执行 Agent 模型"><img src="/static/avatars/execution.svg" alt="" /></button><button class="agent-select" type="button" data-agent="execution_agent"><strong>执行 Agent</strong><small>指令映射 · 结果核对</small></button><i></i></article>
+      <section id="home-view" class="home-view" aria-label="Task history" hidden>
+        <header class="home-title">
+          <div>
+            <h1 data-i18n="homeTitle">All insights</h1>
+            <p data-i18n="homeSubtitle">Recent tasks</p>
+          </div>
+          <label class="home-search">
+            <span>⌕</span>
+            <input data-i18n-placeholder="homeSearchPlaceholder" placeholder="Search tasks" />
+          </label>
+        </header>
+        <div class="insight-board">
+          <article class="history-card active" data-open-workspace="current">
+            <canvas class="mini-chart" data-seed="0" aria-label="Current power cover"></canvas>
+            <div class="history-body">
+              <div class="history-tags"><span class="tag critical" data-i18n="historyCritical">Critical</span><span data-i18n="historyApproved">Awaiting approval</span></div>
+              <h2 data-i18n="historyCurrentTitle">14:00 compound change dispatch loop</h2>
+              <time>2026-07-31 14:00</time>
+              <p data-i18n="historyCurrentText">PV drops below forecast, production load rises, transformer readings conflict, and peak tariff starts.</p>
+            </div>
+          </article>
+          <article class="history-card" data-open-workspace="context">
+            <canvas class="mini-chart" data-seed="1" aria-label="Context power cover"></canvas>
+            <div class="history-body">
+              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyTraceReady">Trace ready</span></div>
+              <h2 data-i18n="historyContextTitle">Transformer sensor conflict review</h2>
+              <time>2026-07-30 18:40</time>
+              <p data-i18n="historyContextText">Perception Worker found two incompatible temperature streams and blocked direct replanning.</p>
+            </div>
+          </article>
+          <article class="history-card" data-open-workspace="audit">
+            <canvas class="mini-chart" data-seed="2" aria-label="Audit power cover"></canvas>
+            <div class="history-body">
+              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyRejected">Rejected</span></div>
+              <h2 data-i18n="historyAuditTitle">Candidate A failed safety audit</h2>
+              <time>2026-07-29 09:15</time>
+              <p data-i18n="historyAuditText">Audit Worker rejected the plan because transformer load and minimum production constraints diverged.</p>
+            </div>
+          </article>
+          <article class="history-card" data-open-workspace="rollback">
+            <canvas class="mini-chart" data-seed="3" aria-label="Rollback power cover"></canvas>
+            <div class="history-body">
+              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyRollback">Rollback</span></div>
+              <h2 data-i18n="historyRollbackTitle">Safe fallback after approval denial</h2>
+              <time>2026-07-28 21:05</time>
+              <p data-i18n="historyRollbackText">Execution was stopped, evidence was sealed, and control returned to the human operator.</p>
+            </div>
+          </article>
         </div>
-        <div class="sidebar-footer"><span>本地模拟</span><small>生产写入关闭</small></div>
-      </aside>
-
-      <div class="pane-resizer" data-resizer="sidebar" role="separator" aria-label="调整会话列表宽度" aria-orientation="vertical" tabindex="0"></div>
-
-      <section class="panel conversation-panel" aria-label="多智能体协作会话">
-        <div class="conversation-heading">
-          <div class="conversation-avatar"><img id="conversation-avatar" src="/static/avatars/perception.svg" alt="" /></div>
-          <div><strong id="selected-agent-name">感知 Agent</strong><small id="selected-agent-skill">microgrid_context_ingest</small></div>
-          <div class="conversation-actions"><span class="connection">连接状态：<b id="agent-model-status">未测试</b></span><button id="view-context" class="context-button" type="button" disabled>查看感知快照</button></div>
-        </div>
-        <div class="conversation-context">
-          <span>当前任务</span><strong id="task-id">未创建</strong><span>版本</span><strong id="task-version">--</strong><span>状态</span><strong id="task-state">IDLE</strong>
-        </div>
-        <div id="agent-messages" class="agent-messages"><p>选择 Agent 后即可开始会话。运行复合变化场景后，Agent 会携带同一个任务、上下文版本与候选方案边界回答。</p></div>
-        <form id="agent-chat-form" class="agent-composer"><input id="agent-chat-input" placeholder="请描述当前园区异常，并说明下一步建议" autocomplete="off" /><button class="command-button primary" type="submit">发送</button></form>
       </section>
 
-      <div class="pane-resizer" data-resizer="conversation" role="separator" aria-label="调整协作会话宽度" aria-orientation="vertical" tabindex="0"></div>
+      <section class="brief-pane" aria-label="Workspace brief">
+        <header class="workspace-title">
+          <strong data-i18n="workspaceTitle">New workspace</strong>
+          <span>↗</span>
+        </header>
 
-      <section class="panel operations-panel" aria-label="园区调度与审计">
-        <div class="panel-heading"><div><span>VISUAL</span><strong>园区能源数字沙盘</strong></div><div class="segmented"><button class="active" type="button" data-mode="demo">沙盘</button><button type="button" data-mode="audit">审计</button></div></div>
-        <div class="campus-shell"><div class="campus"><canvas id="campus-3d" aria-label="极简白色园区能源沙盘"></canvas><button id="reset-camera" class="camera-button" type="button" title="重置三维视角" aria-label="重置三维视角">⌂</button><article class="asset" data-anchor="factory"><span>生产车间</span><strong>502 kW</strong></article><article class="asset" data-anchor="solar"><span>屋顶光伏</span><strong>335 kW</strong></article><article class="asset" data-anchor="storage"><span>储能系统</span><strong>SOC 55%</strong></article><article class="asset" data-anchor="grid"><span>公共电网</span><strong>475 kW</strong></article><article class="asset" data-anchor="charge"><span>充电设施</span><strong>65 kW</strong></article><article class="asset" data-anchor="compute"><span>算力中心</span><strong>243 kW</strong></article><div class="scene-hint">拖拽旋转 · 标签跟随建筑</div></div></div>
-        <div class="operations-scroll">
-          <div class="signal-grid"><div><span>新增生产负荷</span><strong>+420 kW</strong></div><div><span>光伏实际偏差</span><strong>-18.6%</strong></div><div><span>变压器温度</span><strong>传感器冲突</strong></div><div><span>电价时段</span><strong>峰值</strong></div></div>
-          <div class="chart-stack"><canvas id="scenario-chart" aria-label="96点负荷、光伏、电价曲线"></canvas><div class="event-line"><i></i><span>14:00</span></div></div>
-          <div class="decision-heading"><div><span>DISPATCH</span><strong>候选方案与审批</strong></div><div class="decision-meta"><small id="current-agent">--</small><button id="review-candidates" class="mini-button" type="button" disabled>查看方案</button></div></div>
-          <div id="candidate-list" class="candidate-list"><p class="empty">点击运行后由 Dispatch Agent 生成三套候选方案。</p></div>
-          <div class="decision-actions"><button id="approve-b" class="command-button primary" type="button" disabled>批准 Candidate B</button><button id="execute-b" class="command-button ghost" type="button" disabled>执行获批方案</button></div>
-          <div class="trace-heading"><div><span>TRACE</span><strong>协作记录</strong></div><small id="trace-count">0 条事件</small></div>
-          <div id="trace-list" class="trace-list"><p class="empty">运行后展示真实后端事件记录。</p></div>
-        </div>
+        <section id="ai-chat-panel" class="ai-chat-panel">
+          <div class="chat-head">
+            <div>
+              <span id="active-agent-role">EnergyMesh Runtime</span>
+              <strong id="active-agent-name">Autonomous agent scheduler</strong>
+            </div>
+            <button id="active-agent-gateway" class="mini-close gateway-open" type="button" aria-label="Open model gateway" title="Model gateway">⚙</button>
+          </div>
+          <div id="chat-messages" class="chat-messages">
+            <article class="chat-message agent tone-leader">
+              <div class="chat-avatar">EM</div>
+              <div class="chat-content">
+                <header class="chat-message-head">
+                  <strong class="chat-speaker">Team Leader</strong>
+                </header>
+                <div class="chat-message-body">
+                  <p data-i18n="chatIntro">我是EnergyMesh leader，目前您要下达什么调度任务？</p>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div id="runtime-status" class="runtime-status-line" hidden><i></i><span>模型处理中</span></div>
+          <form id="ai-chat-form" class="chat-form">
+            <input id="ai-chat-input" autocomplete="off" data-i18n-placeholder="chatPlaceholder" placeholder="Ask the Team Leader..." />
+            <button class="action" type="submit" data-i18n="chatSend">Send</button>
+          </form>
+        </section>
+
       </section>
 
-      <footer class="evidence-bar"><div><span>Task State</span><strong id="evidence-state">IDLE</strong></div><div><span>Context ID</span><strong id="context-id">--</strong></div><div><span>Context Hash</span><strong id="context-hash">--</strong></div><div><span>Trace ID</span><strong id="trace-id">--</strong></div><div><span>Evidence</span><strong id="evidence-status">未生成</strong></div><button id="open-evidence" class="command-button ghost" type="button" disabled>查看任务证据</button></footer>
+      <section class="visual-pane" aria-label="Dispatch visualization">
+        <header class="visual-title">
+          <div>
+            <h1 data-i18n="visualTitle">Console</h1>
+          </div>
+          <div class="run-status">
+            <span data-i18n="taskLabel">Task</span>
+            <strong id="task-id">未创建</strong>
+          </div>
+        </header>
+
+        <section class="plot-card">
+          <div class="plot-caption">
+            <span id="task-state">IDLE</span>
+          </div>
+          <div class="visual-grid">
+            <div class="campus">
+              <canvas id="campus-3d" aria-label="EnergyMesh 3D campus sandbox"></canvas>
+              <section class="campus-hud" aria-label="Energy simulation state">
+                <div class="campus-score-row">
+                  <article><span>能源成本</span><strong id="campus-cost">¥10,000</strong><small id="campus-saved">待优化</small></article>
+                  <article><span>浪费率</span><strong id="campus-waste">20%</strong><small>光伏弃电 / 空耗</small></article>
+                  <article><span>稳定性</span><strong id="campus-stability">82%</strong><small>负载满足率</small></article>
+                </div>
+                <div class="energy-pool-row">
+                  <article><span>发电端</span><strong id="pool-generation">30 MW</strong><small id="pool-generation-note">PV + Generator</small></article>
+                  <article><span>储能端</span><strong id="pool-storage">SOC 20%</strong><small id="pool-storage-note">待充电</small></article>
+                  <article><span>用电端</span><strong id="pool-load">25 MW</strong><small id="pool-load-note">Factory + Data</small></article>
+                </div>
+              </section>
+              <div class="campus-tools" aria-label="Campus editor tools">
+                <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
+                <button class="campus-add" type="button" data-campus-add="datacenter">+ 数据中心</button>
+                <button class="campus-add" type="button" data-campus-add="factory">+ 厂房</button>
+                <button class="campus-add" type="button" data-campus-add="generation">+ 发电</button>
+                <button class="campus-add" type="button" data-campus-add="storage">+ 储能</button>
+                <button id="campus-delete" type="button">删除选中</button>
+              </div>
+              <div class="campus-hint">拖动建筑到网格位置 · 滚轮缩放 · 空白处旋转视角</div>
+              <article class="asset metric-card" data-anchor="factory"><span>负载</span><strong>464.32 kW</strong><small>日用电量 2,726.00 kWh</small><small>月用电量 31.88 MWh</small><small>总用电量 13,593.96 MWh</small></article>
+              <article class="asset metric-card" data-anchor="solar"><span>光伏</span><strong>335 kW</strong><small>日发电量 0.00 kWh</small><small>月发电量 4.40 MWh</small><small>总发电量 2,218.80 MWh</small></article>
+              <article class="asset metric-card critical" data-anchor="storage"><span>储能</span><strong>SOC 55%</strong><small>总功率 0.00 kW</small><small>日充电量 0.00 kWh</small><small>日放电量 0.00 kWh</small></article>
+              <article class="asset warning" data-anchor="grid"><span data-i18n="assetGrid">Grid</span><strong>475 kW</strong><small data-i18n="assetGridNote">import limited</small></article>
+              <article class="asset" data-anchor="charge"><span data-i18n="assetCharge">Charging</span><strong>65 kW</strong><small data-i18n="assetChargeNote">flexible load</small></article>
+              <article class="asset" data-anchor="compute"><span data-i18n="assetCompute">Compute</span><strong>243 kW</strong><small data-i18n="assetComputeNote">critical load</small></article>
+            </div>
+            <canvas id="scenario-chart" aria-label="Load, PV and tariff chart"></canvas>
+          </div>
+        </section>
+
+        <section class="station-panel" aria-label="Station overview">
+          <div class="station-tabs">
+            <button class="active" type="button" data-station-tab="overview">电站概览</button>
+            <button type="button" data-station-tab="devices">监控设备</button>
+          </div>
+          <div class="station-body" data-station-view="overview">
+            <div class="station-kpis">
+              <article><span>总功率</span><strong>464.32 kW</strong></article>
+              <article><span>日用电量</span><strong>2,726.00 kWh</strong></article>
+              <article><span>月用电量</span><strong>31.88 MWh</strong></article>
+              <article><span>总用电量</span><strong>13,593.96 MWh</strong></article>
+            </div>
+            <div class="station-alert">
+              <span>监控提醒</span>
+              <strong>系统正常运行</strong>
+              <small>能源收益 ¥732,202.79</small>
+            </div>
+          </div>
+          <div class="station-body" data-station-view="devices" hidden>
+            <div class="station-equipment">
+              <button class="active" type="button" data-device-id="pcs">储能系统</button>
+              <button type="button" data-device-id="pv">光伏</button>
+              <button type="button" data-device-id="dg">发电机</button>
+              <button type="button" data-device-view-mode="history">历史数据</button>
+              <button type="button" data-device-view-mode="alerts">告警记录</button>
+              <button type="button" data-device-view-mode="ops">操作记录</button>
+            </div>
+            <div class="station-signals">
+              <button class="active" type="button" data-signal-mode="power">功率</button>
+              <button type="button" data-signal-mode="energy">发电量</button>
+              <button type="button" data-signal-mode="temperature">温度</button>
+              <button type="button" data-signal-mode="soc">SOC</button>
+              <button type="button" data-signal-mode="runtime">运行信息</button>
+            </div>
+            <div class="device-table">
+              <button class="active" type="button" data-device-id="pcs"><span>PCS-01</span><strong>正常</strong><small>0.00 kW / SOC 55%</small></button>
+              <button type="button" data-device-id="pv"><span>PV-Array-02</span><strong>低于预测</strong><small>335 kW / -18.6%</small></button>
+              <button type="button" data-device-id="dg"><span>DG-01</span><strong>待命</strong><small>457.44 kW 可用</small></button>
+            </div>
+            <article id="device-detail" class="device-detail" aria-label="Device runtime detail"></article>
+          </div>
+        </section>
+
+        <section class="related">
+          <header>
+            <h2 data-i18n="relatedTitle">Related insights</h2>
+            <span id="trace-count">0 events</span>
+          </header>
+          <div class="insight-grid">
+            <article class="insight">
+              <span data-i18n="taskVersionLabel">Task version</span>
+              <strong id="task-version">--</strong>
+              <p id="context-hash">Context hash pending</p>
+            </article>
+            <article class="insight">
+              <span data-i18n="riskGateLabel">Risk gate</span>
+              <strong id="approval-status">Waiting</strong>
+              <p data-i18n="riskGateText">High-risk flexible-load actions require Human Operator approval.</p>
+            </article>
+            <article class="insight">
+              <span data-i18n="evidenceLabel">Evidence</span>
+              <strong id="evidence-status">Not sealed</strong>
+              <p data-i18n="evidenceText">Trace, metrics, execution receipt, and SHA-256 package.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="detail-columns">
+          <div>
+            <div class="section-heading">
+              <h2 data-i18n="candidatePlansTitle">Candidate plans</h2>
+              <button id="review-candidates" class="mini-action" type="button" disabled data-i18n="focusButton">Focus</button>
+            </div>
+            <div id="candidate-list" class="candidate-list"><p class="empty" data-i18n="candidateEmpty">Run the scenario to generate audited candidates.</p></div>
+          </div>
+          <div>
+            <div class="section-heading">
+              <h2 data-i18n="traceTitle">Trace</h2>
+              <button id="open-evidence" class="mini-action" type="button" disabled data-i18n="evidenceButton">Evidence</button>
+            </div>
+            <div id="trace-list" class="trace-list"><p class="empty" data-i18n="traceEmpty">Backend events will appear here.</p></div>
+          </div>
+        </section>
+      </section>
     </main>
 
-    <dialog id="trace-dialog"><form method="dialog"><div class="dialog-heading"><div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">事件详情</h2></div><button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button></div><pre id="trace-json"></pre></form></dialog>
-    <dialog id="evidence-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT MODE</span><h2>完整证据包</h2></div><button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button></div><pre id="evidence-json"></pre></form></dialog>
-    <dialog id="context-dialog"><form method="dialog"><div class="dialog-heading"><div><span>CONTEXT SNAPSHOT</span><h2>感知快照已自动交接</h2></div><div class="dialog-actions"><button class="mini-button" type="button" data-close-dialog="context-dialog">返回任务</button><button class="icon-button" type="button" data-close-dialog="context-dialog" aria-label="关闭">×</button></div></div><div class="context-dashboard"><p class="context-lead">感知 Agent 已完成数据校验，并将同一份快照自动传递给调度 Agent、审核 Agent 与后续审批链路。</p><div id="context-summary" class="context-summary"></div><section><h3>14:00 运行变化</h3><div id="context-changes" class="context-changes"></div></section><section><h3>数据质量与安全边界</h3><div id="context-quality" class="context-quality"></div></section><section class="handoff-path"><h3>自动交接路径</h3><div><span>感知</span><i></i><span>调度</span><i></i><span>审核</span><i></i><span>人工审批</span><i></i><span>执行</span></div></section><details class="raw-context"><summary>查看原始审计数据</summary><pre id="context-json"></pre></details></div></form></dialog>
-    <dialog id="candidate-dialog"><form method="dialog"><div class="dialog-heading"><div><span>AUDIT VERDICT</span><h2 id="candidate-dialog-title">候选方案</h2></div><button class="icon-button" type="button" data-close-dialog="candidate-dialog">×</button></div><pre id="candidate-json"></pre></form></dialog>
-    <dialog id="model-dialog"><form method="dialog" id="model-form"><div class="dialog-heading"><div><span>MODEL SETTINGS</span><h2 id="model-title">Agent 模型设置</h2></div><button class="icon-button" type="button" data-close-dialog="model-dialog">×</button></div><div class="model-body"><label>Base URL<input id="model-base-url" value="https://api.deepseek.com" required /></label><label>API Key<input id="model-api-key" type="password" placeholder="留空表示继续使用后端已保存 Key" autocomplete="off" /></label><label>模型名称<input id="model-name" value="deepseek-chat" required /></label><div class="avatar-setting"><span>头像</span><button id="random-avatar-button" class="mini-button" type="button">随机更换</button></div><div class="model-actions"><button id="test-model-button" class="command-button ghost" type="button">测试连接</button><button class="command-button primary" type="submit">保存</button></div><p class="model-status">连接状态：<span id="model-connection-status">未测试</span></p><p id="model-error" class="model-error" hidden></p></div></form></dialog>
-    <div id="tutorial-overlay" class="tutorial-overlay" hidden aria-live="polite"><div id="tutorial-spotlight" class="tutorial-spotlight"></div><aside id="tutorial-card" class="tutorial-card"><div class="tutorial-progress"><span id="tutorial-step">任务引导</span><span id="tutorial-count">01 / 07</span></div><h2 id="tutorial-title">处理 14:00 复合异常</h2><p id="tutorial-story"></p><div class="tutorial-objective"><span>当前目标</span><strong id="tutorial-objective">创建一次安全重新调度任务</strong></div><p id="tutorial-action"></p><div class="tutorial-actions"><button id="tutorial-skip" class="mini-button" type="button">跳过引导</button><button id="tutorial-restart" class="mini-button" type="button" hidden>重新开始</button></div></aside></div>
+    <aside id="agent-directory-drawer" class="agent-directory-drawer" hidden aria-label="Agent directory">
+      <div class="drawer-head">
+        <div><span data-i18n="agentDirectory">Agent directory</span><strong data-i18n="workersLabel">Workers</strong></div>
+        <button id="agent-directory-close" class="icon-button" type="button" aria-label="Close Agent directory">×</button>
+      </div>
+      <div id="agent-directory-list" class="directory-list">
+        <article data-agent-id="team_leader">
+          <img src="/static/avatars/perception.svg" alt="" />
+          <div><strong data-agent-name="team_leader">Team Leader</strong><span data-agent-role="team_leader">Task routing / supervision</span></div>
+          <button class="directory-chat" type="button" data-i18n="chatButton">Chat</button>
+          <button class="directory-gateway" type="button" data-i18n="gatewayButton">Gateway</button>
+        </article>
+        <article data-agent-id="perception_agent">
+          <img src="/static/avatars/perception.svg" alt="" />
+          <div><strong data-agent-name="perception_agent">Perception Worker</strong><span data-agent-role="perception_agent">Context validation</span></div>
+          <button class="directory-chat" type="button" data-i18n="chatButton">Chat</button>
+          <button class="directory-gateway" type="button" data-i18n="gatewayButton">Gateway</button>
+        </article>
+        <article data-agent-id="dispatch_agent">
+          <img src="/static/avatars/dispatch.svg" alt="" />
+          <div><strong data-agent-name="dispatch_agent">Dispatch Worker</strong><span data-agent-role="dispatch_agent">Candidate planning</span></div>
+          <button class="directory-chat" type="button" data-i18n="chatButton">Chat</button>
+          <button class="directory-gateway" type="button" data-i18n="gatewayButton">Gateway</button>
+        </article>
+        <article data-agent-id="audit_agent">
+          <img src="/static/avatars/audit.svg" alt="" />
+          <div><strong data-agent-name="audit_agent">Audit Worker</strong><span data-agent-role="audit_agent">Independent safety audit</span></div>
+          <button class="directory-chat" type="button" data-i18n="chatButton">Chat</button>
+          <button class="directory-gateway" type="button" data-i18n="gatewayButton">Gateway</button>
+        </article>
+        <article data-agent-id="execution_agent">
+          <img src="/static/avatars/execution.svg" alt="" />
+          <div><strong data-agent-name="execution_agent">Execution Worker</strong><span data-agent-role="execution_agent">Approved command mapping</span></div>
+          <button class="directory-chat" type="button" data-i18n="chatButton">Chat</button>
+          <button class="directory-gateway" type="button" data-i18n="gatewayButton">Gateway</button>
+        </article>
+      </div>
+    </aside>
+
+    <dialog id="trace-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <div><span>TRACE DETAIL</span><h2 id="trace-dialog-title">Event detail</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="trace-dialog">×</button>
+        </div>
+        <pre id="trace-json"></pre>
+      </form>
+    </dialog>
+    <dialog id="candidate-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <div><span>AUDIT VERDICT</span><h2 id="candidate-dialog-title">Candidate plan</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="candidate-dialog">×</button>
+        </div>
+        <pre id="candidate-json"></pre>
+      </form>
+    </dialog>
+    <dialog id="evidence-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <div><span>EVIDENCE PACKAGE</span><h2>Task evidence</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="evidence-dialog">×</button>
+        </div>
+        <pre id="evidence-json"></pre>
+      </form>
+    </dialog>
+    <dialog id="gateway-dialog">
+      <form method="dialog" id="gateway-form">
+        <div class="dialog-heading">
+          <div><span>MODEL GATEWAY</span><h2 id="gateway-title">Agent gateway</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="gateway-dialog">×</button>
+        </div>
+        <div class="gateway-body">
+          <label><span data-i18n="gatewayBaseUrl">Base URL</span><input id="gateway-base-url" value="https://api.deepseek.com" /></label>
+          <label><span data-i18n="gatewayApiKey">API Key</span><input id="gateway-api-key" type="password" placeholder="sk-..." autocomplete="off" /></label>
+          <label><span data-i18n="gatewayModel">Model</span><input id="gateway-model" value="deepseek-chat" /></label>
+          <div class="gateway-actions">
+            <button class="action" type="button" id="gateway-test" data-i18n="gatewayTest">Test</button>
+            <button class="action primary" type="submit" data-i18n="gatewaySave">Save gateway</button>
+          </div>
+          <p id="gateway-status" data-i18n="gatewayStored">Gateway settings are stored locally for now.</p>
+        </div>
+      </form>
+    </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260731-context-dashboard1"></script>
+    <script type="module" src="/static/app.js?v=20260807-runtime-streaming2"></script>
   </body>
 </html>

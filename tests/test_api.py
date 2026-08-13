@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from energymesh.api import create_app
+from energymesh.model_gateway import normalize_base_url
 
 
 def test_agentteams_resource_assets_exist() -> None:
@@ -43,10 +44,12 @@ def test_health_and_demo_workflow(settings) -> None:
 
         page = client.get("/")
         assert page.status_code == 200
-        assert "运行14:00复合变化" in page.text
+        assert 'id="ai-chat-form"' in page.text
+        assert "运行14:00复合变化" not in page.text
         assert 'id="trace-list"' in page.text
         script = client.get("/static/app.js")
-        assert '"/api/demo/run"' in script.text
+        assert "production_load" in script.text
+        assert "scenarioConversation" in script.text
 
         scenario = client.get("/api/demo/scenario")
         assert scenario.status_code == 200
@@ -189,6 +192,49 @@ def test_agent_model_config_test_and_chat(settings, monkeypatch) -> None:
         ]
 
 
+def test_team_leader_model_config_and_base_url_normalization(settings, monkeypatch) -> None:
+    calls: list[tuple[str, str, str, str]] = []
+
+    def fake_chat(config, message: str) -> str:
+        calls.append((config.agent_id, config.base_url, config.model, message))
+        return "OK"
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        saved = client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.openai.com/v1/chat/completions",
+                "api_key": "sk-team-secret",
+                "model": "gpt-4o-mini",
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["base_url"] == "https://api.openai.com/v1"
+
+        tested = client.post("/api/agents/team_leader/model/test")
+        assert tested.status_code == 200
+        assert tested.json()["success"] is True
+
+        chatted = client.post(
+            "/api/agents/team_leader/chat",
+            json={"message": "你好"},
+        )
+        assert chatted.status_code == 200
+        assert calls == [
+            ("team_leader", "https://api.openai.com/v1", "gpt-4o-mini", "Reply with OK."),
+            ("team_leader", "https://api.openai.com/v1", "gpt-4o-mini", "你好"),
+        ]
+
+
+def test_normalize_model_base_url() -> None:
+    assert normalize_base_url("https://api.openai.com") == "https://api.openai.com/v1"
+    assert (
+        normalize_base_url("https://api.deepseek.com/v1/chat/completions")
+        == "https://api.deepseek.com/v1"
+    )
+
+
 def test_agent_model_test_returns_real_error(settings, monkeypatch) -> None:
     def failing_chat(config, message: str) -> str:
         raise RuntimeError("Invalid API key")
@@ -209,6 +255,222 @@ def test_agent_model_test_returns_real_error(settings, monkeypatch) -> None:
         manifest = client.get("/api/agentteams/manifest").json()
         assert manifest["model_configs"]["audit_agent"]["connection_status"] == "失败"
         assert manifest["model_configs"]["audit_agent"]["last_error"] == "Invalid API key"
+
+
+def test_runtime_pipeline_persists_artifacts_and_tool_calls(settings, monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_chat(config, message: str, history=None) -> str:
+        calls.append((config.agent_id, message))
+        return f"{config.agent_id} acknowledged"
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", fake_chat)
+    monkeypatch.setattr("energymesh.runtime.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-shared-runtime",
+                "model": "deepseek-chat",
+            },
+        )
+        client.post("/api/agents/team_leader/model/test")
+        calls.clear()
+
+        response = client.post(
+            "/api/runtime/chat",
+            json={"message": "生产一区明天增加800kW负荷，你帮我判断是否需要调整能源策略。"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["routed_agents"] == [
+            "team_leader",
+            "perception_agent",
+            "dispatch_agent",
+            "audit_agent",
+            "team_leader",
+        ]
+        task_brief = next(item for item in body["artifacts"] if item["name"] == "task_brief.json")
+        assert task_brief["payload"]["routing_plan"]["mode"] == "dispatch_closed_loop"
+        assert task_brief["payload"]["routing_plan"]["workers"] == [
+            "perception_agent",
+            "dispatch_agent",
+            "audit_agent",
+        ]
+        artifact_names = [artifact["name"] for artifact in body["artifacts"]]
+        assert artifact_names == [
+            "task_brief.json",
+            "state.json",
+            "plan.json",
+            "verification.json",
+            "final_report.md",
+        ]
+        state_artifact = next(item for item in body["artifacts"] if item["name"] == "state.json")
+        assert state_artifact["payload"]["energy_state"]["current_load_mw"] == 6.8
+        assert state_artifact["payload"]["energy_state"]["storage_soc_percent"] == 61
+
+        task_id = body["task_id"]
+        tool_calls = client.get(f"/api/runtime/tasks/{task_id}/tool-calls").json()
+        assert [call["tool_type"] for call in tool_calls] == ["mcp", "rag", "rag"]
+        assert tool_calls[0]["tool_name"] == "energy.get_state"
+        assert tool_calls[0]["output_payload"]["current_load_mw"] == 6.8
+        assert tool_calls[1]["tool_name"] == "knowledge.search"
+
+        artifacts = client.get(f"/api/runtime/tasks/{task_id}/artifacts").json()
+        assert [artifact["name"] for artifact in artifacts] == artifact_names
+        assert [agent_id for agent_id, _ in calls] == [
+            "team_leader",
+            "perception_agent",
+            "dispatch_agent",
+            "audit_agent",
+            "team_leader",
+        ]
+
+
+def test_runtime_stream_emits_progressive_agent_events(settings, monkeypatch) -> None:
+    def fake_chat(config, message: str, history=None) -> str:
+        return f"{config.agent_id} streamed"
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", fake_chat)
+    monkeypatch.setattr("energymesh.runtime.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-shared-runtime",
+                "model": "deepseek-chat",
+            },
+        )
+        client.post("/api/agents/team_leader/model/test")
+
+        with client.stream(
+            "POST",
+            "/api/runtime/chat/stream",
+            json={"message": "明天新增800kW负荷，帮我走完整调度链路。"},
+        ) as response:
+            assert response.status_code == 200
+            body = response.read().decode()
+
+    events = [
+        line.removeprefix("event: ")
+        for line in body.splitlines()
+        if line.startswith("event: ")
+    ]
+    assert events == [
+        "runtime_started",
+        "stage_start",
+        "agent_step",
+        "route_decided",
+        "stage_start",
+        "agent_step",
+        "stage_start",
+        "agent_step",
+        "stage_start",
+        "agent_step",
+        "stage_start",
+        "agent_step",
+        "runtime_completed",
+    ]
+    assert '"agent_id": "perception_agent"' in body
+    assert '"agent_id": "audit_agent"' in body
+
+
+def test_runtime_leader_only_route_does_not_broadcast_to_workers(settings, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_chat(config, message: str, history=None) -> str:
+        calls.append(config.agent_id)
+        return f"{config.agent_id} direct"
+
+    monkeypatch.setattr("energymesh.runtime.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-shared-runtime",
+                "model": "deepseek-chat",
+            },
+        )
+
+        response = client.post("/api/runtime/chat", json={"message": "你好，介绍一下你自己。"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["routed_agents"] == ["team_leader", "team_leader"]
+    assert calls == []
+    assert [artifact["name"] for artifact in body["artifacts"]] == [
+        "task_brief.json",
+        "leader_response.md",
+    ]
+    assert body["artifacts"][0]["payload"]["routing_plan"]["mode"] == "leader_only"
+
+
+def test_runtime_model_connection_failure_falls_back_to_local_response(
+    settings, monkeypatch
+) -> None:
+    def failing_chat(config, message: str, history=None) -> str:
+        raise RuntimeError("Connection error.")
+
+    monkeypatch.setattr("energymesh.api.chat_with_agent_config", lambda config, message: "OK")
+    monkeypatch.setattr("energymesh.runtime.chat_with_agent_config", failing_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-shared-runtime",
+                "model": "deepseek-chat",
+            },
+        )
+        client.post("/api/agents/team_leader/model/test")
+
+        response = client.post(
+            "/api/runtime/chat",
+            json={"message": "生产一区明天增加800kW负荷，帮我判断是否需要调整能源策略。"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["routed_agents"] == [
+        "team_leader",
+        "perception_agent",
+        "dispatch_agent",
+        "audit_agent",
+        "team_leader",
+    ]
+    assert "Team Leader 汇总" in body["steps"][-1]["response"]
+    assert "模型网关暂不可用" not in body["steps"][-1]["response"]
+    assert body["artifacts"][-1]["name"] == "final_report.md"
+
+
+def test_runtime_untested_model_config_uses_local_response(settings, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_chat(config, message: str, history=None) -> str:
+        calls.append(config.agent_id)
+        return "should not be called"
+
+    monkeypatch.setattr("energymesh.runtime.chat_with_agent_config", fake_chat)
+    with TestClient(create_app(settings)) as client:
+        client.put(
+            "/api/agents/team_leader/model",
+            json={
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-untested-runtime",
+                "model": "deepseek-chat",
+            },
+        )
+
+        response = client.post("/api/runtime/chat", json={"message": "你好，介绍一下你自己。"})
+
+    assert response.status_code == 200
+    assert calls == []
+    assert "EnergyMesh Team Leader" in response.json()["steps"][-1]["response"]
+    assert "model gateway status" not in response.json()["steps"][-1]["response"]
 
 
 def test_unknown_task_returns_404(settings) -> None:

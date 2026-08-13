@@ -26,9 +26,8 @@ Updated: 2026-07-28
   `agentteams/`.
 - Judging alignment, Agent Identity, Skill contracts, MCP-equivalent tool contracts, RAG/context,
   observability, and Alibaba Cloud integration design documents under `docs/`.
-- Locally hosted Three.js interactive park scene with orthographic camera, lighting, shadows,
-  drag rotation, wheel zoom, and animated energy-flow particles.
-- 96-point load, PV, grid-import, and SOC trend chart plus before/after optimization bars.
+- Minimal operator workbench with Insights, signal summary, 96-point load/PV/tariff trend chart,
+  candidate plans, audit records, trace, and evidence access.
 - Explicit single-Agent chat selection and unselected multi-Agent collaboration modes, driven by
   current scenario, plan, audit, and execution context.
 - Change-triggered child tasks that repeat perception, dispatch, audit, approval, and simulation.
@@ -67,9 +66,8 @@ Updated: 2026-07-28
 - mypy strict type check: passed for 14 source modules.
 - pytest unit and API integration tests: 16 passed, including external-data dispatch, model
   settings, approval, and workflow coverage.
-- Browser workflow: Three.js scene rendered at 802 x 696 canvas pixels; nonblank screenshot crop
-  measured entropy 3.35. Camera zoom, 96-point trend chart, single-Agent selection, and
-  multi-Agent collaboration were verified at the desktop app width.
+- Browser workflow: operator page served locally; 96-point trend chart, single-Agent selection,
+  and multi-Agent collaboration remain available at the desktop app width.
 - Responsive CSS includes 760 px and 470 px breakpoints, but the final mobile visual pass was not
   completed because the in-app browser viewport session timed out; do not claim mobile QA passed.
 - Vercel preview build: passed locally with Vercel CLI 54.18.1 after installing `uv` into the local

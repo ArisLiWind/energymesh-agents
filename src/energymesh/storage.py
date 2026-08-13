@@ -10,9 +10,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from energymesh.model_gateway import StoredModelConfig, mask_api_key
+from energymesh.model_gateway import StoredModelConfig, mask_api_key, normalize_base_url
 from energymesh.models import (
     AgentHandoff,
+    AgentMessage,
     AgentModelConfigPublic,
     ApprovalRecordV2,
     AuditVerdictRecord,
@@ -21,6 +22,8 @@ from energymesh.models import (
     ExecutionCommandRecord,
     ExecutionReceipt,
     RollbackRecord,
+    RuntimeArtifact,
+    RuntimeToolCall,
     SkillInvocation,
     TaskEvent,
     TaskRecord,
@@ -259,6 +262,67 @@ class EvidenceStore:
                     last_error TEXT,
                     updated_at TEXT NOT NULL
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS agent_messages (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    task_id TEXT,
+                    agent_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_agent_messages_session
+                ON agent_messages(session_id, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS runtime_artifacts (
+                    artifact_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_runtime_artifacts_task
+                ON runtime_artifacts(task_id, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS runtime_tool_calls (
+                    call_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    tool_type TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    input_payload TEXT NOT NULL,
+                    output_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_runtime_tool_calls_task
+                ON runtime_tool_calls(task_id, created_at)
                 """
             )
             for statement in DEMO_TABLES:
@@ -683,7 +747,15 @@ class EvidenceStore:
                     last_error = excluded.last_error,
                     updated_at = excluded.updated_at
                 """,
-                (agent_id, base_url.strip(), saved_key, model.strip(), "未测试", None, now),
+                (
+                    agent_id,
+                    normalize_base_url(base_url),
+                    saved_key,
+                    model.strip(),
+                    "未测试",
+                    None,
+                    now,
+                ),
             )
         stored = self.get_model_config(agent_id)
         if stored is None:
@@ -753,6 +825,161 @@ class EvidenceStore:
             )
             configs[stored.agent_id] = self.public_model_config(stored)
         return configs
+
+    def save_agent_message(self, message: AgentMessage) -> AgentMessage:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_messages(
+                    message_id, session_id, task_id, agent_id, role, content, metadata, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message.message_id,
+                    message.session_id,
+                    message.task_id,
+                    message.agent_id,
+                    message.role,
+                    message.content,
+                    json.dumps(message.metadata, ensure_ascii=False, sort_keys=True),
+                    message.created_at.isoformat(),
+                ),
+            )
+        return message
+
+    def list_agent_messages(
+        self, session_id: str, limit: int = 50, agent_id: str | None = None
+    ) -> list[AgentMessage]:
+        where = "session_id = ?"
+        parameters: list[object] = [session_id]
+        if agent_id is not None:
+            where += " AND agent_id = ?"
+            parameters.append(agent_id)
+        parameters.append(max(1, min(limit, 200)))
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT message_id, session_id, task_id, agent_id,
+                       role, content, metadata, created_at
+                FROM agent_messages
+                WHERE {where}
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                tuple(parameters),
+            ).fetchall()
+        messages = [
+            AgentMessage(
+                message_id=row["message_id"],
+                session_id=row["session_id"],
+                task_id=row["task_id"],
+                agent_id=row["agent_id"],
+                role=row["role"],
+                content=row["content"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                metadata=json.loads(row["metadata"]),
+            )
+            for row in rows
+        ]
+        return list(reversed(messages))
+
+    def save_runtime_artifact(self, artifact: RuntimeArtifact) -> RuntimeArtifact:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO runtime_artifacts(
+                    artifact_id, session_id, task_id, agent_id,
+                    artifact_type, name, payload, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    artifact.artifact_id,
+                    artifact.session_id,
+                    artifact.task_id,
+                    artifact.agent_id,
+                    artifact.artifact_type,
+                    artifact.name,
+                    json.dumps(artifact.payload, ensure_ascii=False, sort_keys=True),
+                    artifact.created_at.isoformat(),
+                ),
+            )
+        return artifact
+
+    def list_runtime_artifacts(self, task_id: str) -> list[RuntimeArtifact]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT artifact_id, session_id, task_id, agent_id,
+                       artifact_type, name, payload, created_at
+                FROM runtime_artifacts
+                WHERE task_id = ?
+                ORDER BY created_at, rowid
+                """,
+                (task_id,),
+            ).fetchall()
+        return [
+            RuntimeArtifact(
+                artifact_id=row["artifact_id"],
+                session_id=row["session_id"],
+                task_id=row["task_id"],
+                agent_id=row["agent_id"],
+                artifact_type=row["artifact_type"],
+                name=row["name"],
+                payload=json.loads(row["payload"]),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
+
+    def save_runtime_tool_call(self, call: RuntimeToolCall) -> RuntimeToolCall:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO runtime_tool_calls(
+                    call_id, session_id, task_id, agent_id, tool_type, tool_name,
+                    input_payload, output_payload, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    call.call_id,
+                    call.session_id,
+                    call.task_id,
+                    call.agent_id,
+                    call.tool_type,
+                    call.tool_name,
+                    json.dumps(call.input_payload, ensure_ascii=False, sort_keys=True),
+                    json.dumps(call.output_payload, ensure_ascii=False, sort_keys=True),
+                    call.created_at.isoformat(),
+                ),
+            )
+        return call
+
+    def list_runtime_tool_calls(self, task_id: str) -> list[RuntimeToolCall]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT call_id, session_id, task_id, agent_id, tool_type, tool_name,
+                       input_payload, output_payload, created_at
+                FROM runtime_tool_calls
+                WHERE task_id = ?
+                ORDER BY created_at, rowid
+                """,
+                (task_id,),
+            ).fetchall()
+        return [
+            RuntimeToolCall(
+                call_id=row["call_id"],
+                session_id=row["session_id"],
+                task_id=row["task_id"],
+                agent_id=row["agent_id"],
+                tool_type=row["tool_type"],
+                tool_name=row["tool_name"],
+                input_payload=json.loads(row["input_payload"]),
+                output_payload=json.loads(row["output_payload"]),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
 
     def seal_evidence(self, task: TaskRecord) -> str:
         evidence = {
