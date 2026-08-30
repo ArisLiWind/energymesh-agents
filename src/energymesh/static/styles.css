@@ -1341,7 +1341,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   position: relative;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, #eaf4fb 0%, #f7fbff 100%);
+  background: linear-gradient(180deg, #dfe9dc 0%, #f4f6ea 100%);
   border-bottom: 1px solid #1e2025;
 }
 
@@ -1359,9 +1359,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .campus-hud {
   position: absolute;
   z-index: 8;
-  top: 8px;
-  left: 10px;
-  right: 10px;
+  top: 10px;
+  left: 12px;
+  right: 84px;
   width: auto;
   display: flex;
   flex-wrap: wrap;
@@ -1378,9 +1378,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   align-items: center;
   padding: 0 10px;
   border: 1px solid rgba(142, 174, 196, .38);
-  border-radius: 6px;
-  background: rgba(246, 251, 255, .8);
-  color: #3f586b;
+  border-radius: 999px;
+  background: rgba(30, 35, 45, .78);
+  color: #f2f7ff;
   font-size: 14px;
   font-weight: 900;
   box-shadow: 0 10px 24px rgba(44, 71, 91, .1);
@@ -1403,10 +1403,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   min-width: 0;
   min-height: 42px;
   padding: 5px 9px;
-  border: 1px solid rgba(142, 174, 196, .42);
-  border-radius: 7px;
-  background: rgba(248, 252, 255, .78);
-  box-shadow: 0 10px 24px rgba(44, 71, 91, .11);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px;
+  background: rgba(30, 35, 45, .76);
+  box-shadow: 0 8px 18px rgba(20, 31, 42, .18);
   backdrop-filter: blur(12px);
 }
 
@@ -1420,76 +1420,76 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 
 .campus-hud span {
-  color: #60788e;
+  color: #88e9c5;
   font-size: 9px;
   font-weight: 820;
 }
 
 .campus-hud strong {
   margin-top: 2px;
-  color: #1f3444;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 860;
 }
 
 .campus-hud small {
   margin-top: 1px;
-  color: #6b7f8f;
+  color: #c7d1dc;
   font-size: 9px;
   font-weight: 680;
 }
 
 .campus-balance strong {
-  color: #112b3e;
+  color: #6ff0aa;
   font-size: 15px;
   letter-spacing: 0;
 }
 
 .campus-storage {
-  border-left: 2px solid #4ed0bc;
+  border-color: rgba(111, 240, 170, .45);
 }
 
 .campus-tools {
   position: absolute;
   z-index: 7;
-  top: 12px;
+  top: 68px;
   right: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
   gap: 6px;
-  max-width: min(520px, calc(100% - 24px));
+  max-width: 116px;
 }
 
 .campus-tools button {
-  height: 30px;
-  border: 1px solid rgba(154, 184, 205, .72);
-  border-radius: 6px;
-  background: rgba(248, 252, 255, .86);
-  color: #284154;
-  font-size: 11px;
-  font-weight: 780;
-  box-shadow: 0 8px 18px rgba(44, 71, 91, .12);
+  height: 34px;
+  border: 1px solid rgba(80, 238, 190, .7);
+  border-radius: 8px;
+  background: rgba(28, 45, 54, .82);
+  color: #d8fff2;
+  font-size: 10px;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(20, 31, 42, .2);
   backdrop-filter: blur(12px);
   cursor: pointer;
 }
 
 .campus-tools button:hover {
-  border-color: #51cdb8;
-  color: #087763;
+  border-color: #79ffd0;
+  color: #ffffff;
 }
 
 .campus-hint {
   position: absolute;
   z-index: 6;
-  left: 14px;
-  bottom: 12px;
-  max-width: calc(100% - 28px);
-  padding: 6px 8px;
-  border: 1px solid rgba(154, 184, 205, .55);
-  border-radius: 6px;
-  background: rgba(248, 252, 255, .78);
-  color: #536b7d;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: none;
+  padding: 7px 14px;
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,.12);
+  border-radius: 0;
+  background: rgba(35, 27, 48, .68);
+  color: #dce6ef;
   font-size: 11px;
   font-weight: 720;
   backdrop-filter: blur(10px);
