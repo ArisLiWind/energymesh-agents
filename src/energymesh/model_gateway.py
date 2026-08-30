@@ -138,7 +138,7 @@ def chat_with_agent_config(
             api_key=config.api_key,
             base_url=base_url,
             timeout=30,
-            http_client=httpx.Client(proxy=proxy_url, timeout=30),
+            http_client=httpx.Client(proxy=proxy_url, timeout=30),  # type: ignore[arg-type]
         )
     else:
         client = OpenAI(api_key=config.api_key, base_url=base_url, timeout=30)
