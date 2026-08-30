@@ -4,6 +4,7 @@ import csv
 import io
 import statistics
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -275,8 +276,13 @@ class SnapshotFactory:
 class ReplayMonitor:
     """Deterministic monitor: reads telemetry continuously and wakes agents on invalidation."""
 
-    def __init__(self, orchestrator: EnergyMeshOrchestrator) -> None:
+    def __init__(
+        self,
+        orchestrator: EnergyMeshOrchestrator,
+        decision_callback: Callable[[dict[str, Any]], str | None] | None = None,
+    ) -> None:
         self.orchestrator = orchestrator
+        self.decision_callback = decision_callback
         self.snapshot: ExternalDataSnapshot | None = None
         self.cursor = 0
         self.running = False
@@ -304,6 +310,10 @@ class ReplayMonitor:
             signals.append(f"load increased {100 * (current.load_kw / previous.load_kw - 1):.1f}%")
 
         if signals and self.task is None:
+            self._event("DEEPSEEK_ROLLING_CONTEXT", self._rolling_context(current, signals))
+            decision = self._ask_deepseek(current, signals)
+            if decision:
+                self._event("DEEPSEEK_DECISION", decision)
             scenario = self.snapshot.scenario.model_copy(
                 update={"alerts": ["V1 plan invalidated by Monitor", *signals]}
             )
@@ -367,3 +377,28 @@ class ReplayMonitor:
                 "detail": detail,
             }
         )
+
+    def _rolling_context(self, current: ExternalTelemetryPoint, signals: list[str]) -> str:
+        today = self.snapshot.telemetry[: current.interval + 1] if self.snapshot else []
+        grid_kw = max(current.load_kw - current.pv_kw, 0)
+        grid_kwh = sum(max(point.load_kw - point.pv_kw, 0) * 0.25 for point in today)
+        return (
+            f"today intervals=0-{current.interval}; time={current.timestamp.isoformat()}; "
+            f"load={current.load_kw:.2f}kW; pv={current.pv_kw:.2f}kW; "
+            f"soc={current.battery_soc:.0%}; grid={grid_kw:.2f}kW; "
+            f"grid_today={grid_kwh:.2f}kWh; signals={'; '.join(signals)}"
+        )
+
+    def _ask_deepseek(self, current: ExternalTelemetryPoint, signals: list[str]) -> str | None:
+        if self.decision_callback is None:
+            return "未配置 DeepSeek 网关；使用确定性优化器继续 V2 重规划。"
+        today = self.snapshot.telemetry[: current.interval + 1] if self.snapshot else []
+        payload = {
+            "current": current.model_dump(mode="json"),
+            "signals": signals,
+            "today_so_far": [point.model_dump(mode="json") for point in today],
+        }
+        try:
+            return self.decision_callback(payload)
+        except Exception as error:
+            return f"DeepSeek 决策失败：{error}；使用确定性优化器继续 V2 重规划。"

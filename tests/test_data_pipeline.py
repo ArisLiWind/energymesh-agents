@@ -3,7 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from energymesh.api import create_app
-from energymesh.data_pipeline import SnapshotFactory
+from energymesh.data_pipeline import ReplayMonitor, SnapshotFactory
+from energymesh.orchestrator import EnergyMeshOrchestrator
 
 
 def test_opencem_csv_normalizes_to_shared_snapshot() -> None:
@@ -78,3 +79,19 @@ def test_monitor_wakes_agents_then_separates_approval_and_execution(settings) ->
         assert executed.json()["state"] == "COMPLETED"
         assert executed.json()["execution_summary"]["real_devices_contacted"] == 0
         assert executed.json()["evidence_sha256"]
+
+
+def test_monitor_can_record_deepseek_rolling_decision(settings) -> None:
+    with TestClient(create_app(settings)) as client:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "data" / "opencem" / "2025-07-a.csv"
+        snapshot = SnapshotFactory().from_opencem_csv(path.read_bytes(), path.name)
+        orchestrator: EnergyMeshOrchestrator = client.app.state.orchestrator
+        monitor = ReplayMonitor(
+            orchestrator, lambda payload: f"滚动决策点数 {len(payload['today_so_far'])}"
+        )
+        monitor.start(snapshot, 20)
+        status = {}
+        for _ in range(6):
+            status = monitor.step()
+        assert any(event["kind"] == "DEEPSEEK_DECISION" for event in status["events"])

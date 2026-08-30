@@ -62,7 +62,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     scenario = load_demo_scenario()
     external_data = ExternalDataSimulator()
     snapshot_factory = SnapshotFactory()
-    monitor = ReplayMonitor(orchestrator)
+
+    def rolling_decision(payload: dict[str, object]) -> str | None:
+        config = store.get_model_config("team_leader")
+        if config is None or not config.api_key:
+            return None
+        today_so_far = cast(list[object], payload["today_so_far"])
+        compact = {
+            "current": payload["current"],
+            "signals": payload["signals"],
+            "today_points": len(today_so_far),
+            "today_so_far_tail": today_so_far[-8:],
+        }
+        return chat_with_agent_config(
+            config,
+            "基于今天截至当前的园区真实数据滚动判断：V1 是否失效、是否唤醒 AgentTeams、"
+            "是否进入 V2 重规划。只输出一句面向操作员的决策摘要。\n"
+            f"{json.dumps(compact, ensure_ascii=False)}",
+        )
+
+    monitor = ReplayMonitor(orchestrator, rolling_decision)
 
     app = FastAPI(
         title="EnergyMesh Agents API",
