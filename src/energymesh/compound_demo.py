@@ -51,7 +51,11 @@ class CompoundChangeDemo:
         TaskState.AUDITING: {TaskState.AWAITING_APPROVAL, TaskState.REJECTED},
         TaskState.AWAITING_APPROVAL: {TaskState.EXECUTING, TaskState.REJECTED},
         TaskState.EXECUTING: {TaskState.VERIFYING},
-        TaskState.VERIFYING: {TaskState.COMPLETED, TaskState.ROLLBACK, TaskState.FAILED},
+        TaskState.VERIFYING: {
+            TaskState.COMPLETED,
+            TaskState.ROLLBACK,
+            TaskState.FAILED,
+        },
         TaskState.COMPLETED: set(),
         TaskState.REJECTED: set(),
         TaskState.ROLLBACK: set(),
@@ -67,7 +71,9 @@ class CompoundChangeDemo:
         self.store.reset_demo_records(self.identity.task_id)
         created = self._new_task(TaskState.TASK_RECEIVED, 1, self._at(1))
         self.store.save(created)
-        self._event(None, TaskState.TASK_RECEIVED, 1, "Team Leader", "创建14:00复合变化任务")
+        self._event(
+            None, TaskState.TASK_RECEIVED, 1, "Team Leader", "创建14:00复合变化任务"
+        )
         self._transition(
             created,
             TaskState.SENSING,
@@ -171,12 +177,18 @@ class CompoundChangeDemo:
             context_hash=context.context_hash,
         )
 
-    def approve(self, task_id: str, request: ApprovalDecisionRequest) -> ApprovalRecordV2:
+    def approve(
+        self, task_id: str, request: ApprovalDecisionRequest
+    ) -> ApprovalRecordV2:
         task = self._get_task(task_id)
         context = self._context(task_id)
         if task.state != TaskState.AWAITING_APPROVAL:
-            raise DemoWorkflowError(f"task is not awaiting approval: {task.state.value}")
-        self._assert_version_and_hash(request.task_version, request.context_hash, context)
+            raise DemoWorkflowError(
+                f"task is not awaiting approval: {task.state.value}"
+            )
+        self._assert_version_and_hash(
+            request.task_version, request.context_hash, context
+        )
         verdict = self._audit_for(task_id, request.candidate_id)
         if verdict is None or verdict["verdict"] != "approved":
             raise DemoWorkflowError("candidate has not passed Audit Agent verification")
@@ -195,8 +207,12 @@ class CompoundChangeDemo:
         )
         self.store.save_approval_record(approval)
         if not request.approved:
-            self._transition(task, TaskState.REJECTED, "Human Approval", "人工审批拒绝执行")
-            self._save_task_state(task, TaskState.REJECTED, request.task_version, context)
+            self._transition(
+                task, TaskState.REJECTED, "Human Approval", "人工审批拒绝执行"
+            )
+            self._save_task_state(
+                task, TaskState.REJECTED, request.task_version, context
+            )
         else:
             self._event(
                 TaskState.AWAITING_APPROVAL,
@@ -216,9 +232,15 @@ class CompoundChangeDemo:
         task = self._get_task(task_id)
         context = self._context(task_id)
         if task.state != TaskState.AWAITING_APPROVAL:
-            raise DemoWorkflowError(f"task is not awaiting approval: {task.state.value}")
-        self._assert_version_and_hash(request.task_version, request.context_hash, context)
-        approval = self._valid_approval(task_id, request.candidate_id, request.context_hash)
+            raise DemoWorkflowError(
+                f"task is not awaiting approval: {task.state.value}"
+            )
+        self._assert_version_and_hash(
+            request.task_version, request.context_hash, context
+        )
+        approval = self._valid_approval(
+            task_id, request.candidate_id, request.context_hash
+        )
         if approval is None:
             raise DemoWorkflowError("valid human approval is required before execution")
         candidate = self._candidate_for(task_id, request.candidate_id)
@@ -271,7 +293,9 @@ class CompoundChangeDemo:
             "结构化指令已生成，进入执行偏差验证",
         )
         deviation = (
-            request.force_deviation_percent if request.force_deviation_percent is not None else 2.4
+            request.force_deviation_percent
+            if request.force_deviation_percent is not None
+            else 2.4
         )
         evidence_hash = self._evidence_hash(task_id)
         verification = VerificationResult(
@@ -304,7 +328,9 @@ class CompoundChangeDemo:
             )
             self.store.save_rollback_record(rollback)
             self._transition(task, TaskState.ROLLBACK, "Verification", rollback.reason)
-            self._save_task_state(task, TaskState.ROLLBACK, request.task_version, context)
+            self._save_task_state(
+                task, TaskState.ROLLBACK, request.task_version, context
+            )
         else:
             self._transition(
                 task,
@@ -312,7 +338,9 @@ class CompoundChangeDemo:
                 "Verification",
                 "执行偏差低于5%，证据包封存",
             )
-            self._save_task_state(task, TaskState.COMPLETED, request.task_version, context)
+            self._save_task_state(
+                task, TaskState.COMPLETED, request.task_version, context
+            )
         self._seal_demo(task_id)
         return receipt
 
@@ -391,8 +419,13 @@ class CompoundChangeDemo:
         context: ContextSnapshot | None = None,
     ) -> None:
         from_state = task.state
-        if to_state not in self.legal_transitions.get(from_state, set()) and to_state != from_state:
-            message = f"illegal state transition: {from_state.value} -> {to_state.value}"
+        if (
+            to_state not in self.legal_transitions.get(from_state, set())
+            and to_state != from_state
+        ):
+            message = (
+                f"illegal state transition: {from_state.value} -> {to_state.value}"
+            )
             raise DemoWorkflowError(message)
         task.state = to_state
         task.task_version = version or task.task_version
@@ -453,7 +486,9 @@ class CompoundChangeDemo:
                 input_reference=input_reference,
                 output_reference=output_reference,
                 skill_name=skill_name,
-                created_at=self._at(len(self.store.list_agent_handoffs(self.identity.task_id)) + 2),
+                created_at=self._at(
+                    len(self.store.list_agent_handoffs(self.identity.task_id)) + 2
+                ),
             )
         )
 
@@ -467,7 +502,9 @@ class CompoundChangeDemo:
         output_reference: str,
         duration_ms: int,
     ) -> None:
-        started = self._at(len(self.store.list_skill_invocations(self.identity.task_id)) + 3)
+        started = self._at(
+            len(self.store.list_skill_invocations(self.identity.task_id)) + 3
+        )
         self.store.save_skill_invocation(
             SkillInvocation(
                 id=invocation_id,
@@ -513,7 +550,9 @@ class CompoundChangeDemo:
             "constraint_set_version": "1.4",
         }
         digest = hashlib.sha256(
-            json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            json.dumps(
+                body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()
         ).hexdigest()
         return ContextSnapshot.model_validate({**body, "context_hash": digest})
 
@@ -702,7 +741,9 @@ class CompoundChangeDemo:
                 status="simulated",
                 created_at=self._at(21),
             )
-            for index, (target, resource, command, value, unit) in enumerate(rows, start=1)
+            for index, (target, resource, command, value, unit) in enumerate(
+                rows, start=1
+            )
         ]
 
     def _assert_version_and_hash(
@@ -784,4 +825,6 @@ class CompoundChangeDemo:
 
     @staticmethod
     def _at(second: int) -> datetime:
-        return datetime.fromisoformat("2026-07-31T14:00:00+08:00") + timedelta(seconds=second)
+        return datetime.fromisoformat("2026-07-31T14:00:00+08:00") + timedelta(
+            seconds=second
+        )

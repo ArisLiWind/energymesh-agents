@@ -118,10 +118,14 @@ class PersistentAgentRuntime:
         )
 
         steps: list[AgentRuntimeStep] = []
-        task_brief = self._leader_intake(active_session_id, active_task_id, message, steps)
+        task_brief = self._leader_intake(
+            active_session_id, active_task_id, message, steps
+        )
         route = task_brief.payload["routing_plan"]
         if route["mode"] == "leader_only":
-            self._leader_direct_response(active_session_id, active_task_id, task_brief, steps)
+            self._leader_direct_response(
+                active_session_id, active_task_id, task_brief, steps
+            )
         else:
             energy_state = self._perception_collect_state(
                 active_session_id, active_task_id, task_brief, steps
@@ -129,7 +133,9 @@ class PersistentAgentRuntime:
             plan = self._dispatch_generate_plan(
                 active_session_id, active_task_id, energy_state, steps
             )
-            verification = self._audit_verify_plan(active_session_id, active_task_id, plan, steps)
+            verification = self._audit_verify_plan(
+                active_session_id, active_task_id, plan, steps
+            )
             self._leader_final_report(
                 active_session_id,
                 active_task_id,
@@ -177,15 +183,23 @@ class PersistentAgentRuntime:
             "routed_agents": ["team_leader"],
         }
 
-        yield self._stage_start_event(active_session_id, active_task_id, 0, stage_keys[0])
-        task_brief = self._leader_intake(active_session_id, active_task_id, message, steps)
+        yield self._stage_start_event(
+            active_session_id, active_task_id, 0, stage_keys[0]
+        )
+        task_brief = self._leader_intake(
+            active_session_id, active_task_id, message, steps
+        )
         yield self._step_event(active_session_id, active_task_id, steps[-1], 0)
 
         route = task_brief.payload["routing_plan"]
         if route["mode"] == "leader_only":
             stage_keys.append("leader_response")
-            yield self._stage_start_event(active_session_id, active_task_id, 1, stage_keys[1])
-            self._leader_direct_response(active_session_id, active_task_id, task_brief, steps)
+            yield self._stage_start_event(
+                active_session_id, active_task_id, 1, stage_keys[1]
+            )
+            self._leader_direct_response(
+                active_session_id, active_task_id, task_brief, steps
+            )
             yield self._step_event(active_session_id, active_task_id, steps[-1], 1)
         else:
             stage_keys.extend(["perception", "dispatch", "audit", "final_report"])
@@ -196,23 +210,33 @@ class PersistentAgentRuntime:
                 "routed_agents": [STAGE_DEFINITIONS[key][0] for key in stage_keys],
                 "routing_plan": route,
             }
-            yield self._stage_start_event(active_session_id, active_task_id, 1, stage_keys[1])
+            yield self._stage_start_event(
+                active_session_id, active_task_id, 1, stage_keys[1]
+            )
             energy_state = self._perception_collect_state(
                 active_session_id, active_task_id, task_brief, steps
             )
             yield self._step_event(active_session_id, active_task_id, steps[-1], 1)
 
-            yield self._stage_start_event(active_session_id, active_task_id, 2, stage_keys[2])
+            yield self._stage_start_event(
+                active_session_id, active_task_id, 2, stage_keys[2]
+            )
             plan = self._dispatch_generate_plan(
                 active_session_id, active_task_id, energy_state, steps
             )
             yield self._step_event(active_session_id, active_task_id, steps[-1], 2)
 
-            yield self._stage_start_event(active_session_id, active_task_id, 3, stage_keys[3])
-            verification = self._audit_verify_plan(active_session_id, active_task_id, plan, steps)
+            yield self._stage_start_event(
+                active_session_id, active_task_id, 3, stage_keys[3]
+            )
+            verification = self._audit_verify_plan(
+                active_session_id, active_task_id, plan, steps
+            )
             yield self._step_event(active_session_id, active_task_id, steps[-1], 3)
 
-            yield self._stage_start_event(active_session_id, active_task_id, 4, stage_keys[4])
+            yield self._stage_start_event(
+                active_session_id, active_task_id, 4, stage_keys[4]
+            )
             self._leader_final_report(
                 active_session_id,
                 active_task_id,
@@ -361,7 +385,13 @@ class PersistentAgentRuntime:
             payload,
         )
         self._record_agent_response(
-            session_id, task_id, "perception_agent", response, steps, [task_brief], artifact
+            session_id,
+            task_id,
+            "perception_agent",
+            response,
+            steps,
+            [task_brief],
+            artifact,
         )
         return artifact
 
@@ -408,7 +438,10 @@ class PersistentAgentRuntime:
                 {
                     "plan_id": "Plan-C",
                     "name": "柔性负荷调整",
-                    "actions": ["将非关键工序前移到光伏高发时段", "峰段减少 300 kW 非关键负荷"],
+                    "actions": [
+                        "将非关键工序前移到光伏高发时段",
+                        "峰段减少 300 kW 非关键负荷",
+                    ],
                     "expected_peak_grid_mw": round(
                         state["current_load_mw"] - state["pv_forecast_mw"] - 0.3, 2
                     ),
@@ -420,7 +453,12 @@ class PersistentAgentRuntime:
             ),
         }
         artifact = self._save_artifact(
-            session_id, task_id, "dispatch_agent", "candidate_plan", "plan.json", plan_payload
+            session_id,
+            task_id,
+            "dispatch_agent",
+            "candidate_plan",
+            "plan.json",
+            plan_payload,
         )
         response = self._call_agent(
             "dispatch_agent",
@@ -428,7 +466,13 @@ class PersistentAgentRuntime:
             plan_payload,
         )
         self._record_agent_response(
-            session_id, task_id, "dispatch_agent", response, steps, [energy_state], artifact
+            session_id,
+            task_id,
+            "dispatch_agent",
+            response,
+            steps,
+            [energy_state],
+            artifact,
         )
         return artifact
 
@@ -455,7 +499,13 @@ class PersistentAgentRuntime:
             }
             decision = (
                 "PASS"
-                if all([passes["transformer"], passes["soc"], passes["production_constraint"]])
+                if all(
+                    [
+                        passes["transformer"],
+                        passes["soc"],
+                        passes["production_constraint"],
+                    ]
+                )
                 else "REJECT"
             )
             verifications.append(
@@ -477,7 +527,12 @@ class PersistentAgentRuntime:
             ),
         }
         artifact = self._save_artifact(
-            session_id, task_id, "audit_agent", "verification", "verification.json", payload
+            session_id,
+            task_id,
+            "audit_agent",
+            "verification",
+            "verification.json",
+            payload,
         )
         response = self._call_agent(
             "audit_agent",
@@ -515,7 +570,12 @@ class PersistentAgentRuntime:
             ),
         }
         artifact = self._save_artifact(
-            session_id, task_id, "team_leader", "final_report", "final_report.md", payload
+            session_id,
+            task_id,
+            "team_leader",
+            "final_report",
+            "final_report.md",
+            payload,
         )
         response = self._call_agent(
             "team_leader",
@@ -541,7 +601,9 @@ class PersistentAgentRuntime:
         )
         return artifact
 
-    def _call_agent(self, agent_id: str, instruction: str, payload: dict[str, Any]) -> str:
+    def _call_agent(
+        self, agent_id: str, instruction: str, payload: dict[str, Any]
+    ) -> str:
         config = self._runtime_config(agent_id)
         message = (
             f"{instruction}\n\n"
@@ -554,7 +616,9 @@ class PersistentAgentRuntime:
                 self.store.update_model_status(config.agent_id, "正常", None)
                 return response
             except Exception as error:
-                self.store.update_model_status(config.agent_id, "失败", describe_model_error(error))
+                self.store.update_model_status(
+                    config.agent_id, "失败", describe_model_error(error)
+                )
                 return self._local_agent_response(agent_id, payload, str(error))
         if config.api_key:
             return self._local_agent_response(
@@ -598,10 +662,16 @@ class PersistentAgentRuntime:
         if agent_id == "team_leader":
             if "candidate_plan" in payload and "verification" in payload:
                 verification = payload["verification"]
-                recommended = verification.get("recommended_plan_id") or "暂无可自动推荐方案"
+                recommended = (
+                    verification.get("recommended_plan_id") or "暂无可自动推荐方案"
+                )
                 checks = verification.get("verification", [])
-                passed = [item["plan_id"] for item in checks if item.get("decision") == "PASS"]
-                rejected = [item["plan_id"] for item in checks if item.get("decision") != "PASS"]
+                passed = [
+                    item["plan_id"] for item in checks if item.get("decision") == "PASS"
+                ]
+                rejected = [
+                    item["plan_id"] for item in checks if item.get("decision") != "PASS"
+                ]
                 return (
                     "Team Leader 汇总：我已按职责分离完成本轮调度闭环。"
                     f"感知 Worker 已读取能源状态，调度 Worker 已生成候选方案，"
@@ -619,7 +689,9 @@ class PersistentAgentRuntime:
                     "Worker，并汇总可执行结论。这个问题不需要启动调度闭环；如果你下达"
                     "负荷、光伏、储能、电价、审核、执行或回滚相关任务，我会再调度对应 Worker。"
                 )
-            workers = " → ".join(route.get("workers", [])) or "perception → dispatch → audit"
+            workers = (
+                " → ".join(route.get("workers", [])) or "perception → dispatch → audit"
+            )
             return (
                 f"Team Leader 已接收任务并决定进入能源调度闭环。路由：{workers}。"
                 "我不会直接生成设备方案，会先让感知 Worker 固化可信上下文，再让调度 "
@@ -643,7 +715,9 @@ class PersistentAgentRuntime:
             )
         if agent_id == "audit_agent":
             verification = payload.get("verification", [])
-            summary = [f"{item.get('plan_id')}={item.get('decision')}" for item in verification]
+            summary = [
+                f"{item.get('plan_id')}={item.get('decision')}" for item in verification
+            ]
             return (
                 "审核 Worker 已完成独立安全复算："
                 f"{'；'.join(summary)}。不可验证或违反硬约束的方案默认拒绝。"
@@ -745,7 +819,9 @@ class PersistentAgentRuntime:
             response,
             {
                 "source": "runtime_pipeline",
-                "input_artifacts": [artifact.artifact_id for artifact in input_artifacts],
+                "input_artifacts": [
+                    artifact.artifact_id for artifact in input_artifacts
+                ],
                 "output_artifact": output_artifact.artifact_id,
             },
         )
@@ -785,12 +861,12 @@ class PersistentAgentRuntime:
     @staticmethod
     def _audit_reason(plan_id: str, checks: dict[str, bool]) -> str:
         failed = [
-            name for name, passed in checks.items() if name != "approval_required" and not passed
+            name
+            for name, passed in checks.items()
+            if name != "approval_required" and not passed
         ]
         if not failed:
-            return (
-                f"{plan_id} passes hard checks; approval is required if it changes flexible load."
-            )
+            return f"{plan_id} passes hard checks; approval is required if it changes flexible load."
         return f"{plan_id} rejected because these checks failed: {', '.join(failed)}."
 
     @staticmethod

@@ -50,7 +50,10 @@ class ExternalDataSimulator:
             redundant_temperature = transformer_temperature - 1.5
             battery_available = True
 
-            if fault_mode in {"cloud_and_transformer_heat", "storm_front"} and 13.0 <= hour < 15.25:
+            if (
+                fault_mode in {"cloud_and_transformer_heat", "storm_front"}
+                and 13.0 <= hour < 15.25
+            ):
                 pv *= 0.52
                 fault_code = "PV_CLOUD_SHADING"
             if fault_mode == "cloud_and_transformer_heat" and 14.0 <= hour < 17.25:
@@ -95,7 +98,9 @@ class ExternalDataSimulator:
                     pv_kw=round(max(pv, 0), 3),
                     production_min_load_kw=round(production_min_load, 3),
                     tariff_yuan_per_kwh=tariff,
-                    battery_temperature_c=48.5 if fault_code == "BATTERY_PCS_DERATED" else 29.0,
+                    battery_temperature_c=(
+                        48.5 if fault_code == "BATTERY_PCS_DERATED" else 29.0
+                    ),
                     transformer_temperature_c=round(transformer_temperature, 3),
                     transformer_redundant_temperature_c=round(redundant_temperature, 3),
                 )
@@ -127,10 +132,14 @@ class ExternalDataSimulator:
                 update={
                     "initial_soc": current.battery_soc,
                     "battery_charge_max_kw": (
-                        site.battery_charge_max_kw if current.battery_available else 0.001
+                        site.battery_charge_max_kw
+                        if current.battery_available
+                        else 0.001
                     ),
                     "battery_discharge_max_kw": (
-                        site.battery_discharge_max_kw if current.battery_available else 0.001
+                        site.battery_discharge_max_kw
+                        if current.battery_available
+                        else 0.001
                     ),
                 }
             ),
@@ -155,7 +164,8 @@ class ExternalDataSimulator:
                 "line": "precision-machining-a",
                 "minimum_load_policy": "critical process load must be preserved",
                 "emergency_order": any(
-                    item.production_min_load_kw > item.load_kw - 60 for item in telemetry
+                    item.production_min_load_kw > item.load_kw - 60
+                    for item in telemetry
                 ),
             },
             simulation_faults=[],
@@ -201,7 +211,10 @@ class ExternalDataSimulator:
         evening_charge = 165 * math.exp(-(((hour - 19.2) / 1.8) ** 2))
         ripple = 28 * math.sin(hour * 2.8) + 18 * math.sin(hour * 7.1)
         noise = rng.uniform(-12, 12)
-        return max(330, base + morning_shift + afternoon_shift + evening_charge + ripple + noise)
+        return max(
+            330,
+            base + morning_shift + afternoon_shift + evening_charge + ripple + noise,
+        )
 
     @staticmethod
     def _pv_kw(hour: float) -> float:

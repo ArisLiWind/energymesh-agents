@@ -24,7 +24,9 @@ class IndependentSafetyAuditor:
         "measurable improvement over original EMS policy",
     ]
 
-    def audit(self, scenario: Scenario, plan: DispatchPlan, baseline: DispatchPlan) -> AuditReport:
+    def audit(
+        self, scenario: Scenario, plan: DispatchPlan, baseline: DispatchPlan
+    ) -> AuditReport:
         site = scenario.site
         findings: list[AuditFinding] = []
 
@@ -83,7 +85,8 @@ class IndependentSafetyAuditor:
                 )
             transformer_limit = site.transformer_capacity_kw
             if (
-                forecast.transformer_temperature_c >= site.transformer_temperature_limit_c
+                forecast.transformer_temperature_c
+                >= site.transformer_temperature_limit_c
                 and forecast.transformer_redundant_temperature_c
                 >= site.transformer_temperature_limit_c
             ):

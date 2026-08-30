@@ -70,7 +70,9 @@ def build_agentteams_manifest(
     settings: Settings,
     model_configs: dict[str, AgentModelConfigPublic] | None = None,
 ) -> AgentTeamsManifest:
-    runtime_mode = "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
+    runtime_mode = (
+        "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
+    )
     return AgentTeamsManifest(
         framework="agentscope-ai/AgentTeams open-source runtime",
         framework_repository="https://github.com/agentscope-ai/AgentTeams",

@@ -30,7 +30,9 @@ class Settings:
             simulation_mode=_bool_env("SIMULATION_MODE", True),
             allow_production_write=_bool_env("ALLOW_PRODUCTION_WRITE", False),
             agentteams_enabled=_bool_env("AGENTTEAMS_ENABLED", True),
-            agentteams_team_name=os.getenv("AGENTTEAMS_TEAM_NAME", "energymesh-park-control"),
+            agentteams_team_name=os.getenv(
+                "AGENTTEAMS_TEAM_NAME", "energymesh-park-control"
+            ),
             agentteams_instance_id=os.getenv("AGENTTEAMS_INSTANCE_ID") or None,
             db_path=Path(os.getenv("ENERGYMESH_DB_PATH", "./var/energymesh.db")),
             evidence_dir=Path(os.getenv("ENERGYMESH_EVIDENCE_DIR", "./runs")),
@@ -42,4 +44,6 @@ class Settings:
         if not self.simulation_mode:
             raise RuntimeError("SIMULATION_MODE must remain true in the community MVP")
         if self.allow_production_write:
-            raise RuntimeError("ALLOW_PRODUCTION_WRITE must remain false in the community MVP")
+            raise RuntimeError(
+                "ALLOW_PRODUCTION_WRITE must remain false in the community MVP"
+            )

@@ -17,7 +17,11 @@ from energymesh.models import (
     Scenario,
     TaskState,
 )
+from energymesh.mcp_auth import ToolCircuitBreaker
+from energymesh.observability import SLOMetrics
 from energymesh.orchestrator import EnergyMeshOrchestrator
+from energymesh.polardb_store import PolarDBStore
+from energymesh.rag_engine import RAGEngine
 from energymesh.storage import EvidenceStore
 
 
@@ -54,16 +58,23 @@ class ParallelSimulator:
     LOAD_DEVIATION_THRESHOLD = 0.12  # 12%
     SOC_DEVIATION_THRESHOLD = 0.15  # 15% (absolute)
 
-    def __init__(self, orchestrator: EnergyMeshOrchestrator, store: EvidenceStore) -> None:
+    def __init__(
+        self, orchestrator: EnergyMeshOrchestrator, store: EvidenceStore
+    ) -> None:
         self.orchestrator = orchestrator
         self.store = store
         self.state = ParallelSimulationState()
         self._lock = threading.Lock()
+        self.pdb = PolarDBStore()
+        self.rag = RAGEngine()
+        self.slo = SLOMetrics()
+        self.cb = ToolCircuitBreaker()
 
     def _perturb_scenario(self, scenario: Scenario) -> Scenario:
         """Create a perturbed scenario with slightly different forecast for demo purposes.
         This simulates real-world imperfect forecasting."""
         import random
+
         random.seed(42)  # deterministic for reproducibility
         perturbed_forecast = []
         for point in scenario.forecast:
@@ -97,6 +108,7 @@ class ParallelSimulator:
             )
             if task.state == TaskState.AWAITING_APPROVAL:
                 from energymesh.models import ApprovalRequest
+
                 task = self.orchestrator.approve_only(
                     task.task_id,
                     ApprovalRequest(
@@ -159,7 +171,11 @@ class ParallelSimulator:
         self.state.optimized_cumulative_cost_yuan += costs.optimized_cost_yuan
         self.state.optimized_cumulative_grid_kwh += costs.optimized_grid_kwh
 
-        savings = max(0, self.state.baseline_cumulative_cost_yuan - self.state.optimized_cumulative_cost_yuan)
+        savings = max(
+            0,
+            self.state.baseline_cumulative_cost_yuan
+            - self.state.optimized_cumulative_cost_yuan,
+        )
         savings_pct = (
             (savings / self.state.baseline_cumulative_cost_yuan * 100)
             if self.state.baseline_cumulative_cost_yuan > 0
@@ -172,14 +188,26 @@ class ParallelSimulator:
         plan_point = None
         if self.state.optimized_plan and self.state.optimized_plan.points:
             plan_point = next(
-                (p for p in self.state.optimized_plan.points if p.interval == point.interval),
+                (
+                    p
+                    for p in self.state.optimized_plan.points
+                    if p.interval == point.interval
+                ),
                 None,
             )
 
         pv_forecast = plan_point.pv_kw if plan_point else point.pv_kw
         load_forecast = plan_point.load_kw if plan_point else point.load_kw
-        pv_dev = ((point.pv_kw - pv_forecast) / pv_forecast * 100) if pv_forecast > 0.01 else 0.0
-        load_dev = ((point.load_kw - load_forecast) / load_forecast * 100) if load_forecast > 0.01 else 0.0
+        pv_dev = (
+            ((point.pv_kw - pv_forecast) / pv_forecast * 100)
+            if pv_forecast > 0.01
+            else 0.0
+        )
+        load_dev = (
+            ((point.load_kw - load_forecast) / load_forecast * 100)
+            if load_forecast > 0.01
+            else 0.0
+        )
 
         # Determine if this interval had a re-optimization
         reoptimized = False
@@ -195,12 +223,20 @@ class ParallelSimulator:
 
         history_point = IntervalHistoryPoint(
             interval=self.state.cursor,
-            timestamp=point.timestamp.isoformat() if hasattr(point.timestamp, "isoformat") else str(point.timestamp),
+            timestamp=(
+                point.timestamp.isoformat()
+                if hasattr(point.timestamp, "isoformat")
+                else str(point.timestamp)
+            ),
             tariff_yuan_per_kwh=point.tariff_yuan_per_kwh,
             baseline_interval_cost_yuan=round(costs.baseline_cost_yuan, 4),
             optimized_interval_cost_yuan=round(costs.optimized_cost_yuan, 4),
-            baseline_cumulative_cost_yuan=round(self.state.baseline_cumulative_cost_yuan, 4),
-            optimized_cumulative_cost_yuan=round(self.state.optimized_cumulative_cost_yuan, 4),
+            baseline_cumulative_cost_yuan=round(
+                self.state.baseline_cumulative_cost_yuan, 4
+            ),
+            optimized_cumulative_cost_yuan=round(
+                self.state.optimized_cumulative_cost_yuan, 4
+            ),
             savings_cumulative_yuan=round(savings, 4),
             actual_load_kw=round(point.load_kw, 2),
             actual_pv_kw=round(point.pv_kw, 2),
@@ -226,15 +262,55 @@ class ParallelSimulator:
                 "load_kw": round(point.load_kw, 2),
                 "pv_kw": round(point.pv_kw, 2),
                 "grid_import_kw": round(getattr(point, "grid_import_kw", 0), 2),
-                "optimized_grid_kw": round(plan_point.grid_import_kw if plan_point else 0, 2),
-                "optimized_charge_kw": round(plan_point.charge_kw if plan_point else 0, 2),
-                "optimized_discharge_kw": round(plan_point.discharge_kw if plan_point else 0, 2),
-                "soc_start": round(plan_point.soc_start, 3) if plan_point else round(point.battery_soc, 3),
-                "soc_end": round(plan_point.soc_end, 3) if plan_point else round(point.battery_soc, 3),
+                "optimized_grid_kw": round(
+                    plan_point.grid_import_kw if plan_point else 0, 2
+                ),
+                "optimized_charge_kw": round(
+                    plan_point.charge_kw if plan_point else 0, 2
+                ),
+                "optimized_discharge_kw": round(
+                    plan_point.discharge_kw if plan_point else 0, 2
+                ),
+                "soc_start": (
+                    round(plan_point.soc_start, 3)
+                    if plan_point
+                    else round(point.battery_soc, 3)
+                ),
+                "soc_end": (
+                    round(plan_point.soc_end, 3)
+                    if plan_point
+                    else round(point.battery_soc, 3)
+                ),
                 "baseline_cost": round(costs.baseline_cost_yuan, 4),
                 "optimized_cost": round(costs.optimized_cost_yuan, 4),
             }
         )
+
+        # Persist to PolarDB + SLO
+        if point:
+            self.pdb.write_telemetry(self.state.source, point)
+            if self.state.optimized_task:
+                self.pdb.write_execution(
+                    execution_id=f"exec_{self.state.source}_{point.interval}",
+                    task_id=self.state.optimized_task.task_id,
+                    plan_version_id=(
+                        self.state.optimized_plan.plan_id
+                        if self.state.optimized_plan
+                        else None
+                    ),
+                    interval=point.interval,
+                    actual={
+                        "grid_kw": getattr(point, "grid_import_kw", 0),
+                        "soc": point.battery_soc,
+                    },
+                    expected={
+                        "grid_kw": plan_point.grid_import_kw if plan_point else 0,
+                        "soc": plan_point.soc_end if plan_point else point.battery_soc,
+                    },
+                    deviation=reoptimized,
+                )
+        self.slo.record_execution()
+        self.slo.record_savings(self.state.savings_yuan)
 
         self.state.cursor += 1
         if self.state.cursor >= len(telemetry):
@@ -251,7 +327,11 @@ class ParallelSimulator:
             return
 
         plan_point = next(
-            (p for p in self.state.optimized_plan.points if p.interval == point.interval),
+            (
+                p
+                for p in self.state.optimized_plan.points
+                if p.interval == point.interval
+            ),
             None,
         )
         if not plan_point:
@@ -260,18 +340,32 @@ class ParallelSimulator:
         # Calculate deviations
         pv_forecast = plan_point.pv_kw
         load_forecast = plan_point.load_kw
-        pv_dev = abs((point.pv_kw - pv_forecast) / pv_forecast) if pv_forecast > 0.01 else 0.0
-        load_dev = abs((point.load_kw - load_forecast) / load_forecast) if load_forecast > 0.01 else 0.0
+        pv_dev = (
+            abs((point.pv_kw - pv_forecast) / pv_forecast)
+            if pv_forecast > 0.01
+            else 0.0
+        )
+        load_dev = (
+            abs((point.load_kw - load_forecast) / load_forecast)
+            if load_forecast > 0.01
+            else 0.0
+        )
         soc_dev = abs(point.battery_soc - plan_point.soc_end)
 
         # Determine if re-optimization is needed
         reasons = []
         if pv_dev > self.PV_DEVIATION_THRESHOLD:
-            reasons.append(f"PV实际({point.pv_kw:.2f}kW)偏离预测({pv_forecast:.2f}kW) {pv_dev*100:.1f}%")
+            reasons.append(
+                f"PV实际({point.pv_kw:.2f}kW)偏离预测({pv_forecast:.2f}kW) {pv_dev*100:.1f}%"
+            )
         if load_dev > self.LOAD_DEVIATION_THRESHOLD:
-            reasons.append(f"负荷实际({point.load_kw:.2f}kW)偏离预测({load_forecast:.2f}kW) {load_dev*100:.1f}%")
+            reasons.append(
+                f"负荷实际({point.load_kw:.2f}kW)偏离预测({load_forecast:.2f}kW) {load_dev*100:.1f}%"
+            )
         if soc_dev > self.SOC_DEVIATION_THRESHOLD:
-            reasons.append(f"SOC实际({point.battery_soc:.1%})偏离计划({plan_point.soc_end:.1%})")
+            reasons.append(
+                f"SOC实际({point.battery_soc:.1%})偏离计划({plan_point.soc_end:.1%})"
+            )
 
         if not reasons:
             self.state.agentteams_trace.append(
@@ -312,12 +406,18 @@ class ParallelSimulator:
         )
 
         # Plan invalidated - trigger rolling re-optimization
-        old_plan_id = self.state.optimized_plan.plan_id if self.state.optimized_plan else None
+        old_plan_id = (
+            self.state.optimized_plan.plan_id if self.state.optimized_plan else None
+        )
         try:
             from energymesh.models import RollingHorizonRequest
 
             new_task = self.orchestrator.rolling_reoptimize(
-                self.state.optimized_task.task_id if self.state.optimized_task else "unknown",
+                (
+                    self.state.optimized_task.task_id
+                    if self.state.optimized_task
+                    else "unknown"
+                ),
                 RollingHorizonRequest(
                     current_interval=point.interval,
                     actual_soc=point.battery_soc,
@@ -328,7 +428,11 @@ class ParallelSimulator:
             # Update the optimized plan
             if new_task.selected_plan_id and new_task.plans:
                 new_plan = next(
-                    (p for p in new_task.plans if p.plan_id == new_task.selected_plan_id),
+                    (
+                        p
+                        for p in new_task.plans
+                        if p.plan_id == new_task.selected_plan_id
+                    ),
                     None,
                 )
                 if new_plan:
@@ -339,7 +443,11 @@ class ParallelSimulator:
 
                     event = ReoptimizationEvent(
                         interval=point.interval,
-                        timestamp=point.timestamp.isoformat() if hasattr(point.timestamp, "isoformat") else str(point.timestamp),
+                        timestamp=(
+                            point.timestamp.isoformat()
+                            if hasattr(point.timestamp, "isoformat")
+                            else str(point.timestamp)
+                        ),
                         reason="；".join(reasons),
                         old_plan_id=old_plan_id,
                         new_plan_id=new_plan.plan_id,
@@ -381,7 +489,11 @@ class ParallelSimulator:
         return self._build_response()
 
     def _compute_interval_costs(self, point: ExternalTelemetryPoint) -> _IntervalCosts:
-        dt = self.state.snapshot.scenario.site.interval_minutes / 60 if self.state.snapshot else 0.25
+        dt = (
+            self.state.snapshot.scenario.site.interval_minutes / 60
+            if self.state.snapshot
+            else 0.25
+        )
         tariff = point.tariff_yuan_per_kwh
 
         baseline_grid_kw = getattr(point, "grid_import_kw", None)
@@ -393,7 +505,11 @@ class ParallelSimulator:
         optimized_grid_kw = baseline_grid_kw
         if self.state.optimized_plan and self.state.optimized_plan.points:
             plan_point = next(
-                (p for p in self.state.optimized_plan.points if p.interval == point.interval),
+                (
+                    p
+                    for p in self.state.optimized_plan.points
+                    if p.interval == point.interval
+                ),
                 None,
             )
             if plan_point:
@@ -410,14 +526,23 @@ class ParallelSimulator:
 
     def _build_response(self) -> ParallelStepResponse:
         point = None
-        if self.state.snapshot and self.state.cursor < len(self.state.snapshot.telemetry):
+        if self.state.snapshot and self.state.cursor < len(
+            self.state.snapshot.telemetry
+        ):
             point = self.state.snapshot.telemetry[self.state.cursor]
         elif self.state.snapshot and self.state.snapshot.telemetry:
             point = self.state.snapshot.telemetry[-1]
 
         opt_grid_kw = 0.0
         if self.state.optimized_plan and point:
-            pp = next((p for p in self.state.optimized_plan.points if p.interval == point.interval), None)
+            pp = next(
+                (
+                    p
+                    for p in self.state.optimized_plan.points
+                    if p.interval == point.interval
+                ),
+                None,
+            )
             if pp:
                 opt_grid_kw = pp.grid_import_kw
 
@@ -432,11 +557,17 @@ class ParallelSimulator:
             optimized_grid_kwh=round(self.state.optimized_cumulative_grid_kwh, 2),
             current_load_kw=round(point.load_kw, 2) if point else 0,
             current_pv_kw=round(point.pv_kw, 2) if point else 0,
-            current_grid_kw=round(getattr(point, "grid_import_kw", 0), 2) if point else 0,
+            current_grid_kw=(
+                round(getattr(point, "grid_import_kw", 0), 2) if point else 0
+            ),
             optimized_grid_kw=round(opt_grid_kw, 2),
             current_soc=round(point.battery_soc, 3) if point else 0,
             agentteams_active=self.state.optimized_task is not None,
-            task_state=(self.state.optimized_task.state.value if self.state.optimized_task else "none"),
+            task_state=(
+                self.state.optimized_task.state.value
+                if self.state.optimized_task
+                else "none"
+            ),
             event=self.state.last_event,
             interval_history=self.state.interval_history,
             reoptimization_events=self.state.reoptimization_events,
@@ -444,3 +575,20 @@ class ParallelSimulator:
             plans_invalidated=self.state.plans_invalidated,
             agentteams_trace=self.state.agentteams_trace,
         )
+
+    def get_slo(self) -> dict[str, object]:
+        return self.slo.health()
+
+    def get_rag_insight(self, interval: int | None = None) -> str:
+        if not self.state.interval_history:
+            return "暂无偏差记录"
+        idx = interval if interval is not None else len(self.state.interval_history) - 1
+        if idx < 0 or idx >= len(self.state.interval_history):
+            return "时段索引越界"
+        h = self.state.interval_history[idx]
+        event = {
+            "pv_deviation_percent": h.pv_deviation_percent,
+            "load_deviation_percent": h.load_deviation_percent,
+            "soc_deviation_percent": 0,
+        }
+        return self.rag.get_insight_for_deviation(event)

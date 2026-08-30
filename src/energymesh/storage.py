@@ -226,8 +226,7 @@ class EvidenceStore:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS tasks (
                     task_id TEXT PRIMARY KEY,
                     state TEXT NOT NULL,
@@ -236,10 +235,8 @@ class EvidenceStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS audit_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id TEXT NOT NULL,
@@ -250,10 +247,8 @@ class EvidenceStore:
                     created_at TEXT NOT NULL,
                     UNIQUE(task_id, sequence)
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS agent_model_configs (
                     agent_id TEXT PRIMARY KEY,
                     base_url TEXT NOT NULL,
@@ -263,10 +258,8 @@ class EvidenceStore:
                     last_error TEXT,
                     updated_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS agent_messages (
                     message_id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -277,16 +270,12 @@ class EvidenceStore:
                     metadata TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE INDEX IF NOT EXISTS idx_agent_messages_session
                 ON agent_messages(session_id, created_at)
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS runtime_artifacts (
                     artifact_id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -297,16 +286,12 @@ class EvidenceStore:
                     payload TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE INDEX IF NOT EXISTS idx_runtime_artifacts_task
                 ON runtime_artifacts(task_id, created_at)
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS runtime_tool_calls (
                     call_id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -318,18 +303,17 @@ class EvidenceStore:
                     output_payload TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                """
+                """)
+            connection.execute("""
                 CREATE INDEX IF NOT EXISTS idx_runtime_tool_calls_task
                 ON runtime_tool_calls(task_id, created_at)
-                """
-            )
+                """)
             for statement in DEMO_TABLES:
                 connection.execute(statement)
 
-    def _insert_payload_row(self, table: str, data: BaseModel, columns: PayloadRow) -> None:
+    def _insert_payload_row(
+        self, table: str, data: BaseModel, columns: PayloadRow
+    ) -> None:
         payload = data.model_dump_json()
         names = [*columns.keys(), "payload"]
         placeholders = ", ".join("?" for _ in names)
@@ -343,22 +327,35 @@ class EvidenceStore:
                 values,
             )
 
-    def _list_payload_rows(self, table: str, model: type[BaseModel], task_id: str) -> PayloadRows:
+    def _list_payload_rows(
+        self, table: str, model: type[BaseModel], task_id: str
+    ) -> PayloadRows:
         with self._connect() as connection:
             rows = connection.execute(
                 f"SELECT payload FROM {table} WHERE task_id = ? ORDER BY created_at, rowid",
                 (task_id,),
             ).fetchall()
-        return [model.model_validate_json(row["payload"]).model_dump(mode="json") for row in rows]
+        return [
+            model.model_validate_json(row["payload"]).model_dump(mode="json")
+            for row in rows
+        ]
 
     def _get_payload_row(
-        self, table: str, model: type[BaseModel], where: str, parameters: tuple[object, ...]
+        self,
+        table: str,
+        model: type[BaseModel],
+        where: str,
+        parameters: tuple[object, ...],
     ) -> PayloadRow | None:
         with self._connect() as connection:
             row = connection.execute(
                 f"SELECT payload FROM {table} WHERE {where} LIMIT 1", parameters
             ).fetchone()
-        return model.model_validate_json(row["payload"]).model_dump(mode="json") if row else None
+        return (
+            model.model_validate_json(row["payload"]).model_dump(mode="json")
+            if row
+            else None
+        )
 
     def save(self, task: TaskRecord) -> TaskRecord:
         payload = task.model_dump_json()
@@ -616,7 +613,9 @@ class EvidenceStore:
         )
 
     def list_execution_commands(self, task_id: str) -> PayloadRows:
-        return self._list_payload_rows("execution_commands", ExecutionCommandRecord, task_id)
+        return self._list_payload_rows(
+            "execution_commands", ExecutionCommandRecord, task_id
+        )
 
     def save_execution_receipt(self, receipt: ExecutionReceipt) -> None:
         self._insert_payload_row(
@@ -665,7 +664,9 @@ class EvidenceStore:
         )
 
     def list_verification_results(self, task_id: str) -> PayloadRows:
-        return self._list_payload_rows("verification_results", VerificationResult, task_id)
+        return self._list_payload_rows(
+            "verification_results", VerificationResult, task_id
+        )
 
     def save_rollback_record(self, rollback: RollbackRecord) -> None:
         self._insert_payload_row(
@@ -791,7 +792,12 @@ class EvidenceStore:
                 SET connection_status = ?, last_error = ?, updated_at = ?
                 WHERE agent_id = ?
                 """,
-                (connection_status, last_error, datetime.now(UTC).isoformat(), agent_id),
+                (
+                    connection_status,
+                    last_error,
+                    datetime.now(UTC).isoformat(),
+                    agent_id,
+                ),
             )
 
     def public_model_config(self, config: StoredModelConfig) -> AgentModelConfigPublic:
@@ -806,12 +812,10 @@ class EvidenceStore:
 
     def list_public_model_configs(self) -> dict[str, AgentModelConfigPublic]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
+            rows = connection.execute("""
                 SELECT agent_id, base_url, api_key, model, connection_status, last_error
                 FROM agent_model_configs ORDER BY agent_id
-                """
-            ).fetchall()
+                """).fetchall()
         configs: dict[str, AgentModelConfigPublic] = {}
         for row in rows:
             stored = StoredModelConfig(

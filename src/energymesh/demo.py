@@ -40,7 +40,9 @@ def load_demo_scenario(config_path: Path | None = None) -> Scenario:
         transformer_temperature = 82.0 if 13.5 <= hour < 17.0 else 57.0
         emergency_production = 13.5 <= hour < 17.0
         minimum_production_load = (
-            max(load - 36, 300) if emergency_production else max(load - site.flexible_load_kw, 300)
+            max(load - 36, 300)
+            if emergency_production
+            else max(load - site.flexible_load_kw, 300)
         )
         points.append(
             ForecastPoint(
@@ -67,7 +69,9 @@ def load_demo_scenario(config_path: Path | None = None) -> Scenario:
     )
 
 
-def apply_operational_change(scenario: Scenario, request: ReoptimizationRequest) -> Scenario:
+def apply_operational_change(
+    scenario: Scenario, request: ReoptimizationRequest
+) -> Scenario:
     site = scenario.site.model_copy(
         update={
             "initial_soc": min(
@@ -78,10 +82,14 @@ def apply_operational_change(scenario: Scenario, request: ReoptimizationRequest)
                 ),
             ),
             "battery_charge_max_kw": (
-                scenario.site.battery_charge_max_kw if request.battery_available else 0.001
+                scenario.site.battery_charge_max_kw
+                if request.battery_available
+                else 0.001
             ),
             "battery_discharge_max_kw": (
-                scenario.site.battery_discharge_max_kw if request.battery_available else 0.001
+                scenario.site.battery_discharge_max_kw
+                if request.battery_available
+                else 0.001
             ),
         }
     )
@@ -93,7 +101,11 @@ def apply_operational_change(scenario: Scenario, request: ReoptimizationRequest)
                 "production_min_load_kw": round(
                     max(
                         point.load_kw * request.load_scale
-                        - (36 if request.emergency_production else scenario.site.flexible_load_kw),
+                        - (
+                            36
+                            if request.emergency_production
+                            else scenario.site.flexible_load_kw
+                        ),
                         0,
                     ),
                     3,

@@ -10,8 +10,11 @@ class PerceptionAgent:
         site = scenario.site
         interval_seconds = site.interval_minutes * 60
         timestamps_valid = all(
-            int((current.timestamp - previous.timestamp).total_seconds()) == interval_seconds
-            for previous, current in zip(scenario.forecast, scenario.forecast[1:], strict=False)
+            int((current.timestamp - previous.timestamp).total_seconds())
+            == interval_seconds
+            for previous, current in zip(
+                scenario.forecast, scenario.forecast[1:], strict=False
+            )
         )
         production_valid = all(
             point.production_min_load_kw <= point.load_kw for point in scenario.forecast
@@ -33,11 +36,20 @@ class PerceptionAgent:
         hot_points = 0
         conflict_points = 0
         for point in scenario.forecast:
-            primary_hot = point.transformer_temperature_c >= site.transformer_temperature_limit_c
-            redundant_hot = (
-                point.transformer_redundant_temperature_c >= site.transformer_temperature_limit_c
+            primary_hot = (
+                point.transformer_temperature_c >= site.transformer_temperature_limit_c
             )
-            if abs(point.transformer_temperature_c - point.transformer_redundant_temperature_c) > 8:
+            redundant_hot = (
+                point.transformer_redundant_temperature_c
+                >= site.transformer_temperature_limit_c
+            )
+            if (
+                abs(
+                    point.transformer_temperature_c
+                    - point.transformer_redundant_temperature_c
+                )
+                > 8
+            ):
                 conflict_points += 1
             elif primary_hot and redundant_hot:
                 hot_points += 1
