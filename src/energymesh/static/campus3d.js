@@ -421,48 +421,10 @@ export function createCampus3D(canvas, onLabels) {
           child.material.emissiveIntensity = intensity;
         }
       });
-      // Solar generation glow pulse
-      const solarPos = modules.find(m => m.type === "solar");
-      if (solarPos) {
-        let glow = scene.children.find(c => c.userData?.isSolarGlow);
-        if (!glow) {
-          glow = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffdd33, transparent: true, opacity: 0 }));
-          glow.userData = { isSolarGlow: true };
-          glow.position.set(solarPos.x, 2.2, solarPos.z);
-          scene.add(glow);
-        }
-        const targetOp = pvVal > 0.01 ? Math.min(0.6, pvVal / 4) : 0;
-        glow.material.opacity += (targetOp - glow.material.opacity) * 0.1;
-        const s = 1 + Math.sin(Date.now() * 0.004) * 0.3;
-        glow.scale.set(s, s, s);
-      }
-      // Energy flow: solar -> storage particles
-      if (pvVal > 0.01) {
-        const storagePos = modules.find(m => m.type === "storage");
-        if (solarPos && storagePos) {
-          let particles = scene.userData.flowParticles;
-          if (!particles) { particles = []; scene.userData.flowParticles = particles; }
-          if (particles.length < 12) {
-            const mat = new THREE.MeshBasicMaterial({ color: 0xffdd33 });
-            const p = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), mat);
-            p.userData = { t: Math.random(), speed: 0.6 + Math.random() * 0.5 };
-            scene.add(p); particles.push(p);
-          }
-          particles.forEach(p => {
-            p.userData.t += p.userData.speed * 0.016;
-            if (p.userData.t > 1) p.userData.t = 0;
-            const t = p.userData.t;
-            p.position.set(
-              solarPos.x + (storagePos.x - solarPos.x) * t,
-              1.0 + Math.sin(t * Math.PI) * 0.8,
-              solarPos.z + (storagePos.z - solarPos.z) * t
-            );
-          });
-        }
-      } else {
-        (scene.userData.flowParticles || []).forEach(p => scene.remove(p));
-        scene.userData.flowParticles = null;
-      }
+      const solarGlow = scene.children.find(c => c.userData?.isSolarGlow);
+      if (solarGlow) scene.remove(solarGlow);
+      (scene.userData.flowParticles || []).forEach(p => scene.remove(p));
+      scene.userData.flowParticles = null;
     },
     reset() { azimuth = -0.72; elevation = 0.82; zoom = 1.02; posCam(); },
     resize, destroy() { cancelAnimationFrame(frame); observer.disconnect(); renderer.dispose(); },
