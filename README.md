@@ -1,10 +1,12 @@
 # EnergyMesh Agents -超境创新
 
+> GOAI Agent Infra
+> 
 > 面向工业园区、算力中心、微电网与储能场站的多 Agent 电力能源自主调度系统。
 
 > 项目以官方 agentscope-ai/AgentTeams` 为协同底座，目的是提高现有园区微电网能源调度效率。
 
-> GOAI Agent Infra｜新智基座 集合能源态势感知、滚动调度、独立审核、人工审批、模拟执行、偏差回退、证据审计和经验沉淀为优化现有能源管理的Agent智能系统。
+> 新智基座 集合能源态势感知、滚动调度、独立审核、人工审批、模拟执行、偏差回退、证据审计和经验沉淀为优化现有能源管理的Agent智能系统。
 
 [超境创新官网](https://transrealm.ltd/energymesh-official?view=solutions) ·
 [AgentTeams 资源](agentteams/) · [架构](ARCHITECTURE.md) · [当前状态](STATUS.md) ·
