@@ -9,6 +9,7 @@ from energymesh.models import (
     ApprovalRecord,
     ApprovalRequest,
     AuditDecision,
+    RollingHorizonRequest,
     Scenario,
     TaskRecord,
     TaskState,
@@ -220,6 +221,93 @@ class EnergyMeshOrchestrator:
         if task.approval is None or not task.approval.approved:
             raise WorkflowError("valid human approval is required before execution")
         return self._execute(task)
+
+    def rolling_reoptimize(
+        self,
+        task_id: str,
+        request: RollingHorizonRequest,
+    ) -> TaskRecord:
+        task = self.store.get(task_id)
+        if task is None:
+            raise WorkflowError("task not found")
+        if task.selected_plan_id is None or not task.plans:
+            raise WorkflowError("task has no selected plan to roll from")
+
+        previous_plan = next(
+            (p for p in task.plans if p.plan_id == task.selected_plan_id),
+            task.baseline_plan,
+        )
+        scenario = task.scenario_snapshot
+        current_interval = min(max(request.current_interval, 0), len(scenario.forecast) - 1)
+        actual_soc = max(0.0, min(1.0, request.actual_soc))
+
+        self._record(
+            task,
+            "orchestrator",
+            "rolling_reoptimize_requested",
+            "ok",
+            current_interval=current_interval,
+            actual_soc=actual_soc,
+            robustness_mode=request.robustness_mode,
+            trigger=request.trigger,
+        )
+        self.store.save(task)
+
+        new_plan = self.optimizer.rolling_reoptimize(
+            scenario,
+            current_interval=current_interval,
+            actual_soc=actual_soc,
+            previous_plan=previous_plan,
+            robustness_mode=request.robustness_mode,
+        )
+        task.plans.append(new_plan)
+        task.selected_plan_id = new_plan.plan_id
+
+        # Re-audit the rolling plan against the same scenario constraints.
+        if task.baseline_plan is None:
+            task.baseline_plan = self.optimizer.build_baseline(scenario)
+        audit = self.auditor.audit(scenario, new_plan, task.baseline_plan)
+        task.audits.append(audit)
+        self._record(
+            task,
+            "audit_agent",
+            "rolling_plan_re_audited",
+            audit.decision.value,
+            plan_id=new_plan.plan_id,
+            improvement_yuan=audit.improvement_yuan,
+        )
+        self.store.save(task)
+
+        if audit.decision == AuditDecision.REJECTED:
+            task.state = TaskState.FAILED
+            self._record(task, "orchestrator", "rolling_plan_rejected", "blocked")
+            task.evidence_sha256 = self.store.seal_evidence(task)
+            self.store.save(task)
+            raise WorkflowError("rolling re-optimization plan rejected by auditor")
+
+        if audit.decision == AuditDecision.REQUIRES_APPROVAL:
+            task.state = TaskState.AWAITING_APPROVAL
+            self._record(
+                task,
+                "approval_gate",
+                "rolling_plan_approval_requested",
+                "pending",
+                plan_id=new_plan.plan_id,
+            )
+        else:
+            task.state = TaskState.APPROVED
+            self._record(
+                task,
+                "orchestrator",
+                "rolling_plan_auto_approved",
+                "ok",
+                plan_id=new_plan.plan_id,
+            )
+
+        task.task_version = (task.task_version or 1) + 1
+        task.evidence_sha256 = self.store.seal_evidence(task)
+        self.store.save(task)
+        return task
 
     def _execute(self, task: TaskRecord) -> TaskRecord:
         scenario = task.scenario_snapshot

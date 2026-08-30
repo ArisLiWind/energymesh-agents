@@ -32,7 +32,10 @@ from energymesh.models import (
     ExecutionReceipt,
     ExternalDataSnapshot,
     ExternalDispatchRequest,
+    ParallelSimulationState,
+    ParallelStepResponse,
     ReoptimizationRequest,
+    RollingHorizonRequest,
     RuntimeArtifact,
     RuntimeToolCall,
     Scenario,
@@ -40,6 +43,7 @@ from energymesh.models import (
 )
 from energymesh.optimizer import DispatchOptimizer
 from energymesh.orchestrator import EnergyMeshOrchestrator, WorkflowError
+from energymesh.parallel_sim import ParallelSimError, ParallelSimulator
 from energymesh.perception import PerceptionAgent
 from energymesh.runtime import AgentRuntimeError, PersistentAgentRuntime
 from energymesh.simulator import SimulationExecutor
@@ -98,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.snapshot_factory = snapshot_factory
     app.state.monitor = monitor
     app.state.uploaded_snapshot = None
+    app.state.parallel_sim = ParallelSimulator(orchestrator, store)
 
     def get_orchestrator(request: Request) -> EnergyMeshOrchestrator:
         return cast(EnergyMeshOrchestrator, request.app.state.orchestrator)
@@ -110,6 +115,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_compound_demo(request: Request) -> CompoundChangeDemo:
         return cast(CompoundChangeDemo, request.app.state.compound_demo)
+
+    def get_parallel_sim(request: Request) -> ParallelSimulator:
+        return cast(ParallelSimulator, request.app.state.parallel_sim)
 
     def get_scenario(request: Request) -> Scenario:
         return cast(Scenario, request.app.state.scenario)
@@ -337,6 +345,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         active_monitor: ReplayMonitor = request.app.state.monitor
         return cast(dict[str, object], active_monitor.status())
 
+    @app.post("/api/parallel/start", response_model=ParallelSimulationState)
+    def start_parallel(
+        request: Request,
+        simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
+    ) -> ParallelSimulationState:
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        if snapshot is None:
+            raise HTTPException(
+                status_code=409,
+                detail="no uploaded energy data; upload CSV first",
+            )
+        return simulator.start(snapshot)
+
+    @app.post("/api/parallel/step", response_model=ParallelStepResponse)
+    def step_parallel(
+        simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
+    ) -> ParallelStepResponse:
+        try:
+            return simulator.step()
+        except ParallelSimError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @app.get("/api/parallel/status", response_model=ParallelStepResponse)
+    def status_parallel(
+        simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
+    ) -> ParallelStepResponse:
+        return simulator.status()
+
     @app.post("/api/external/dispatch", response_model=TaskRecord, status_code=201)
     def dispatch_from_external_data(
         body: ExternalDispatchRequest,
@@ -430,6 +466,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             return demo.execute(task_id, body)
         except DemoWorkflowError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+
+    @app.post(
+        "/api/tasks/{task_id}/rolling-reoptimize",
+        response_model=TaskRecord,
+        status_code=201,
+    )
+    def rolling_reoptimize(
+        task_id: str,
+        body: RollingHorizonRequest,
+        workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
+    ) -> TaskRecord:
+        try:
+            return workflow.rolling_reoptimize(task_id, body)
+        except WorkflowError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409
             raise HTTPException(status_code=status, detail=message) from error

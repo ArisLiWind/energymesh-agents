@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260830-prod-data-boundary" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260830-green-ring-v1" />
   </head>
   <body>
     <main class="app-shell">
@@ -122,110 +122,142 @@
           </div>
         </header>
 
-        <section class="plot-card">
-          <div class="plot-caption">
-            <div class="plot-monitor" aria-label="Monitor state">
-              <i id="monitor-pulse"></i>
-              <span>Monitor <strong id="monitor-state">IDLE</strong></span>
-              <span>Plan <strong id="monitor-plan">V1</strong></span>
-              <span>AgentTeams <strong id="monitor-agents">SLEEPING</strong></span>
-              <span id="monitor-interval">--</span>
-            </div>
-            <div class="monitor-gate">
-              <button id="monitor-approve" type="button" disabled>人工确认 V2</button>
-              <button id="monitor-execute" type="button" disabled>执行已批准计划</button>
-              <button id="monitor-evidence" type="button" disabled>查看证据</button>
-            </div>
-            <span id="task-state">IDLE</span>
+        <div class="control-bar">
+          <div class="monitor-info" aria-label="Monitor state">
+            <i id="monitor-pulse"></i>
+            <span data-i18n="monitorState">Monitor <strong id="monitor-state">IDLE</strong></span>
+            <span data-i18n="monitorPlan">Plan <strong id="monitor-plan">V1</strong></span>
+            <span data-i18n="monitorAgents">AgentTeams <strong id="monitor-agents">SLEEPING</strong></span>
+            <span id="monitor-interval">--</span>
           </div>
-          <div class="visual-grid">
-            <div class="campus">
-              <canvas id="campus-3d" aria-label="EnergyMesh 3D campus sandbox"></canvas>
-              <section class="campus-hud" aria-label="Energy runtime state">
-                <time id="campus-current-time">未接入真实数据</time>
-                <article class="campus-balance">
-                  <span>账户余额</span>
-                  <strong id="campus-balance">--</strong>
-                  <small>生产接入后由账户系统回读</small>
-                </article>
-                <div class="campus-power-row">
-                  <article><span>当前用电功率</span><strong id="campus-load">-- kW</strong></article>
-                  <article><span>当前发电功率</span><strong id="campus-generation">-- kW</strong></article>
-                </div>
-                <article class="campus-storage">
-                  <span>当前储能</span>
-                  <strong id="campus-storage">SOC --%</strong>
-                  <small id="campus-storage-flow">未接入</small>
-                </article>
-                <article>
-                  <span>当前电网购电功率</span>
-                  <strong id="campus-grid-import">-- kW</strong>
-                </article>
-                <article>
-                  <span>今日累计购电量</span>
-                  <strong id="campus-grid-energy">-- kWh</strong>
-                </article>
-              </section>
-              <div class="campus-tools" aria-label="Campus editor tools">
-                <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
-                <button class="campus-add" type="button" data-campus-add="datacenter">+ 数据中心</button>
-                <button class="campus-add" type="button" data-campus-add="factory">+ 厂房</button>
-                <button class="campus-add" type="button" data-campus-add="generation">+ 发电</button>
-                <button class="campus-add" type="button" data-campus-add="storage">+ 储能</button>
-                <button id="campus-delete" type="button">删除选中</button>
-              </div>
-              <div class="campus-hint">拖动建筑到网格位置 · 滚轮缩放 · 空白处旋转视角</div>
-              <article class="asset metric-card" data-anchor="factory"><span>园区用电</span><strong>-- kW</strong><small>等待数据接入</small></article>
-              <article class="asset metric-card" data-anchor="solar"><span>自有发电</span><strong>-- kW</strong><small>等待数据接入</small></article>
-              <article class="asset metric-card critical" data-anchor="storage"><span>储能</span><strong>SOC --%</strong><small>等待数据接入</small></article>
-              <article class="asset warning" data-anchor="grid"><span data-i18n="assetGrid">Grid</span><strong>-- kW</strong><small data-i18n="assetGridNote">import limited</small></article>
-              <article class="asset" data-anchor="charge"><span data-i18n="assetCharge">Charging</span><strong>65 kW</strong><small data-i18n="assetChargeNote">flexible load</small></article>
-              <article class="asset" data-anchor="compute"><span data-i18n="assetCompute">Compute</span><strong>243 kW</strong><small data-i18n="assetComputeNote">critical load</small></article>
+          <div class="monitor-gate">
+            <button id="monitor-approve" type="button" disabled data-i18n="monitorApprove">人工确认 V2</button>
+            <button id="monitor-execute" type="button" disabled data-i18n="monitorExecute">执行已批准计划</button>
+            <button id="monitor-evidence" type="button" disabled data-i18n="monitorEvidence">查看证据</button>
+            <button id="monitor-rolling" type="button" disabled data-i18n="monitorRolling">滚动重优化</button>
+          </div>
+          <span id="task-state">IDLE</span>
+        </div>
+
+        <div class="energy-status">
+          <article class="status-balance"><span data-i18n="statusBalance">账户余额</span><strong id="campus-balance">¥10,000.00</strong><small data-i18n="statusBalanceNote">系统初始值</small></article>
+          <article class="status-load"><span data-i18n="statusLoad">当前用电</span><strong id="campus-load">-- kW</strong><small data-i18n="statusLoadNote">此刻园区所有设备正在消耗的总功率</small></article>
+          <article class="status-gen"><span data-i18n="statusGen">当前发电</span><strong id="campus-generation">-- kW</strong><small data-i18n="statusGenNote">此刻园区自有发电设备的总发电功率</small></article>
+          <article class="status-storage"><span data-i18n="statusStorage">当前储能</span><strong id="campus-storage">--</strong><small id="campus-storage-flow">--</small></article>
+          <article class="status-grid"><span data-i18n="statusGrid">当前购电</span><strong id="campus-grid-import">-- kW</strong><small data-i18n="statusGridNote">此刻从公共电网取电的功率</small></article>
+        </div>
+
+        <div class="energy-main">
+          <div class="campus">
+            <canvas id="campus-3d" aria-label="EnergyMesh 3D campus sandbox"></canvas>
+            <div class="campus-tools" aria-label="Campus editor tools">
+              <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
+              <button class="campus-add" type="button" data-campus-add="datacenter">+ 数据中心</button>
+              <button class="campus-add" type="button" data-campus-add="factory">+ 厂房</button>
+              <button class="campus-add" type="button" data-campus-add="generation">+ 发电</button>
+              <button class="campus-add" type="button" data-campus-add="storage">+ 储能</button>
+              <button id="campus-delete" type="button">删除选中</button>
             </div>
-            <canvas id="scenario-chart" aria-label="Load, PV and tariff chart"></canvas>
+            <div class="campus-hint">拖动建筑到网格位置 · 滚轮缩放 · 空白处旋转视角</div>
+            <article class="asset metric-card" data-anchor="factory"><span data-i18n="assetFactory">园区用电</span><strong id="asset-factory">-- kW</strong><small data-i18n="assetFactoryNote">等待数据接入</small></article>
+            <article class="asset metric-card" data-anchor="solar"><span data-i18n="assetSolar">自有发电</span><strong id="asset-solar">-- kW</strong><small data-i18n="assetSolarNote">等待数据接入</small></article>
+            <article class="asset metric-card critical" data-anchor="storage"><span data-i18n="assetStorageLabel">储能</span><strong id="asset-storage">SOC --%</strong><small data-i18n="assetStorageNote">等待数据接入</small></article>
+            <article class="asset warning" data-anchor="grid"><span data-i18n="assetGrid">Grid</span><strong id="asset-grid">-- kW</strong><small data-i18n="assetGridNote">import limited</small></article>
+          </div>
+        </div>
+
+        <div class="energy-bottom">
+          <div class="energy-today">
+            <h3 data-i18n="todayTitle">今日累计</h3>
+            <div class="today-grid">
+              <article><span data-i18n="todayLoad">今日累计用电</span><strong id="today-load">0.0 度</strong></article>
+              <article><span data-i18n="todayGen">今日累计发电</span><strong id="today-gen">0.0 度</strong></article>
+              <article><span data-i18n="todayGrid">今日累计购电</span><strong id="today-grid">0.0 度</strong></article>
+              <article><span data-i18n="todayCharge">今日储能充电</span><strong id="today-charge">0.0 度</strong></article>
+              <article><span data-i18n="todayDischarge">今日储能放电</span><strong id="today-discharge">0.0 度</strong></article>
+              <article><span data-i18n="todayCost">今日购电支出</span><strong id="today-cost">¥0.00</strong></article>
+            </div>
+          </div>
+          <div class="energy-balance">
+            <h3 data-i18n="balanceTitle">今日园区能源收支</h3>
+            <div class="balance-grid">
+              <div class="balance-in">
+                <h4 data-i18n="balanceInTitle">今日总用电</h4>
+                <div class="balance-amount"><strong id="balance-total-load">0.0</strong><span data-i18n="unitDegree">度</span></div>
+                <p data-i18n="balanceInFrom">其中：</p>
+                <ul>
+                  <li><span data-i18n="fromGen">自有发电直接供电</span><strong id="balance-from-gen">0.0 度</strong></li>
+                  <li><span data-i18n="fromStorage">储能放电供电</span><strong id="balance-from-storage">0.0 度</strong></li>
+                  <li><span data-i18n="fromGrid">公共电网购电</span><strong id="balance-from-grid">0.0 度</strong></li>
+                </ul>
+              </div>
+              <div class="balance-out">
+                <h4 data-i18n="balanceOutTitle">今日自有发电去向</h4>
+                <ul>
+                  <li><span data-i18n="toLoad">直接供园区使用</span><strong id="balance-to-load">0.0 度</strong></li>
+                  <li><span data-i18n="toStorage">给储能充电</span><strong id="balance-to-storage">0.0 度</strong></li>
+                  <li><span data-i18n="toGrid" id="balance-export-label">上网电量</span><strong id="balance-to-grid">0.0 度</strong></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="cost-compare" aria-label="Parallel simulation cost comparison">
+          <header>
+            <h2>平行时空对比 · Agent Teams 决策效果</h2>
+            <span id="parallel-status">等待数据</span>
+          </header>
+          <div class="cost-chart-layout">
+            <div class="cost-chart-wrap">
+              <canvas id="cost-chart" aria-label="Cumulative cost comparison: baseline vs Agent optimized"></canvas>
+              <div class="chart-legend">
+                <span class="legend-baseline">— 原始策略累计电费</span>
+                <span class="legend-optimized">— Agent 优化累计电费</span>
+                <span class="legend-savings">▩ 节省区间</span>
+                <span class="legend-reopt">◆ 计划重优化</span>
+              </div>
+            </div>
+            <div class="cost-metrics">
+              <article class="compare-a">
+                <span>时空 A · 原始策略</span>
+                <strong id="cost-baseline">¥0.00</strong>
+              </article>
+              <article class="compare-b">
+                <span>时空 B · Agent 优化</span>
+                <strong id="cost-optimized">¥0.00</strong>
+              </article>
+              <article class="compare-save">
+                <span>累计节省</span>
+                <strong id="cost-savings">¥0.00</strong>
+                <small id="savings-percent">节省 0%</small>
+              </article>
+              <div class="deviation-metrics">
+                <span>预测偏差</span>
+                <div><label>PV</label><strong id="deviation-pv">--%</strong></div>
+                <div><label>负荷</label><strong id="deviation-load">--%</strong></div>
+              </div>
+              <div class="reopt-metrics">
+                <span>计划失效重优化</span>
+                <strong id="reopt-count">0 次</strong>
+                <small id="reopt-reason">--</small>
+              </div>
+            </div>
+          </div>
+          <div class="compare-note">
+            <p>Timeline A：原始策略累计电费；Timeline B：Agent 优化累计电费。偏差超阈值时自动重优化。</p>
           </div>
         </section>
 
-        <section class="station-panel" aria-label="Station overview">
-          <div class="station-tabs">
-            <button class="active" type="button" data-station-tab="overview">电站概览</button>
-            <button type="button" data-station-tab="devices">监控设备</button>
+        <section class="power-chart-section" aria-label="Real-time power curves">
+          <header><h2>实时功率曲线 · 园区用电/发电/购电</h2></header>
+          <div class="power-chart-wrap">
+            <canvas id="power-chart"></canvas>
           </div>
-          <div class="station-body" data-station-view="overview">
-            <div class="station-kpis">
-              <article><span>总功率</span><strong>464.32 kW</strong></article>
-              <article><span>日用电量</span><strong>2,726.00 kWh</strong></article>
-              <article><span>月用电量</span><strong>31.88 MWh</strong></article>
-              <article><span>总用电量</span><strong>13,593.96 MWh</strong></article>
-            </div>
-            <div class="station-alert">
-              <span>监控提醒</span>
-              <strong>系统正常运行</strong>
-              <small>能源收益 ¥732,202.79</small>
-            </div>
-          </div>
-          <div class="station-body" data-station-view="devices" hidden>
-            <div class="station-equipment">
-              <button class="active" type="button" data-device-id="pcs">储能系统</button>
-              <button type="button" data-device-id="pv">光伏</button>
-              <button type="button" data-device-id="dg">发电机</button>
-              <button type="button" data-device-view-mode="history">历史数据</button>
-              <button type="button" data-device-view-mode="alerts">告警记录</button>
-              <button type="button" data-device-view-mode="ops">操作记录</button>
-            </div>
-            <div class="station-signals">
-              <button class="active" type="button" data-signal-mode="power">功率</button>
-              <button type="button" data-signal-mode="energy">发电量</button>
-              <button type="button" data-signal-mode="temperature">温度</button>
-              <button type="button" data-signal-mode="soc">SOC</button>
-              <button type="button" data-signal-mode="runtime">运行信息</button>
-            </div>
-            <div class="device-table">
-              <button class="active" type="button" data-device-id="pcs"><span>PCS-01</span><strong>正常</strong><small>0.00 kW / SOC 55%</small></button>
-              <button type="button" data-device-id="pv"><span>PV-Array-02</span><strong>低于预测</strong><small>335 kW / -18.6%</small></button>
-              <button type="button" data-device-id="dg"><span>DG-01</span><strong>待命</strong><small>457.44 kW 可用</small></button>
-            </div>
-            <article id="device-detail" class="device-detail" aria-label="Device runtime detail"></article>
+          <div class="power-chart-legend">
+            <span class="legend-load">■ 园区用电 (kW)</span>
+            <span class="legend-pv">■ 光伏发电 (kW)</span>
+            <span class="legend-grid">■ 电网购电 (kW)</span>
           </div>
         </section>
 
@@ -364,9 +396,14 @@
         </div>
         <div class="gateway-body connector-copy">
           <input id="energy-csv-file" type="file" accept=".csv,text/csv" hidden />
-          <div class="connector-choice">
-            <button id="connect-energy-source" class="primary" type="button">接入园区系统数据</button>
+          <button id="connect-energy-source" class="full-width" type="button">接入园区系统数据</button>
+          <div class="upload-section">
             <button id="upload-energy-data" class="secondary" type="button">上传历史数据测试</button>
+            <div class="speed-toggle" id="speed-toggle">
+              <span>回放速度：</span>
+              <button id="speed-normal" class="active" type="button">实时（15分钟/秒）</button>
+              <button id="speed-virtual" type="button">快速（1秒/步）</button>
+            </div>
           </div>
           <div class="connector-status">
             <span id="monitor-source-note">尚未加载真实数据</span>
@@ -384,6 +421,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260830-prod-data-boundary"></script>
+    <script type="module" src="/static/app.js?v=20260830-green-ring-v1"></script>
   </body>
 </html>

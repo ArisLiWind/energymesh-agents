@@ -76,6 +76,25 @@ class ForecastPoint(BaseModel):
     battery_temperature_c: float = Field(default=27, ge=-30, le=100)
     transformer_temperature_c: float = Field(default=55, ge=-30, le=150)
     transformer_redundant_temperature_c: float = Field(default=54, ge=-30, le=150)
+    # Uncertainty bands for robust rolling-horizon re-optimization
+    load_kw_uncertainty: float = Field(default=0.08, ge=0, le=0.5)
+    pv_kw_uncertainty: float = Field(default=0.18, ge=0, le=0.6)
+    load_kw_upper: float | None = Field(default=None, ge=0)
+    load_kw_lower: float | None = Field(default=None, ge=0)
+    pv_kw_upper: float | None = Field(default=None, ge=0)
+    pv_kw_lower: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def compute_uncertainty_bounds(self) -> ForecastPoint:
+        if self.load_kw_upper is None:
+            self.load_kw_upper = self.load_kw * (1 + self.load_kw_uncertainty)
+        if self.load_kw_lower is None:
+            self.load_kw_lower = self.load_kw * max(0, 1 - self.load_kw_uncertainty)
+        if self.pv_kw_upper is None:
+            self.pv_kw_upper = self.pv_kw * (1 + self.pv_kw_uncertainty)
+        if self.pv_kw_lower is None:
+            self.pv_kw_lower = self.pv_kw * max(0, 1 - self.pv_kw_uncertainty)
+        return self
 
 
 class Scenario(BaseModel):
@@ -466,6 +485,38 @@ class ReoptimizationRequest(BaseModel):
     simulate_execution_deviation: bool = False
 
 
+class RollingHorizonRequest(BaseModel):
+    """Request to re-optimize only the remaining horizon from the current interval onward."""
+
+    current_interval: int = Field(ge=0, le=95)
+    actual_soc: float = Field(ge=0, le=1)
+    robustness_mode: str = Field(
+        default="worst_case",
+        pattern="^(worst_case|expected_value|ignore)$",
+    )
+    trigger: str = Field(default="rolling_horizon_monitor_step", min_length=2, max_length=120)
+
+
+class RollingHorizonResponse(BaseModel):
+    """Result of rolling-horizon re-optimization with uncertainty-aware dispatch."""
+
+    task_id: str
+    parent_task_id: str
+    current_interval: int
+    actual_soc: float
+    robustness_mode: str
+    remaining_intervals: int
+    original_plan_id: str | None
+    new_plan_id: str
+    selected_profile: str
+    baseline_cost_yuan: float
+    new_cost_yuan: float
+    improvement_yuan: float
+    uncertainty_enforced: bool
+    evidence_sha256: str | None = None
+    trace: list[TraceEvent] = Field(default_factory=list)
+
+
 class AgentModelConfigRequest(BaseModel):
     base_url: str = Field(min_length=8, max_length=500)
     api_key: str | None = Field(default=None, max_length=500)
@@ -552,3 +603,100 @@ class RuntimeToolCall(BaseModel):
     input_payload: dict[str, Any]
     output_payload: dict[str, Any]
     created_at: datetime
+
+
+class IntervalHistoryPoint(BaseModel):
+    """Per-interval data for cost comparison chart and deviation tracking."""
+
+    interval: int
+    timestamp: str = ""
+    tariff_yuan_per_kwh: float = 0.0
+    # Cost data
+    baseline_interval_cost_yuan: float = 0.0
+    optimized_interval_cost_yuan: float = 0.0
+    baseline_cumulative_cost_yuan: float = 0.0
+    optimized_cumulative_cost_yuan: float = 0.0
+    savings_cumulative_yuan: float = 0.0
+    # Power data
+    actual_load_kw: float = 0.0
+    actual_pv_kw: float = 0.0
+    actual_grid_kw: float = 0.0
+    optimized_grid_kw: float = 0.0
+    actual_soc: float = 0.0
+    # Forecast deviation
+    pv_forecast_kw: float = 0.0
+    load_forecast_kw: float = 0.0
+    pv_deviation_percent: float = 0.0
+    load_deviation_percent: float = 0.0
+    # Re-optimization tracking
+    reoptimized: bool = False
+    plan_invalidated: bool = False
+    reoptimize_reason: str = ""
+    new_plan_id: str | None = None
+
+
+class ReoptimizationEvent(BaseModel):
+    interval: int
+    timestamp: str
+    reason: str
+    old_plan_id: str | None = None
+    new_plan_id: str | None = None
+    pv_deviation_percent: float = 0.0
+    load_deviation_percent: float = 0.0
+    soc_deviation_percent: float = 0.0
+
+
+class ParallelSimulationState(BaseModel):
+    """Tracks Timeline A (baseline / actual) vs Timeline B (Agent optimized)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    running: bool = False
+    cursor: int = 0
+    source: str = ""
+    snapshot: ExternalDataSnapshot | None = None
+    optimized_plan: DispatchPlan | None = None
+    optimized_task: TaskRecord | None = None
+    # Timeline A: actual data from telemetry
+    baseline_cumulative_cost_yuan: float = 0.0
+    baseline_cumulative_grid_kwh: float = 0.0
+    # Timeline B: cost under Agent optimized dispatch
+    optimized_cumulative_cost_yuan: float = 0.0
+    optimized_cumulative_grid_kwh: float = 0.0
+    # Derived
+    savings_yuan: float = 0.0
+    savings_percent: float = 0.0
+    # Chart data
+    interval_history: list[IntervalHistoryPoint] = Field(default_factory=list)
+    reoptimization_events: list[ReoptimizationEvent] = Field(default_factory=list)
+    total_reoptimizations: int = 0
+    plans_invalidated: int = 0
+    # Trace
+    agentteams_trace: list[dict[str, Any]] = Field(default_factory=list)
+    last_event: str = ""
+    speed_mode: str = Field(default="virtual", pattern="^(normal|virtual)$")
+    interval_ms: int = 1000
+
+
+class ParallelStepResponse(BaseModel):
+    cursor: int
+    running: bool
+    baseline_cost_yuan: float
+    optimized_cost_yuan: float
+    savings_yuan: float
+    savings_percent: float
+    baseline_grid_kwh: float
+    optimized_grid_kwh: float
+    current_load_kw: float
+    current_pv_kw: float
+    current_grid_kw: float
+    optimized_grid_kw: float
+    current_soc: float
+    agentteams_active: bool
+    task_state: str
+    event: str
+    interval_history: list[IntervalHistoryPoint] = Field(default_factory=list)
+    reoptimization_events: list[ReoptimizationEvent] = Field(default_factory=list)
+    total_reoptimizations: int = 0
+    plans_invalidated: int = 0
+    agentteams_trace: list[dict[str, Any]] = Field(default_factory=list)

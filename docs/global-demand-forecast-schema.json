@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EnergyMesh 全球电力需求预测分析数据模型",
+  "description": "用于前端渲染全球发电量历史折线(实线)与未来20年预测趋势(虚线)的数据结构模板。支持节点点击缩放及多情景对比。",
+  "version": "1.0.0-draft",
+
+  "metadata": {
+    "chartId": "global-electricity-demand-forecast",
+    "title": "全球电力需求增长趋势 (2000–2045)",
+    "subtitle": "基于IEA、Ember等机构历史数据及AI驱动的电力需求预测模型",
+    "unit": "TWh",
+    "dataSource": "IEA Electricity 2025, Ember Global Electricity Review, IEA World Energy Outlook 2025",
+    "lastUpdated": "2026-07-28",
+    "timezone": "Asia/Shanghai",
+    "locale": "zh-CN"
+  },
+
+  "axes": {
+    "x": {
+      "field": "year",
+      "label": "年份",
+      "type": "linear",
+      "domain": [2000, 2045],
+      "tickInterval": 5,
+      "gridLineStyle": "dashed",
+      "gridLineColor": "#333a37"
+    },
+    "y": {
+      "field": "valueTWh",
+      "label": "电力需求 (TWh)",
+      "type": "linear",
+      "domain": [10000, 55000],
+      "tickInterval": 5000,
+      "gridLineStyle": "solid",
+      "gridLineColor": "#333a37",
+      "formatPrefix": ""
+    }
+  },
+
+  "series": [
+    {
+      "id": "historical",
+      "label": "历史实际数据",
+      "description": "2000–2025年全球电力需求实际统计值",
+      "lineStyle": "solid",
+      "lineWidth": 2.5,
+      "lineColor": "#bbf451",
+      "pointRadius": 4,
+      "pointColor": "#bbf451",
+      "pointHoverRadius": 7,
+      "areaFill": true,
+      "areaFillColor": "rgba(187,244,81,0.08)",
+      "data": [
+        { "year": 2000, "valueTWh": 13194, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2001, "valueTWh": 13428, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2002, "valueTWh": 13827, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2003, "valueTWh": 14307, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2004, "valueTWh": 14904, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2005, "valueTWh": 15444, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2006, "valueTWh": 16066, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2007, "valueTWh": 16829, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2008, "valueTWh": 17159, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2009, "valueTWh": 17142, "confidence": "confirmed", "source": "IEA", "annotation": "全球金融危机" },
+        { "year": 2010, "valueTWh": 18449, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2011, "valueTWh": 19100, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2012, "valueTWh": 19546, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2013, "valueTWh": 20088, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2014, "valueTWh": 20582, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2015, "valueTWh": 20882, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2016, "valueTWh": 21356, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2017, "valueTWh": 21985, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2018, "valueTWh": 22706, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2019, "valueTWh": 22952, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2020, "valueTWh": 22646, "confidence": "confirmed", "source": "IEA", "annotation": "新冠疫情" },
+        { "year": 2021, "valueTWh": 24041, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2022, "valueTWh": 24765, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2023, "valueTWh": 25420, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2024, "valueTWh": 26510, "confidence": "confirmed", "source": "IEA" },
+        { "year": 2025, "valueTWh": 27600, "confidence": "estimated", "source": "IEA Mid-Year 2025" }
+      ]
+    },
+    {
+      "id": "forecast-baseline",
+      "label": "基准预测 (STEPS)",
+      "description": "基于IEA既定政策情景(Stated Policies Scenario)的基线预测",
+      "lineStyle": "dashed",
+      "lineWidth": 2.0,
+      "lineColor": "#67d9cf",
+      "dashPattern": [8, 4],
+      "pointRadius": 3,
+      "pointColor": "#67d9cf",
+      "pointHoverRadius": 6,
+      "areaFill": false,
+      "data": [
+        { "year": 2026, "valueTWh": 28550, "confidence": "projected", "growthRate": 0.034 },
+        { "year": 2027, "valueTWh": 29500, "confidence": "projected", "growthRate": 0.033 },
+        { "year": 2028, "valueTWh": 30420, "confidence": "projected", "growthRate": 0.031 },
+        { "year": 2029, "valueTWh": 31300, "confidence": "projected", "growthRate": 0.029 },
+        { "year": 2030, "valueTWh": 32150, "confidence": "projected", "growthRate": 0.027 },
+        { "year": 2031, "valueTWh": 32950, "confidence": "projected", "growthRate": 0.025 },
+        { "year": 2032, "valueTWh": 33700, "confidence": "projected", "growthRate": 0.023 },
+        { "year": 2033, "valueTWh": 34400, "confidence": "projected", "growthRate": 0.021 },
+        { "year": 2034, "valueTWh": 35080, "confidence": "projected", "growthRate": 0.020 },
+        { "year": 2035, "valueTWh": 35750, "confidence": "projected", "growthRate": 0.019 },
+        { "year": 2036, "valueTWh": 36400, "confidence": "projected", "growthRate": 0.018 },
+        { "year": 2037, "valueTWh": 37040, "confidence": "projected", "growthRate": 0.018 },
+        { "year": 2038, "valueTWh": 37670, "confidence": "projected", "growthRate": 0.017 },
+        { "year": 2039, "valueTWh": 38300, "confidence": "projected", "growthRate": 0.017 },
+        { "year": 2040, "valueTWh": 38920, "confidence": "projected", "growthRate": 0.016 },
+        { "year": 2041, "valueTWh": 39520, "confidence": "projected", "growthRate": 0.015 },
+        { "year": 2042, "valueTWh": 40100, "confidence": "projected", "growthRate": 0.015 },
+        { "year": 2043, "valueTWh": 40670, "confidence": "projected", "growthRate": 0.014 },
+        { "year": 2044, "valueTWh": 41230, "confidence": "projected", "growthRate": 0.014 },
+        { "year": 2045, "valueTWh": 41780, "confidence": "projected", "growthRate": 0.013 }
+      ]
+    },
+    {
+      "id": "forecast-ai-surge",
+      "label": "AI加速情景 (高增长)",
+      "description": "考虑AI与数据中心爆发式增长的激进预测，参考ChatGPT、数据中心扩张趋势",
+      "lineStyle": "dashed",
+      "lineWidth": 2.0,
+      "lineColor": "#f2bd5b",
+      "dashPattern": [4, 4],
+      "pointRadius": 3,
+      "pointColor": "#f2bd5b",
+      "pointHoverRadius": 6,
+      "areaFill": true,
+      "areaFillColor": "rgba(242,189,91,0.05)",
+      "data": [
+        { "year": 2026, "valueTWh": 28900, "confidence": "speculative", "growthRate": 0.047 },
+        { "year": 2027, "valueTWh": 30300, "confidence": "speculative", "growthRate": 0.048 },
+        { "year": 2028, "valueTWh": 31700, "confidence": "speculative", "growthRate": 0.046 },
+        { "year": 2029, "valueTWh": 33100, "confidence": "speculative", "growthRate": 0.044 },
+        { "year": 2030, "valueTWh": 34500, "confidence": "speculative", "growthRate": 0.042 },
+        { "year": 2031, "valueTWh": 35800, "confidence": "speculative", "growthRate": 0.038 },
+        { "year": 2032, "valueTWh": 37100, "confidence": "speculative", "growthRate": 0.036 },
+        { "year": 2033, "valueTWh": 38400, "confidence": "speculative", "growthRate": 0.035 },
+        { "year": 2034, "valueTWh": 39700, "confidence": "speculative", "growthRate": 0.034 },
+        { "year": 2035, "valueTWh": 41000, "confidence": "speculative", "growthRate": 0.033 },
+        { "year": 2036, "valueTWh": 42300, "confidence": "speculative", "growthRate": 0.032 },
+        { "year": 2037, "valueTWh": 43600, "confidence": "speculative", "growthRate": 0.031 },
+        { "year": 2038, "valueTWh": 44900, "confidence": "speculative", "growthRate": 0.030 },
+        { "year": 2039, "valueTWh": 46200, "confidence": "speculative", "growthRate": 0.029 },
+        { "year": 2040, "valueTWh": 47500, "confidence": "speculative", "growthRate": 0.028 },
+        { "year": 2041, "valueTWh": 48800, "confidence": "speculative", "growthRate": 0.027 },
+        { "year": 2042, "valueTWh": 50000, "confidence": "speculative", "growthRate": 0.025 },
+        { "year": 2043, "valueTWh": 51200, "confidence": "speculative", "growthRate": 0.024 },
+        { "year": 2044, "valueTWh": 52300, "confidence": "speculative", "growthRate": 0.022 },
+        { "year": 2045, "valueTWh": 53300, "confidence": "speculative", "growthRate": 0.020 }
+      ]
+    },
+    {
+      "id": "forecast-green-transition",
+      "label": "绿色转型情景 (深度电气化)",
+      "description": "全球加速电气化转型、可再生能源占比突破60%的乐观情景",
+      "lineStyle": "dashed",
+      "lineWidth": 1.8,
+      "lineColor": "#69e66e",
+      "dashPattern": [6, 3],
+      "pointRadius": 2.5,
+      "pointColor": "#69e66e",
+      "pointHoverRadius": 5,
+      "areaFill": false,
+      "data": [
+        { "year": 2026, "valueTWh": 28700, "confidence": "speculative" },
+        { "year": 2027, "valueTWh": 29900, "confidence": "speculative" },
+        { "year": 2028, "valueTWh": 31200, "confidence": "speculative" },
+        { "year": 2029, "valueTWh": 32600, "confidence": "speculative" },
+        { "year": 2030, "valueTWh": 34000, "confidence": "speculative" },
+        { "year": 2031, "valueTWh": 35400, "confidence": "speculative" },
+        { "year": 2032, "valueTWh": 36900, "confidence": "speculative" },
+        { "year": 2033, "valueTWh": 38500, "confidence": "speculative" },
+        { "year": 2034, "valueTWh": 40200, "confidence": "speculative" },
+        { "year": 2035, "valueTWh": 41900, "confidence": "speculative" },
+        { "year": 2036, "valueTWh": 43500, "confidence": "speculative" },
+        { "year": 2037, "valueTWh": 45000, "confidence": "speculative" },
+        { "year": 2038, "valueTWh": 46400, "confidence": "speculative" },
+        { "year": 2039, "valueTWh": 47700, "confidence": "speculative" },
+        { "year": 2040, "valueTWh": 49000, "confidence": "speculative" },
+        { "year": 2041, "valueTWh": 50200, "confidence": "speculative" },
+        { "year": 2042, "valueTWh": 51400, "confidence": "speculative" },
+        { "year": 2043, "valueTWh": 52600, "confidence": "speculative" },
+        { "year": 2044, "valueTWh": 53800, "confidence": "speculative" },
+        { "year": 2045, "valueTWh": 54900, "confidence": "speculative" }
+      ]
+    }
+  ],
+
+  "breakdownBySource": {
+    "description": "按发电来源的历史与预测分解，用于堆叠面积图或分组柱状图",
+    "categories": [
+      { "id": "coal", "label": "煤电", "color": "#4a4a4a" },
+      { "id": "naturalGas", "label": "天然气", "color": "#8f9a94" },
+      { "id": "nuclear", "label": "核电", "color": "#ef776f" },
+      { "id": "hydro", "label": "水电", "color": "#69a2e6" },
+      { "id": "wind", "label": "风电", "color": "#67d9cf" },
+      { "id": "solar", "label": "光伏", "color": "#f2bd5b" },
+      { "id": "otherRenewables", "label": "其他可再生", "color": "#69e66e" },
+      { "id": "other", "label": "其他", "color": "#b0b8b3" }
+    ],
+    "data": [
+      {
+        "year": 2025,
+        "totalTWh": 27600,
+        "breakdown": {
+          "coal": 9660, "naturalGas": 6072, "nuclear": 2760,
+          "hydro": 4140, "wind": 2208, "solar": 1656,
+          "otherRenewables": 552, "other": 552
+        }
+      },
+      {
+        "year": 2030,
+        "totalTWh": 32150,
+        "breakdown": {
+          "coal": 9645, "naturalGas": 6430, "nuclear": 3215,
+          "hydro": 4501, "wind": 3215, "solar": 3215,
+          "otherRenewables": 964, "other": 965
+        }
+      },
+      {
+        "year": 2035,
+        "totalTWh": 35750,
+        "breakdown": {
+          "coal": 8938, "naturalGas": 6435, "nuclear": 3575,
+          "hydro": 4648, "wind": 3933, "solar": 4648,
+          "otherRenewables": 1788, "other": 1787
+        }
+      },
+      {
+        "year": 2040,
+        "totalTWh": 38920,
+        "breakdown": {
+          "coal": 7784, "naturalGas": 6227, "nuclear": 3892,
+          "hydro": 4670, "wind": 4670, "solar": 5837,
+          "otherRenewables": 2335, "other": 3503
+        }
+      },
+      {
+        "year": 2045,
+        "totalTWh": 41780,
+        "breakdown": {
+          "coal": 6267, "naturalGas": 5431, "nuclear": 4178,
+          "hydro": 4596, "wind": 5431, "solar": 7103,
+          "otherRenewables": 3342, "other": 5431
+        }
+      }
+    ]
+  },
+
+  "breakdownByRegion": {
+    "description": "按区域的需求分解，用于区域对比图",
+    "regions": [
+      { "id": "china", "label": "中国", "color": "#ef776f" },
+      { "id": "india", "label": "印度", "color": "#f2bd5b" },
+      { "id": "us", "label": "美国", "color": "#67d9cf" },
+      { "id": "eu", "label": "欧盟", "color": "#69a2e6" },
+      { "id": "sea", "label": "东南亚", "color": "#69e66e" },
+      { "id": "africa", "label": "非洲", "color": "#c792ea" },
+      { "id": "others", "label": "其他地区", "color": "#8f9a94" }
+    ],
+    "data": [
+      {
+        "year": 2025,
+        "totalTWh": 27600,
+        "breakdown": {
+          "china": 9108, "india": 1849, "us": 4361,
+          "eu": 3159, "sea": 1159, "africa": 828, "others": 7136
+        }
+      },
+      {
+        "year": 2030,
+        "totalTWh": 32150,
+        "breakdown": {
+          "china": 10288, "india": 2572, "us": 4662,
+          "eu": 3344, "sea": 1608, "africa": 1125, "others": 8551
+        }
+      },
+      {
+        "year": 2035,
+        "totalTWh": 35750,
+        "breakdown": {
+          "china": 11083, "india": 3218, "us": 4862,
+          "eu": 3504, "sea": 1966, "africa": 1430, "others": 9687
+        }
+      },
+      {
+        "year": 2040,
+        "totalTWh": 38920,
+        "breakdown": {
+          "china": 11676, "india": 3892, "us": 5059,
+          "eu": 3697, "sea": 2335, "africa": 1751, "others": 10510
+        }
+      },
+      {
+        "year": 2045,
+        "totalTWh": 41780,
+        "breakdown": {
+          "china": 12116, "india": 4596, "us": 5223,
+          "eu": 3886, "sea": 2716, "africa": 2089, "others": 11155
+        }
+      }
+    ]
+  },
+
+  "keyDrivers": {
+    "description": "主要增长驱动力标注，在图表中用竖线或标记点展示",
+    "drivers": [
+      { "year": 2000, "label": "互联网泡沫", "type": "event", "impact": "neutral" },
+      { "year": 2008, "label": "全球金融危机", "type": "event", "impact": "negative" },
+      { "year": 2015, "label": "巴黎协定签署", "type": "policy", "impact": "positive" },
+      { "year": 2020, "label": "新冠疫情", "type": "event", "impact": "negative" },
+      { "year": 2022, "label": "ChatGPT发布", "type": "technology", "impact": "positive" },
+      { "year": 2025, "label": "AI算力大规模部署", "type": "technology", "impact": "positive" },
+      { "year": 2027, "label": "电动汽车保有量突破2亿", "type": "technology", "impact": "positive" },
+      { "year": 2030, "label": "全球碳中和目标里程碑", "type": "policy", "impact": "positive" },
+      { "year": 2033, "label": "数据中心电力占比超10%", "type": "technology", "impact": "positive" },
+      { "year": 2035, "label": "可再生能源占比达50%节点", "type": "milestone", "impact": "positive" },
+      { "year": 2040, "label": "电气化率突破40%", "type": "milestone", "impact": "positive" },
+      { "year": 2045, "label": "全球电网互联互通初步建成", "type": "milestone", "impact": "positive" }
+    ]
+  },
+
+  "interaction": {
+    "zoom": {
+      "enabled": true,
+      "mode": "node-click",
+      "description": "点击折线节点触发放大，显示该年份前后的详细区间",
+      "defaultRange": 10,
+      "minRange": 3,
+      "maxRange": 45,
+      "snapToYear": true,
+      "animationDurationMs": 400
+    },
+    "tooltip": {
+      "enabled": true,
+      "template": "{year}年: {valueTWh} TWh (年增长率: {growthRate})",
+      "showConfidence": true,
+      "showSource": true
+    },
+    "legend": {
+      "position": "top-right",
+      "interactive": true,
+      "toggleSeries": true
+    },
+    "annotations": {
+      "showKeyDrivers": true,
+      "driverMarkerStyle": "vertical-dashed-line",
+      "driverLabelPosition": "top"
+    }
+  },
+
+  "visualConfig": {
+    "chartType": "multiSeriesLine",
+    "foregroundColor": "#edf3ee",
+    "backgroundColor": "#111513",
+    "panelBackground": "#202624",
+    "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+    "splitLine": {
+      "enabled": true,
+      "historicalAfter": 2025,
+      "splitLabelLeft": "历史数据 (实线)",
+      "splitLabelRight": "预测数据 (虚线)"
+    },
+    "responsiveness": {
+      "breakpoints": {
+        "desktop": { "minWidth": 1120, "fontSize": 12, "pointRadius": 4 },
+        "tablet": { "minWidth": 768, "fontSize": 10, "pointRadius": 3 },
+        "mobile": { "minWidth": 320, "fontSize": 9, "pointRadius": 2 }
+      }
+    }
+  },
+
+  "frontendIntegration": {
+    "description": "前端渲染引擎的数据消费约定",
+    "dataBinding": {
+      "seriesField": "series[].data",
+      "xField": "year",
+      "yField": "valueTWh",
+      "lineStyleField": "series[].lineStyle",
+      "lineColorField": "series[].lineColor",
+      "dashPatternField": "series[].dashPattern"
+    },
+    "nodeClickHandler": {
+      "eventName": "node:click",
+      "payload": {
+        "seriesId": "string",
+        "year": "number",
+        "valueTWh": "number",
+        "confidence": "string",
+        "nearbyRange": "number[]"
+      },
+      "action": "zoomToRange"
+    },
+    "renderLibrary": "agnostic",
+    "suggestedLibraries": ["ECharts", "D3.js", "Chart.js", "Observable Plot"],
+    "svgFallback": false
+  }
+}

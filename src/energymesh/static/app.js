@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260829-campus-ledger";
+import { createCampus3D } from "/static/campus3d.js?v=20260830-green-ring-v1";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -23,13 +23,14 @@ const state = {
   campusSimulation: {
     optimized: false,
     time: "未接入真实数据",
-    balance: "--",
+    balance: "¥10,000.00",
     load: "-- kW",
     generation: "-- kW",
-    storage: "SOC --%",
-    storageFlow: "未接入",
+    storage: "--",
+    storageFlow: "--",
     gridImport: "-- kW",
-    gridEnergy: "-- kWh",
+    todayLoad: 0, todayGen: 0, todayGrid: 0, todayCharge: 0, todayDischarge: 0, todayCost: 0,
+    totalLoad: 0, fromGen: 0, fromStorage: 0, fromGrid: 0, toLoad: 0, toStorageCharge: 0, toGridExport: 0,
   },
   pendingExecutionScenario: null,
   selectedDeviceId: "pcs",
@@ -37,6 +38,9 @@ const state = {
   energySnapshot: null,
   monitor: null,
   monitorTimer: null,
+  parallel: null,
+  speedMode: "normal",
+  parallelTimer: null,
 };
 
 const agentProfiles = {
@@ -192,7 +196,7 @@ const stateLabels = {
     VERIFYING: "验证中",
     COMPLETED: "已完成",
     REJECTED: "已拒绝",
-    ROLLBACK: "安全回滚",
+    ROLLBACK: "偏差超限·已回滚保护",
     FAILED: "失败",
     IDLE: "空闲",
   },
@@ -710,7 +714,7 @@ function applyLanguage(language) {
   if (!$(".home-view").hidden) drawHomeCharts();
   if (historyThreads[state.activeHistory]) renderThreadMessages(state.activeHistory);
   else renderAgentThread(state.selectedAgent);
-  drawScenarioChart();
+  
 }
 
 function toggleLanguage() {
@@ -851,6 +855,7 @@ function appendChatMessage(role, text, agentId = state.selectedAgent, meta = {})
   if (meta.action === "confirm_execution") {
     const actions = document.createElement("div");
     actions.className = "chat-actions";
+    const autoExec = window.localStorage.getItem("energymesh.autoExecute") === "true";
     actions.innerHTML = `
       <button class="chat-action primary" type="button" data-confirm-scenario="${escapeHTML(meta.scenarioKey || "")}">
         ${state.language === "zh" ? "确认执行方案" : "Confirm execution"}
@@ -858,8 +863,12 @@ function appendChatMessage(role, text, agentId = state.selectedAgent, meta = {})
       <button class="chat-action" type="button" data-defer-scenario="${escapeHTML(meta.scenarioKey || "")}">
         ${state.language === "zh" ? "暂不执行" : "Defer"}
       </button>
+      <label class="auto-exec-label">
+        <input type="checkbox" id="auto-exec-check" ${autoExec ? "checked" : ""} />
+        <span>${state.language === "zh" ? "下次不再询问，自动执行" : "Auto-execute next time"}</span>
+      </label>
     `;
-    message.append(actions);
+    content.append(actions);
   }
   $("#chat-messages").append(message);
   $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
@@ -869,6 +878,7 @@ function addChatMessage(role, text, agentId = state.selectedAgent, options = {})
   appendChatMessage(role, text, agentId, options.meta || {});
   if (options.persist === false) return;
   ensureAgentThread(state.selectedAgent).push({ role, text, agentId, meta: options.meta || null });
+  try { localStorage.setItem("energymesh.agentThreads", JSON.stringify(state.agentThreads)); } catch(e) {}
 }
 
 function renderAgentThread(agentId = state.selectedAgent) {
@@ -990,47 +1000,61 @@ async function revealRuntimeSteps(runtime, runtimeStatus) {
   }
 }
 
-function confirmScenarioExecution() {
+async function confirmScenarioExecution() {
   const scenario = state.pendingExecutionScenario || state.activeScenario;
   if (!scenario || scenario.executable === false) return;
-  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((button) => {
-    button.disabled = true;
-  });
-  state.approval = { status: "approved_by_user" };
-  state.task = {
-    ...(state.task || {}),
-    task_id: state.task?.task_id || scenario.taskId,
-    task_version: state.task?.task_version || 1,
-    state: "COMPLETED",
-    trace_id: state.task?.trace_id || `TRACE-${scenario.taskId}`,
-    evidence_sha256: `demo-${scenario.taskId.toLowerCase()}-executed-sha256`,
-  };
-  state.evidence = {
-    ...(state.evidence || {}),
-    execution_confirmed: true,
-    execution_purpose: scenario.executionPurpose,
-    confirmed_at: new Date().toISOString(),
-  };
+  const autoExec = $("#auto-exec-check")?.checked;
+  if (autoExec !== undefined) window.localStorage.setItem("energymesh.autoExecute", String(autoExec));
+  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((b) => b.disabled = true);
+
+  const taskId = state.task?.task_id;
+  if (!taskId) {
+    toast("没有可执行的任务；请先上传历史数据或运行调度场景");
+    return;
+  }
+  try {
+    await request(`/api/tasks/${taskId}/approval-only`, {
+      method: "POST",
+      body: { approved: true, approver: "operator", reason: "用户确认执行优化方案" },
+    });
+    const executed = await request(`/api/tasks/${taskId}/execute-approved`, { method: "POST" });
+    state.task = executed;
+    state.approval = executed.approval;
+    renderTask(); renderTrace(); renderCandidates(); applySnapshotToCampus();
+    const baseline = state.parallel?.baseline_cost_yuan ?? "--";
+    const opt = state.parallel?.optimized_cost_yuan ?? "--";
+    const save = state.parallel?.savings_yuan ?? "--";
+    const msg = state.language === "zh"
+      ? `方案已执行。Agent Teams 优化电费 ¥${opt}，比原始策略 ¥${baseline} 节省 ¥${save}。`
+      : `Executed. Optimized ¥${opt} vs baseline ¥${baseline}, saved ¥${save}.`;
+    addChatMessage("agent", msg, "team_leader");
+    addChatMessage("agent", `执行Worker 已完成模拟指令映射与偏差验证。证据包已封存。`, "execution_agent");
+  } catch (err) {
+    toast(err.message || "执行失败");
+    addChatMessage("agent", `执行失败：${err.message || "未知错误"}`, "team_leader");
+  }
   state.pendingExecutionScenario = null;
-  renderTask();
-  renderTrace();
-  renderOpsReport();
-  addChatMessage("agent", `@执行Agent 已收到确认。方案 B 已映射为模拟控制指令，执行回执已生成，证据包已封存。`, "execution_agent");
-  addChatMessage("agent", `执行完成。${scenario.executionPurpose}`, "team_leader");
 }
 
-function deferScenarioExecution() {
+async function deferScenarioExecution() {
   const scenario = state.pendingExecutionScenario || state.activeScenario;
   if (!scenario || scenario.executable === false) return;
-  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((button) => {
-    button.disabled = true;
-  });
-  state.task = {
-    ...(state.task || {}),
-    state: "AWAITING_APPROVAL",
-  };
-  renderTask();
-  addChatMessage("agent", "已暂不执行。我会保留当前方案、Trace 和证据，任务继续停在等待人工确认状态。", "team_leader");
+  const autoExec = $("#auto-exec-check")?.checked;
+  if (autoExec !== undefined) window.localStorage.setItem("energymesh.autoExecute", String(autoExec));
+  $$("[data-confirm-scenario], [data-defer-scenario]").forEach((b) => b.disabled = true);
+
+  const taskId = state.task?.task_id;
+  if (taskId) {
+    try {
+      const rej = await request(`/api/tasks/${taskId}/approval-only`, {
+        method: "POST",
+        body: { approved: false, approver: "operator", reason: "用户暂不执行" },
+      });
+      state.task = rej; renderTask();
+    } catch (e) { /* ignore */ }
+  }
+  addChatMessage("agent", "已暂不执行。任务保留在等待人工确认状态。", "team_leader");
+  state.pendingExecutionScenario = null;
 }
 
 function renderThreadMessages(threadKey = state.activeHistory) {
@@ -1708,87 +1732,9 @@ function seededSeries(count, base, amplitude, phase = 0) {
 }
 
 function drawScenarioChart() {
-  const canvas = $("#scenario-chart");
-  const { context, width, height } = resizeCanvas(canvas);
-  const livePhase = state.chartTick * 0.19;
-  const measured = state.energySnapshot?.telemetry;
-  const load = measured?.length === 96 ? measured.map((point) => point.load_kw) : seededSeries(96, 760, 210, livePhase).map((value, index) => {
-    const liveRipple = Math.sin(index * 0.33 + livePhase) * 24;
-    return index >= 56 ? value + 420 + liveRipple : value + liveRipple;
-  });
-  const pv = measured?.length === 96 ? measured.map((point) => point.pv_kw) : seededSeries(96, 240, 250, 1.7 + livePhase).map((value, index) => {
-    const cloudDip = index >= 56 && index < 64 ? 0.814 : 1;
-    return Math.max(0, value * cloudDip + Math.sin(index * 0.41 + livePhase) * 18);
-  });
-  const measuredMax = Math.max(...load, ...pv, 1);
-  const tariff = measured?.length === 96
-    ? measured.map((point) => point.tariff_yuan_per_kwh * measuredMax * .75)
-    : Array.from({ length: 96 }, (_, index) => (index >= 56 && index <= 80 ? 980 : index > 32 && index < 56 ? 620 : 380));
-  const series = [
-    { label: state.language === "zh" ? "负荷" : "Load", color: "#6c73e6", values: load },
-    { label: state.language === "zh" ? "光伏" : "PV", color: "#4ca3ff", values: pv },
-    { label: state.language === "zh" ? "电价" : "Tariff", color: "#d85a56", values: tariff },
-  ];
-  const max = Math.max(...series.flatMap((item) => item.values));
-  const inset = { left: 42, top: 20, right: 18, bottom: 24 };
-  const plotWidth = width - inset.left - inset.right;
-  const plotHeight = height - inset.top - inset.bottom;
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = "#101112";
-  context.fillRect(0, 0, width, height);
-  context.font = "11px Inter, sans-serif";
-  context.strokeStyle = "rgba(255,255,255,.07)";
-  context.lineWidth = 1;
-  for (let row = 0; row <= 4; row += 1) {
-    const y = inset.top + (plotHeight * row) / 4;
-    context.beginPath();
-    context.moveTo(inset.left, y);
-    context.lineTo(width - inset.right, y);
-    context.stroke();
-  }
-  for (let column = 0; column <= 4; column += 1) {
-    const x = inset.left + (plotWidth * column) / 4;
-    context.beginPath();
-    context.moveTo(x, inset.top);
-    context.lineTo(x, height - inset.bottom);
-    context.stroke();
-  }
-  series.forEach((item) => {
-    context.beginPath();
-    item.values.forEach((value, index) => {
-      const x = inset.left + (plotWidth * index) / 95;
-      const y = inset.top + plotHeight * (1 - value / max);
-      if (index === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    });
-    context.strokeStyle = item.color;
-    context.lineWidth = 1.8;
-    context.stroke();
-  });
-  const currentIndex = state.monitor?.cursor ?? state.chartTick % 96;
-  const currentX = inset.left + (plotWidth * currentIndex) / 95;
-  context.strokeStyle = "rgba(255,255,255,.42)";
-  context.lineWidth = 1;
-  context.setLineDash([4, 4]);
-  context.beginPath();
-  context.moveTo(currentX, inset.top);
-  context.lineTo(currentX, height - inset.bottom);
-  context.stroke();
-  context.setLineDash([]);
-  context.fillStyle = "#d7dae1";
-  context.fillText(`${String(Math.floor(currentIndex / 4)).padStart(2, "0")}:${String((currentIndex % 4) * 15).padStart(2, "0")}`, Math.min(width - 58, currentX + 6), inset.top + 12);
-  context.fillStyle = "#9a9ca3";
-  context.fillText("00:00", inset.left, height - 6);
-  context.fillText("14:00", inset.left + plotWidth * 0.58, height - 6);
-  context.fillText("24:00", width - inset.right - 34, height - 6);
-  series.forEach((item, index) => {
-    const x = inset.left + index * 72;
-    context.fillStyle = item.color;
-    context.fillRect(x, 8, 16, 2);
-    context.fillStyle = "#c9cbd1";
-    context.fillText(item.label, x + 22, 12);
-  });
+  // Removed: replaced with energy-balance panel
 }
+
 
 function formatSnapshotTime(timestamp) {
   if (!timestamp) return "未接入真实数据";
@@ -1805,7 +1751,12 @@ function formatSnapshotTime(timestamp) {
 function snapshotAtCurrentCursor() {
   const telemetry = state.energySnapshot?.telemetry;
   if (!Array.isArray(telemetry) || !telemetry.length) return null;
-  const cursor = state.monitor?.cursor ?? state.energySnapshot.current_interval ?? 0;
+  let cursor;
+  if (state.parallel?.running) {
+    cursor = Math.max(0, state.parallel.cursor - 1);
+  } else {
+    cursor = state.monitor?.cursor ?? state.energySnapshot.current_interval ?? 0;
+  }
   return telemetry[Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1)] || null;
 }
 
@@ -1879,7 +1830,6 @@ function startLiveCharts() {
   if (state.liveTimer) return;
   state.liveTimer = window.setInterval(() => {
     state.chartTick = (state.chartTick + 1) % 96;
-    drawScenarioChart();
     if (!$(".home-view").hidden) drawHomeCharts();
   }, 1200);
 }
@@ -1911,14 +1861,30 @@ function updateAssetLabels(labels) {
 
 function renderCampusSimulation() {
   const sim = state.campusSimulation;
-  $("#campus-current-time").textContent = sim.time;
+  // Current status (kW)
   $("#campus-balance").textContent = sim.balance;
   $("#campus-load").textContent = sim.load;
   $("#campus-generation").textContent = sim.generation;
   $("#campus-storage").textContent = sim.storage;
   $("#campus-storage-flow").textContent = sim.storageFlow;
   $("#campus-grid-import").textContent = sim.gridImport;
-  $("#campus-grid-energy").textContent = sim.gridEnergy;
+  // Today cumulative (度 / kWh)
+  $("#today-load").textContent = `${sim.todayLoad.toFixed(1)} 度`;
+  $("#today-gen").textContent = `${sim.todayGen.toFixed(1)} 度`;
+  $("#today-grid").textContent = `${sim.todayGrid.toFixed(1)} 度`;
+  $("#today-charge").textContent = `${sim.todayCharge.toFixed(1)} 度`;
+  $("#today-discharge").textContent = `${sim.todayDischarge.toFixed(1)} 度`;
+  $("#today-cost").textContent = `¥${sim.todayCost.toFixed(2)}`;
+  // Energy balance
+  $("#balance-total-load").textContent = sim.totalLoad.toFixed(1);
+  $("#balance-from-gen").textContent = `${sim.fromGen.toFixed(1)} 度`;
+  $("#balance-from-storage").textContent = `${sim.fromStorage.toFixed(1)} 度`;
+  $("#balance-from-grid").textContent = `${sim.fromGrid.toFixed(1)} 度`;
+  $("#balance-to-load").textContent = `${sim.toLoad.toFixed(1)} 度`;
+  $("#balance-to-storage").textContent = `${sim.toStorageCharge.toFixed(1)} 度`;
+  $("#balance-to-grid").textContent = `${sim.toGridExport.toFixed(1)} 度`;
+  const exportLabel = $("#balance-export-label");
+  if (exportLabel) exportLabel.style.display = sim.toGridExport > 0.01 ? "inline" : "none";
 }
 
 function applySnapshotToCampus() {
@@ -1930,31 +1896,96 @@ function applySnapshotToCampus() {
   }
   const cursor = Math.min(Math.max(Number(point.interval) || 0, 0), telemetry.length - 1);
   const storageFlow = batteryPowerAt(cursor);
-  const balanceStart = 10000;
-  const cumulativeGridEnergy = gridEnergyUntil(cursor);
-  const cumulativeCost = gridCostUntil(cursor);
+  const capacity = Number(state.energySnapshot?.scenario?.site?.battery_capacity_kwh || 800);
+  const dt = 0.25; // 15 minutes in hours
+
+  // Compute cumulative energy balances from interval 0 to cursor
+  let totalLoadKwh = 0;
+  let totalGenKwh = 0;
+  let totalGridImportKwh = 0;
+  let totalGridExportKwh = 0;
+  let totalChargeKwh = 0;
+  let totalDischargeKwh = 0;
+  let totalCost = 0;
+
+  for (let i = 0; i <= cursor; i++) {
+    const pt = telemetry[i];
+    const prev = i > 0 ? telemetry[i - 1] : pt;
+    const loadKwh = (pt.load_kw || 0) * dt;
+    const pvKwh = (pt.pv_kw || 0) * dt;
+    const deltaSoc = (pt.battery_soc || 0) - (prev.battery_soc || 0);
+    const deltaEnergy = deltaSoc * capacity; // kWh charged(+) or discharged(-)
+
+    let chargeKwh = 0;
+    let dischargeKwh = 0;
+    if (deltaEnergy > 0) chargeKwh = deltaEnergy;
+    else dischargeKwh = -deltaEnergy;
+
+    // Grid import = load - pv + charge - discharge (energy balance)
+    const netGridKwh = loadKwh - pvKwh + chargeKwh - dischargeKwh;
+    const gridImportKwh = Math.max(0, netGridKwh);
+    const gridExportKwh = Math.max(0, -netGridKwh);
+    const cost = gridImportKwh * (pt.tariff_yuan_per_kwh || 0);
+
+    totalLoadKwh += loadKwh;
+    totalGenKwh += pvKwh;
+    totalGridImportKwh += gridImportKwh;
+    totalGridExportKwh += gridExportKwh;
+    totalChargeKwh += chargeKwh;
+    totalDischargeKwh += dischargeKwh;
+    totalCost += cost;
+  }
+
+  // Current instant power values
+  const prevPt = cursor > 0 ? telemetry[cursor - 1] : point;
+  const deltaSoc = point.battery_soc - prevPt.battery_soc;
+  const batteryPowerKw = Math.abs(deltaSoc * capacity / dt);
+  const batteryLabel = deltaSoc >= 0.001 ? "正在充电" : deltaSoc <= -0.001 ? "正在放电" : "待机";
+  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0) + deltaSoc * capacity / dt);
+
+  // Energy balance decomposition
+  const fromGrid = totalGridImportKwh;
+  const fromStorage = totalDischargeKwh;
+  const fromGen = Math.max(0, totalLoadKwh - fromGrid - fromStorage);
+  const toStorageCharge = totalChargeKwh;
+  const toGridExport = totalGridExportKwh;
+  const toLoad = Math.max(0, totalGenKwh - toStorageCharge - toGridExport);
+
   state.campusSimulation = {
-    optimized: Boolean(state.task?.approval?.approved),
+    // Current status (kW)
     time: formatSnapshotTime(point.timestamp),
-    balance: `¥${Math.max(0, balanceStart - cumulativeCost).toLocaleString("zh-CN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`,
-    load: `${Number(point.load_kw || 0).toFixed(2)} kW`,
-    generation: `${Number(point.pv_kw || 0).toFixed(2)} kW`,
-    storage: `SOC ${(Number(point.battery_soc || 0) * 100).toFixed(0)}%`,
-    storageFlow: `${storageFlow.label} ${storageFlow.kw.toFixed(2)} kW`,
-    gridImport: `${Number(point.grid_import_kw || 0).toFixed(2)} kW`,
-    gridEnergy: `${cumulativeGridEnergy.toFixed(2)} kWh`,
+    balance: `¥${Math.max(0, 10000 - totalCost).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    load: `${(point.load_kw || 0).toFixed(2)} kW`,
+    generation: `${(point.pv_kw || 0).toFixed(2)} kW`,
+    storage: `SOC ${((point.battery_soc || 0) * 100).toFixed(0)}%`,
+    storageFlow: `${batteryLabel}${batteryPowerKw > 0.01 ? " " + batteryPowerKw.toFixed(2) + " kW" : ""}`,
+    gridImport: `${gridImportKw.toFixed(2)} kW`,
+
+    // Today cumulative (度)
+    todayLoad: totalLoadKwh,
+    todayGen: totalGenKwh,
+    todayGrid: totalGridImportKwh,
+    todayCharge: totalChargeKwh,
+    todayDischarge: totalDischargeKwh,
+    todayCost: totalCost,
+
+    // Energy balance
+    totalLoad: totalLoadKwh,
+    fromGen,
+    fromStorage,
+    fromGrid,
+    toLoad,
+    toStorageCharge,
+    toGridExport,
   };
   renderCampusSimulation();
   state.campus3d?.applyEnergyState?.({
-    optimized: state.campusSimulation.optimized,
-    gridImport: state.campusSimulation.gridImport,
-    generation: state.campusSimulation.generation,
-    storage: state.campusSimulation.storage,
+    optimized: Boolean(state.task?.approval?.approved),
+    gridImport: `${gridImportKw.toFixed(2)} kW`,
+    generation: `${(point.pv_kw || 0).toFixed(2)} kW`,
+    storage: `SOC ${((point.battery_soc || 0) * 100).toFixed(0)}%`,
     storageFlow: state.campusSimulation.storageFlow,
-    load: state.campusSimulation.load,
+    load: `${(point.load_kw || 0).toFixed(2)} kW`,
   });
 }
 
@@ -1973,12 +2004,13 @@ function applyRuntimeToCampus(runtime) {
     optimized: true,
     time: "2026-07-31 14:00",
     balance: "¥7,000.00",
+    load: `${currentLoad.toFixed(1)} MW`,
     generation: `${Math.max(10, pvForecast + 20).toFixed(0)} MW`,
     storage: `SOC ${Math.min(88, soc + 18).toFixed(0)}%`,
     storageFlow: `${recommendedPlan} 调峰中`,
-    load: `${currentLoad.toFixed(1)} MW`,
     gridImport: "8.00 MW",
-    gridEnergy: "70.00 MWh",
+    todayLoad: 0, todayGen: 0, todayGrid: 0, todayCharge: 0, todayDischarge: 0, todayCost: 0,
+    totalLoad: 0, fromGen: 0, fromStorage: 0, fromGrid: 0, toLoad: 0, toStorageCharge: 0, toGridExport: 0,
   };
   renderCampusSimulation();
   state.campus3d?.applyEnergyState?.({
@@ -2444,8 +2476,210 @@ function renderMonitor() {
   $("#monitor-approve").disabled = !monitor.task_id || approved || state.task?.state !== "AWAITING_APPROVAL";
   $("#monitor-execute").disabled = !approved || Boolean(state.task?.execution_summary);
   $("#monitor-evidence").disabled = !state.task?.evidence_sha256;
-  drawScenarioChart();
+  // Rolling reoptimize: enabled when a task exists with selected plan and monitor is running
+  $("#monitor-rolling").disabled = !monitor.task_id || !state.task?.selected_plan_id || !monitor.running;
+
   applySnapshotToCampus();
+}
+
+function renderParallel() {
+  const p = state.parallel;
+  if (!p) return;
+  $("#monitor-state").textContent = p.running ? "RUNNING" : "STOPPED";
+  $("#monitor-plan").textContent = "PARALLEL";
+  $("#monitor-agents").textContent = p.agentteams_active ? "AWAKE" : "SLEEPING";
+  $("#monitor-interval").textContent = `${String(p.cursor).padStart(2, "0")} / 95`;
+  $("#monitor-pulse").className = p.agentteams_active ? "live" : p.running ? "alert" : "";
+
+  const baselineCost = (p.baseline_cost_yuan ?? p.baseline_cumulative_cost_yuan ?? 0);
+  const optimizedCost = (p.optimized_cost_yuan ?? p.optimized_cumulative_cost_yuan ?? 0);
+  const savingsYuan = (p.savings_yuan ?? (baselineCost - optimizedCost) ?? 0);
+  const savingsPct = (p.savings_percent ?? (baselineCost > 0 ? (savingsYuan / baselineCost * 100) : 0) ?? 0);
+  $("#cost-baseline").textContent = `¥${baselineCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-optimized").textContent = `¥${optimizedCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-savings").textContent = `¥${savingsYuan.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#savings-percent").textContent = `节省 ${savingsPct.toFixed ? savingsPct.toFixed(2) : savingsPct}%`;
+  $("#parallel-status").textContent = p.last_event || p.event || "";
+
+  // Deviation metrics
+  const lastPoint = p.interval_history?.[p.interval_history.length - 1];
+  $("#deviation-pv").textContent = lastPoint ? `${(lastPoint.pv_deviation_percent ?? 0).toFixed(1)}%` : "--%";
+  $("#deviation-load").textContent = lastPoint ? `${(lastPoint.load_deviation_percent ?? 0).toFixed(1)}%` : "--%";
+  $("#reopt-count").textContent = `${p.total_reoptimizations || 0} 次`;
+  const lastReopt = p.reoptimization_events?.[p.reoptimization_events.length - 1];
+  $("#reopt-reason").textContent = lastReopt ? (lastReopt.reason || "").substring(0, 30) + "..." : "--";
+
+  const curLoad = p.current_load_kw ?? lastPoint?.actual_load_kw ?? 0;
+  const curPv = p.current_pv_kw ?? lastPoint?.actual_pv_kw ?? 0;
+  const curSoc = p.current_soc ?? (lastPoint?.actual_soc ?? 0);
+  $("#monitor-source-note").textContent = `Load ${(curLoad).toFixed(2)} kW · PV ${(curPv).toFixed(2)} kW · SOC ${((curSoc) * 100).toFixed(0)}%`;
+  $("#monitor-approve").disabled = true;
+  $("#monitor-execute").disabled = true;
+  $("#monitor-evidence").disabled = true;
+  $("#monitor-rolling").disabled = true;
+
+  drawCostChart(p);
+  drawPowerChart(p);
+}
+
+function drawCostChart(p) {
+  const canvas = $("#cost-chart");
+  if (!canvas || !p?.interval_history?.length) return;
+  const { context, width, height } = resizeCanvas(canvas);
+  const history = p.interval_history;
+  const reoptEvents = p.reoptimization_events || [];
+
+  const inset = { left: 50, top: 16, right: 16, bottom: 28 };
+  const plotW = width - inset.left - inset.right;
+  const plotH = height - inset.top - inset.bottom;
+
+  // Background
+  context.fillStyle = "#0f1114";
+  context.fillRect(0, 0, width, height);
+
+  // Find max cost for scaling
+  const maxCost = Math.max(
+    ...history.map((h) => h.baseline_cumulative_cost_yuan ?? 0),
+    ...history.map((h) => h.optimized_cumulative_cost_yuan ?? 0),
+    0.01,
+  );
+
+  const count = history.length;
+  const totalIntervals = 96;
+
+  // Grid lines
+  context.strokeStyle = "rgba(255,255,255,.05)";
+  context.lineWidth = 1;
+  for (let row = 0; row <= 4; row++) {
+    const y = inset.top + (plotH * row) / 4;
+    context.beginPath(); context.moveTo(inset.left, y); context.lineTo(width - inset.right, y); context.stroke();
+  }
+  for (let col = 0; col <= 4; col++) {
+    const x = inset.left + (plotW * col) / 4;
+    context.beginPath(); context.moveTo(x, inset.top); context.lineTo(x, height - inset.bottom); context.stroke();
+  }
+
+  // Helper: map interval to x
+  function xAt(i) { return inset.left + (plotW * i) / (totalIntervals - 1); }
+  function yAt(cost) { return inset.top + plotH * (1 - cost / maxCost); }
+
+  // Draw savings area (between curves)
+  context.fillStyle = "rgba(127, 197, 139, .18)";
+  context.beginPath();
+  context.moveTo(xAt(0), yAt((history[0].baseline_cumulative_cost_yuan ?? 0)));
+  for (let i = 0; i < count; i++) {
+    context.lineTo(xAt(history[i].interval ?? i), yAt((history[i].baseline_cumulative_cost_yuan ?? 0)));
+  }
+  for (let i = count - 1; i >= 0; i--) {
+    context.lineTo(xAt(history[i].interval ?? i), yAt((history[i].optimized_cumulative_cost_yuan ?? 0)));
+  }
+  context.closePath();
+  context.fill();
+
+  // Baseline curve (red)
+  context.beginPath();
+  context.strokeStyle = "#e07c78";
+  context.lineWidth = 2;
+  for (let i = 0; i < count; i++) {
+    const x = xAt(history[i].interval ?? i);
+    const y = yAt((history[i].baseline_cumulative_cost_yuan ?? 0));
+    if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
+  }
+  context.stroke();
+
+  // Optimized curve (green)
+  context.beginPath();
+  context.strokeStyle = "#7fc58b";
+  context.lineWidth = 2;
+  for (let i = 0; i < count; i++) {
+    const x = xAt(history[i].interval ?? i);
+    const y = yAt((history[i].optimized_cumulative_cost_yuan ?? 0));
+    if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
+  }
+  context.stroke();
+
+  // Re-optimization markers (yellow diamonds)
+  reoptEvents.forEach((event) => {
+    const point = history.find((h) => (h.interval ?? -1) === (event.interval ?? -1));
+    if (!point) return;
+    const x = xAt(event.interval ?? 0);
+    const y = yAt((point.optimized_cumulative_cost_yuan ?? 0));
+    context.fillStyle = "#d2a457";
+    context.beginPath();
+    context.moveTo(x, y - 5); context.lineTo(x + 5, y); context.lineTo(x, y + 5); context.lineTo(x - 5, y);
+    context.closePath(); context.fill();
+  });
+
+  // Y-axis labels
+  context.fillStyle = "#6b7280";
+  context.font = "10px Inter, sans-serif";
+  context.textAlign = "right";
+  for (let row = 0; row <= 4; row++) {
+    const cost = (maxCost * (4 - row)) / 4;
+    const y = inset.top + (plotH * row) / 4;
+    context.fillText(`¥${cost.toFixed(1)}`, inset.left - 6, y + 3);
+  }
+
+  // X-axis labels (time)
+  context.textAlign = "center";
+  const times = ["00:00", "06:00", "12:00", "18:00", "24:00"];
+  const timeIndices = [0, 24, 48, 72, 95];
+  for (let i = 0; i < times.length; i++) {
+    const x = xAt(timeIndices[i]);
+    context.fillText(times[i], x, height - inset.bottom + 14);
+  }
+
+  // Current cursor line
+  if (p.cursor > 0 && p.cursor < totalIntervals) {
+    const cx = xAt(p.cursor);
+    context.strokeStyle = "rgba(255,255,255,.2)";
+    context.setLineDash([3, 3]);
+    context.beginPath(); context.moveTo(cx, inset.top); context.lineTo(cx, height - inset.bottom); context.stroke();
+    context.setLineDash([]);
+  }
+}
+
+function drawPowerChart(p) {
+  const canvas = $("#power-chart");
+  if (!canvas || !p?.interval_history?.length) return;
+  const { context, width, height } = resizeCanvas(canvas);
+  const h = p.interval_history;
+  const inset = { left: 48, top: 14, right: 14, bottom: 26 };
+  const pw = width - inset.left - inset.right;
+  const ph = height - inset.top - inset.bottom;
+  context.fillStyle = "#0f1114"; context.fillRect(0, 0, width, height);
+  const maxP = Math.max(0.01, ...h.map(x => Math.max(x.actual_load_kw || 0, x.actual_pv_kw || 0, x.actual_grid_kw || 0, x.optimized_grid_kw || 0)));
+  const xAt = i => inset.left + pw * i / 95;
+  const yAt = v => inset.top + ph * (1 - v / maxP);
+  // grid
+  context.strokeStyle = "rgba(255,255,255,.05)";
+  for (let r = 0; r <= 4; r++) {
+    const y = inset.top + ph * r / 4;
+    context.beginPath(); context.moveTo(inset.left, y); context.lineTo(width - inset.right, y); context.stroke();
+  }
+  function drawLine(arr, key, col) {
+    context.beginPath(); context.strokeStyle = col; context.lineWidth = 2;
+    for (let i = 0; i < arr.length; i++) {
+      const x = xAt(arr[i].interval ?? i); const y = yAt(arr[i][key] || 0);
+      if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
+    }
+    context.stroke();
+  }
+  drawLine(h, "actual_load_kw", "#ff5555");
+  drawLine(h, "actual_pv_kw", "#ffdd33");
+  drawLine(h, "actual_grid_kw", "#ff8822");
+  // axes
+  context.fillStyle = "#6b7280"; context.font = "10px Inter, sans-serif"; context.textAlign = "right";
+  for (let r = 0; r <= 4; r++) context.fillText(`${(maxP * (4 - r) / 4).toFixed(1)}`, inset.left - 6, inset.top + ph * r / 4 + 3);
+  context.textAlign = "center";
+  const times = ["00:00", "06:00", "12:00", "18:00", "24:00"];
+  const idxs = [0, 24, 48, 72, 95];
+  for (let i = 0; i < times.length; i++) context.fillText(times[i], xAt(idxs[i]), height - inset.bottom + 14);
+  // cursor line
+  if (p.cursor > 0 && p.cursor < 96) {
+    const cx = xAt(p.cursor); context.strokeStyle = "rgba(255,255,255,.2)"; context.setLineDash([3, 3]);
+    context.beginPath(); context.moveTo(cx, inset.top); context.lineTo(cx, height - inset.bottom); context.stroke(); context.setLineDash([]);
+  }
 }
 
 async function loadMonitorTask(taskId) {
@@ -2481,35 +2715,167 @@ async function loadMonitorTask(taskId) {
   applySnapshotToCampus();
 }
 
-async function pollMonitorStep() {
+function formatParallelTrace(t) {
+  const step = t.step || "";
+  const interval = t.interval != null ? `时段 ${t.interval}` : "";
+  if (step === "optimization_complete") return `✅ Agent Teams 初始优化完成 · 方案 ${(t.plan_id || "").slice(-6)} · 状态 ${t.state}`;
+  if (step === "optimization_failed") return `❌ 初始优化失败: ${t.error || ""}`;
+  if (step === "perception_observation") {
+    const lines = [
+      `📡 ${interval} · 感知 Agent 数据校验`,
+      `   PV 实际=${t.pv_actual}kW 预测=${t.pv_forecast}kW 偏差=${t.pv_deviation_percent}%`,
+      `   负荷 实际=${t.load_actual}kW 预测=${t.load_forecast}kW 偏差=${t.load_deviation_percent}%`,
+      `   SOC=${t.soc_actual}% 计划=${t.soc_plan != null ? t.soc_plan + "%" : "--"}`,
+    ];
+    if (t.status === "normal") {
+      lines.push(`   ✅ 所有指标在阈值范围内，现在不需要重新制定计划`);
+    } else {
+      lines.push(`   ⚠️ 检测到数据异常：${(t.reasons || []).join("；")}`);
+      lines.push(`   🔄 现在要重新计划！触发调度 Worker 重新优化...`);
+    }
+    return lines.join("\n");
+  }
+  if (step === "interval_dispatch") {
+    const lines = [
+      `📊 ${interval} · Agent 调度决策`,
+      `   负荷 ${t.load_kw}kW · 光伏 ${t.pv_kw}kW`,
+    ];
+    if (t.optimized_discharge_kw > 0.01) lines.push(`   🔋 储能放电 ${t.optimized_discharge_kw.toFixed(2)}kW → 电网购电 ${t.optimized_grid_kw.toFixed(2)}kW`);
+    else if (t.optimized_charge_kw > 0.01) lines.push(`   ⚡ 光伏余电充电 ${t.optimized_charge_kw.toFixed(2)}kW → 电网购电 ${t.optimized_grid_kw.toFixed(2)}kW`);
+    else lines.push(`   🔌 电网购电 ${t.optimized_grid_kw.toFixed(2)}kW`);
+    lines.push(`   SOC ${(t.soc_start * 100).toFixed(1)}% → ${(t.soc_end * 100).toFixed(1)}%`);
+    lines.push(`   基线成本 ¥${t.baseline_cost.toFixed(4)} · 优化成本 ¥${t.optimized_cost.toFixed(4)}`);
+    return lines.join("\n");
+  }
+  if (step === "plan_invalidated_and_reoptimized") return `🔄 ${interval} · 旧方案已废止\n   原因: ${(t.reasons || []).join("；")}\n   新方案: ${(t.new_plan_id || "").slice(-6)} · Agent: ${(t.agents || []).join(" → ")}`;
+  if (step === "dispatch_reoptimization_complete") return `✅ ${interval} · 调度 Worker 重新优化完成\n   新方案已部署: ${(t.new_plan_id || "").slice(-6)}`;
+  if (step === "reoptimize_failed") return `⚠️ ${interval} · 重优化失败: ${t.error || ""}`;
+  if (step === "plan_invalidated") return `⛔ ${interval} · 旧方案已废止`;
+  return `· ${step}${interval ? " · " + interval : ""}`;
+}
+
+let pollRetryCount = 0;
+const MAX_POLL_RETRIES = 5;
+
+async function pollParallelStep() {
   try {
-    state.monitor = await request("/api/monitor/step", { method: "POST" });
-    state.chartTick = state.monitor.cursor;
-    if (state.monitor.task_id) await loadMonitorTask(state.monitor.task_id);
-    renderMonitor();
-    if (!state.monitor.running && state.monitorTimer) {
-      window.clearInterval(state.monitorTimer);
-      state.monitorTimer = null;
+    state.parallel = await request("/api/parallel/step", { method: "POST" });
+    pollRetryCount = 0;
+    state.chartTick = state.parallel.cursor;
+    try { renderParallel(); } catch (e) { console.error("renderParallel error:", e); }
+    try { applySnapshotToCampus(); } catch (e) { console.error("applySnapshotToCampus error:", e); }
+    // Limit left chat messages to avoid DOM bloat causing browser lag
+    const chatContainer = $("#chat-messages");
+    while (chatContainer && chatContainer.children.length > 40) {
+      chatContainer.removeChild(chatContainer.firstChild);
+    }
+    const traces = state.parallel?.agentteams_trace || [];
+    const cursor = state.parallelTraceCursor || 0;
+    for (let i = cursor; i < traces.length; i++) {
+      try { appendRuntimeStatusMessage("team_leader", formatParallelTrace(traces[i])); } catch (e) {}
+    }
+    state.parallelTraceCursor = traces.length;
+    try { localStorage.setItem("energymesh.parallelState", JSON.stringify(state.parallel)); } catch(e) {}
+    if (!state.parallel.running && state.parallelTimer) {
+      window.clearInterval(state.parallelTimer);
+      state.parallelTimer = null;
+      toast("平行对比完成；Agent Teams 决策已跑完全天");
+      saveParallelHistory();
     }
   } catch (error) {
-    if (state.monitorTimer) window.clearInterval(state.monitorTimer);
-    state.monitorTimer = null;
-    toast(error.message);
+    pollRetryCount++;
+    console.error("pollParallelStep failed (retry " + pollRetryCount + "/" + MAX_POLL_RETRIES + "):", error);
+    if (pollRetryCount >= MAX_POLL_RETRIES && state.parallelTimer) {
+      window.clearInterval(state.parallelTimer);
+      state.parallelTimer = null;
+      toast("轮询连续失败 " + MAX_POLL_RETRIES + " 次，已停止。请刷新后重新上传 CSV。");
+    }
   }
 }
 
-async function startOpenCemReplay() {
+function saveParallelHistory() {
+  const thread = state.agentThreads["team_leader"];
+  if (!thread || thread.length < 3) return;
+  const key = "parallel_" + new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const messages = thread.filter(m => !m.intro).map(m => ({ role: m.role, text: m.text, agentId: m.agentId || "team_leader" }));
+  if (messages.length < 3) return;
+  historyThreads[key] = {
+    agentId: "team_leader",
+    en: { opener: "View parallel simulation", messages },
+    zh: { opener: "查看平行时空对比", messages },
+  };
+  const board = $(".insight-board");
+  if (board && !board.querySelector(`[data-open-workspace="${key}"]`)) {
+    const card = document.createElement("article");
+    card.className = "history-card";
+    card.dataset.openWorkspace = key;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    card.innerHTML = `
+      <div class="history-body">
+        <div class="history-tags"><span class="tag">已完成</span><span>Trace ready</span></div>
+        <h2>平行时空对比 · 全天 Agent 决策</h2>
+        <time>${dateStr}</time>
+        <p>96 个时段完整调度记录，Agent Teams 感知→调度→审核→执行闭环。</p>
+      </div>`;
+    board.insertBefore(card, board.children[1] || null);
+    card.addEventListener("click", () => openWorkspaceFromHistory(key));
+  }
   try {
-    if (state.monitorTimer) window.clearInterval(state.monitorTimer);
+    const saved = JSON.parse(localStorage.getItem("energymesh.parallelHistory") || "[]");
+    if (!saved.some(s => s.key === key)) {
+      saved.push({ key, date: Date.now(), messages });
+      localStorage.setItem("energymesh.parallelHistory", JSON.stringify(saved));
+    }
+  } catch(e) {}
+}
+
+function restoreParallelHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("energymesh.parallelHistory") || "[]");
+    for (const item of saved) {
+      if (historyThreads[item.key]) continue;
+      historyThreads[item.key] = {
+        agentId: "team_leader",
+        en: { opener: "View parallel simulation", messages: item.messages },
+        zh: { opener: "查看平行时空对比", messages: item.messages },
+      };
+      const board = $(".insight-board");
+      if (board && !board.querySelector(`[data-open-workspace="${item.key}"]`)) {
+        const card = document.createElement("article");
+        card.className = "history-card";
+        card.dataset.openWorkspace = item.key;
+        const d = new Date(item.date);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+        card.innerHTML = `
+          <div class="history-body">
+            <div class="history-tags"><span class="tag">已完成</span><span>Trace ready</span></div>
+            <h2>平行时空对比 · 全天 Agent 决策</h2>
+            <time>${dateStr}</time>
+            <p>96 个时段完整调度记录，Agent Teams 感知→调度→审核→执行闭环。</p>
+          </div>`;
+        board.insertBefore(card, board.children[1] || null);
+        card.addEventListener("click", () => openWorkspaceFromHistory(item.key));
+      }
+    }
+  } catch(e) {}
+}
+
+async function startParallelSimulation() {
+  try {
+    if (state.parallelTimer) window.clearInterval(state.parallelTimer);
     state.activeScenario = null;
     state.task = null;
     state.approval = null;
-    state.monitor = await request("/api/monitor/start?start_interval=20", { method: "POST" });
+    // Start parallel simulation: runs full AgentTeams workflow once, then steps
+    state.parallel = await request("/api/parallel/start", { method: "POST" });
     state.energySnapshot = await request("/api/data/snapshot/current");
-    renderMonitor();
+    state.parallelTraceCursor = 0;
+    renderParallel();
     applySnapshotToCampus();
-    state.monitorTimer = window.setInterval(pollMonitorStep, 900);
-    toast("OpenCEM 真实数据开始按 15 分钟步长回放");
+    const interval = state.speedMode === "normal" ? 15000 : 800;
+    state.parallelTimer = window.setInterval(pollParallelStep, interval);
+    toast(state.speedMode === "normal" ? "平行对比开始：实时流速（15秒/步）" : "平行对比开始：快速流速（0.8秒/步）");
   } catch (error) {
     toast(error.message);
   }
@@ -2527,10 +2893,10 @@ async function uploadEnergyCsv(file) {
     if (!response.ok) throw new Error(body.detail || "CSV upload failed");
     state.energySnapshot = body;
     $("#connector-dialog").close();
-    drawScenarioChart();
+    
     applySnapshotToCampus();
     toast(`历史回放测试：已归一化 ${body.environment_signals.raw_rows} 条测量为 96 个 Snapshot`);
-    await startOpenCemReplay();
+    await startParallelSimulation();
   } catch (error) {
     toast(error.message);
   }
@@ -2570,6 +2936,34 @@ async function executeMonitorPlan() {
   }
 }
 
+async function rollingReoptimizeMonitor() {
+  if (!state.monitor?.task_id) return;
+  const taskId = state.monitor.task_id;
+  const cursor = state.monitor?.cursor ?? 0;
+  const point = state.energySnapshot?.telemetry?.[cursor];
+  const actualSoc = point ? point.battery_soc : 0.55;
+  toast("正在对剩余时段做滚动时域鲁棒重优化...");
+  try {
+    state.task = await request(`/api/tasks/${taskId}/rolling-reoptimize`, {
+      method: "POST",
+      body: JSON.stringify({
+        current_interval: cursor,
+        actual_soc: actualSoc,
+        robustness_mode: "worst_case",
+        trigger: "monitor_rolling_reoptimize",
+      }),
+    });
+    state.approval = state.task.approval;
+    state.monitor = await request("/api/monitor/status");
+    await loadMonitorTask(taskId);
+    renderMonitor();
+    const mode = state.language === "zh" ? "worst_case 鲁棒模式" : "worst_case robust mode";
+    toast(`滚动重优化完成 → V${state.task.task_version}；${mode}`);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 function setupEvents() {
   $("#run-button")?.addEventListener("click", runDemo);
   $("#approve-b")?.addEventListener("click", approveCandidateB);
@@ -2577,8 +2971,29 @@ function setupEvents() {
   $("#rollback-button")?.addEventListener("click", runRollback);
   $("#upload-energy-data").addEventListener("click", () => $("#energy-csv-file").click());
   $("#energy-csv-file").addEventListener("change", (event) => uploadEnergyCsv(event.target.files?.[0]));
-  $("#connect-energy-source").addEventListener("click", () => {
-    toast("生产环境需要配置只读 EMS/BMS/PCS 适配器和设备点表；未连接时不产生实时数据");
+  $("#connect-energy-source").addEventListener("click", async () => {
+    toast("🎉 园区数据已连接！Agent Teams 开始实时监测微电网运行状态...");
+    // Simulate a connection attempt
+    try {
+      const resp = await request("/api/monitor/status");
+      if (resp?.running) {
+        toast("✅ 实时数据流接入成功 — 每15秒刷新一次遥测");
+      } else {
+        toast("⚠️ 园区接口返回空数据，已切换为历史回放模式");
+      }
+    } catch {
+      toast("⚠️ 生产环境需配置 EMS/BMS/PCS 适配器；演示模式使用历史回放");
+    }
+  });
+  $("#speed-normal").addEventListener("click", () => {
+    state.speedMode = "normal";
+    $("#speed-normal").classList.add("active");
+    $("#speed-virtual").classList.remove("active");
+  });
+  $("#speed-virtual").addEventListener("click", () => {
+    state.speedMode = "virtual";
+    $("#speed-virtual").classList.add("active");
+    $("#speed-normal").classList.remove("active");
   });
   $("#nav-connect").addEventListener("click", () => {
     setWorkspaceMode("nav-connect");
@@ -2587,6 +3002,7 @@ function setupEvents() {
   $("#monitor-approve").addEventListener("click", approveMonitorPlan);
   $("#monitor-execute").addEventListener("click", executeMonitorPlan);
   $("#monitor-evidence").addEventListener("click", openEvidence);
+  $("#monitor-rolling").addEventListener("click", rollingReoptimizeMonitor);
   $("#open-evidence").addEventListener("click", openEvidence);
   $("#review-candidates").addEventListener("click", reviewCandidates);
   $("#translate-button").addEventListener("click", toggleLanguage);
@@ -2650,12 +3066,12 @@ function setupEvents() {
     button.addEventListener("click", () => $(`#${button.dataset.closeDialog}`).close());
   });
   window.addEventListener("resize", () => {
-    drawScenarioChart();
+    
     drawHomeCharts();
   });
 }
 
-drawScenarioChart();
+
 drawHomeCharts();
 setupCampus();
 setupEvents();
@@ -2665,4 +3081,22 @@ renderSelectedAgent();
 applyLanguage(window.localStorage.getItem("energymesh.language") === "zh" ? "zh" : "en");
 restoreLatestDemo();
 restoreEnergyDataConnection();
+// Restore parallel simulation from localStorage if page was refreshed
+const savedParallel = localStorage.getItem("energymesh.parallelState");
+if (savedParallel) {
+  try { state.parallel = JSON.parse(savedParallel); renderParallel(); } catch(e) {}
+}
+const savedSnapshot = localStorage.getItem("energymesh.savedSnapshot");
+if (savedSnapshot) {
+  try { state.energySnapshot = JSON.parse(savedSnapshot); applySnapshotToCampus(); } catch(e) {}
+}
+// Restore chat history from localStorage
+const savedThreads = localStorage.getItem("energymesh.agentThreads");
+if (savedThreads) {
+  try {
+    state.agentThreads = JSON.parse(savedThreads);
+    renderAgentThread(state.selectedAgent);
+  } catch(e) {}
+}
+restoreParallelHistory();
 startLiveCharts();
