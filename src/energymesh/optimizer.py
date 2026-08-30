@@ -7,7 +7,13 @@ import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import lil_matrix
 
-from energymesh.models import DispatchPlan, DispatchPoint, ForecastPoint, PlanMetrics, Scenario
+from energymesh.models import (
+    DispatchPlan,
+    DispatchPoint,
+    ForecastPoint,
+    PlanMetrics,
+    Scenario,
+)
 
 
 @dataclass(frozen=True)
@@ -91,7 +97,10 @@ class DispatchOptimizer:
                     pv_eff = getattr(point, "pv_kw_lower", point.pv_kw * 0.82)
                 effective_forecast.append(
                     point.model_copy(
-                        update={"load_kw": max(0.0, load_eff), "pv_kw": max(0.0, pv_eff)}
+                        update={
+                            "load_kw": max(0.0, load_eff),
+                            "pv_kw": max(0.0, pv_eff),
+                        }
                     )
                 )
 
@@ -102,9 +111,13 @@ class DispatchOptimizer:
         variable_count = peak + 1
 
         objective = np.zeros(variable_count)
-        prices = np.array([p.tariff_yuan_per_kwh for p in effective_forecast[current_interval:]])
+        prices = np.array(
+            [p.tariff_yuan_per_kwh for p in effective_forecast[current_interval:]]
+        )
         objective[charge : charge + remaining] = site.degradation_yuan_per_kwh * dt
-        objective[discharge : discharge + remaining] = site.degradation_yuan_per_kwh * dt
+        objective[discharge : discharge + remaining] = (
+            site.degradation_yuan_per_kwh * dt
+        )
         objective[grid : grid + remaining] = prices * dt
         objective[curtail : curtail + remaining] = 0.01 * dt
         objective[shed : shed + remaining] = 1.2 * dt
@@ -118,9 +131,11 @@ class DispatchOptimizer:
             [
                 min(
                     (
-                        site.transformer_capacity_kw * site.transformer_hot_derate_factor
+                        site.transformer_capacity_kw
+                        * site.transformer_hot_derate_factor
                         if (
-                            point.transformer_temperature_c >= site.transformer_temperature_limit_c
+                            point.transformer_temperature_c
+                            >= site.transformer_temperature_limit_c
                             and point.transformer_redundant_temperature_c
                             >= site.transformer_temperature_limit_c
                         )
@@ -247,8 +262,12 @@ class DispatchOptimizer:
                         grid_import_kw=max(0.0, forecast.load_kw - forecast.pv_kw),
                         pv_curtailment_kw=max(0.0, -forecast.load_kw + forecast.pv_kw),
                         flexible_load_shed_kw=0,
-                        soc_start=actual_soc if idx == current_interval else site.initial_soc,
-                        soc_end=actual_soc if idx == current_interval else site.initial_soc,
+                        soc_start=(
+                            actual_soc if idx == current_interval else site.initial_soc
+                        ),
+                        soc_end=(
+                            actual_soc if idx == current_interval else site.initial_soc
+                        ),
                     )
                 )
             else:
@@ -312,7 +331,9 @@ class DispatchOptimizer:
     def optimize_candidates(self, scenario: Scenario) -> list[DispatchPlan]:
         return [self.optimize(scenario, profile) for profile in PROFILES]
 
-    def optimize(self, scenario: Scenario, profile: OptimizationProfile) -> DispatchPlan:
+    def optimize(
+        self, scenario: Scenario, profile: OptimizationProfile
+    ) -> DispatchPlan:
         site = scenario.site
         count = len(scenario.forecast)
         dt = site.interval_minutes / 60
@@ -334,7 +355,9 @@ class DispatchOptimizer:
         lower = np.zeros(variable_count)
         upper = np.full(variable_count, np.inf)
         upper[charge : charge + count] = site.battery_charge_max_kw
-        discharge_limits = np.full(count, site.battery_discharge_max_kw * profile.discharge_factor)
+        discharge_limits = np.full(
+            count, site.battery_discharge_max_kw * profile.discharge_factor
+        )
         for index, point in enumerate(scenario.forecast):
             if point.battery_temperature_c >= 45:
                 discharge_limits[index] *= site.alarm_discharge_derate
@@ -343,9 +366,11 @@ class DispatchOptimizer:
             [
                 min(
                     (
-                        site.transformer_capacity_kw * site.transformer_hot_derate_factor
+                        site.transformer_capacity_kw
+                        * site.transformer_hot_derate_factor
                         if (
-                            point.transformer_temperature_c >= site.transformer_temperature_limit_c
+                            point.transformer_temperature_c
+                            >= site.transformer_temperature_limit_c
                             and point.transformer_redundant_temperature_c
                             >= site.transformer_temperature_limit_c
                         )
@@ -356,7 +381,9 @@ class DispatchOptimizer:
                 for point in scenario.forecast
             ]
         )
-        upper[curtail : curtail + count] = np.array([p.pv_kw for p in scenario.forecast])
+        upper[curtail : curtail + count] = np.array(
+            [p.pv_kw for p in scenario.forecast]
+        )
         upper[shed : shed + count] = np.array(
             [
                 min(
@@ -440,7 +467,9 @@ class DispatchOptimizer:
         )
 
     @staticmethod
-    def _calculate_metrics(scenario: Scenario, points: list[DispatchPoint]) -> PlanMetrics:
+    def _calculate_metrics(
+        scenario: Scenario, points: list[DispatchPoint]
+    ) -> PlanMetrics:
         site = scenario.site
         dt = site.interval_minutes / 60
         energy_cost = sum(
@@ -463,7 +492,9 @@ class DispatchOptimizer:
             degradation_cost_yuan=round(degradation, 2),
             total_cost_yuan=round(energy_cost + demand_charge + degradation, 2),
             peak_grid_kw=round(max(point.grid_import_kw for point in points), 2),
-            pv_self_consumption_ratio=round(1 - curtailed / pv_total if pv_total else 1, 4),
+            pv_self_consumption_ratio=round(
+                1 - curtailed / pv_total if pv_total else 1, 4
+            ),
             end_soc=round(points[-1].soc_end, 4),
             shed_energy_kwh=round(shed_energy, 2),
         )

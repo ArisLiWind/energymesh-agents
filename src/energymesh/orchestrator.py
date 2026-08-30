@@ -41,7 +41,9 @@ class EnergyMeshOrchestrator:
         self.store = store
 
     @staticmethod
-    def _record(task: TaskRecord, actor: str, action: str, status: str, **detail: object) -> None:
+    def _record(
+        task: TaskRecord, actor: str, action: str, status: str, **detail: object
+    ) -> None:
         now = datetime.now(UTC)
         agentteams_worker = actor_to_worker(actor)
         if agentteams_worker is not None:
@@ -127,7 +129,8 @@ class EnergyMeshOrchestrator:
         self.store.save(task)
 
         task.audits = [
-            self.auditor.audit(scenario, plan, task.baseline_plan) for plan in task.plans
+            self.auditor.audit(scenario, plan, task.baseline_plan)
+            for plan in task.plans
         ]
         task.state = TaskState.AUDITED
         self._record(
@@ -142,14 +145,18 @@ class EnergyMeshOrchestrator:
         eligible = [
             plan
             for plan in task.plans
-            if next(report for report in task.audits if report.plan_id == plan.plan_id).decision
+            if next(
+                report for report in task.audits if report.plan_id == plan.plan_id
+            ).decision
             != AuditDecision.REJECTED
         ]
         if not eligible:
             task.state = TaskState.FAILED
             self._record(task, "orchestrator", "selection_failed", "blocked")
             self.store.save(task)
-            raise WorkflowError("all candidate plans were rejected by the independent auditor")
+            raise WorkflowError(
+                "all candidate plans were rejected by the independent auditor"
+            )
 
         selected = min(eligible, key=lambda plan: plan.metrics.total_cost_yuan)
         task.selected_plan_id = selected.plan_id
@@ -217,7 +224,9 @@ class EnergyMeshOrchestrator:
         if task is None:
             raise WorkflowError("task not found")
         if task.state != TaskState.APPROVED:
-            raise WorkflowError(f"task is not approved for execution: {task.state.value}")
+            raise WorkflowError(
+                f"task is not approved for execution: {task.state.value}"
+            )
         if task.approval is None or not task.approval.approved:
             raise WorkflowError("valid human approval is required before execution")
         return self._execute(task)
@@ -238,7 +247,9 @@ class EnergyMeshOrchestrator:
             task.baseline_plan,
         )
         scenario = task.scenario_snapshot
-        current_interval = min(max(request.current_interval, 0), len(scenario.forecast) - 1)
+        current_interval = min(
+            max(request.current_interval, 0), len(scenario.forecast) - 1
+        )
         actual_soc = max(0.0, min(1.0, request.actual_soc))
 
         self._record(
@@ -313,7 +324,9 @@ class EnergyMeshOrchestrator:
         scenario = task.scenario_snapshot
         if task.baseline_plan is None:
             raise WorkflowError("task has no baseline plan")
-        selected = next(plan for plan in task.plans if plan.plan_id == task.selected_plan_id)
+        selected = next(
+            plan for plan in task.plans if plan.plan_id == task.selected_plan_id
+        )
         selected_audit = next(
             report for report in task.audits if report.plan_id == selected.plan_id
         )
@@ -334,11 +347,17 @@ class EnergyMeshOrchestrator:
             task.approval.approval_id if task.approval else None,
         )
         fallback_activated = bool(task.execution_summary["safe_fallback_activated"])
-        task.state = TaskState.SAFE_FALLBACK if fallback_activated else TaskState.COMPLETED
+        task.state = (
+            TaskState.SAFE_FALLBACK if fallback_activated else TaskState.COMPLETED
+        )
         self._record(
             task,
             "execution_agent" if fallback_activated else "audit_agent",
-            ("safe_fallback_activated" if fallback_activated else "post_execution_verification"),
+            (
+                "safe_fallback_activated"
+                if fallback_activated
+                else "post_execution_verification"
+            ),
             "fallback" if fallback_activated else "ok",
             real_devices_contacted=0,
             soc_bounds_held=task.execution_summary["soc_bounds_held"],

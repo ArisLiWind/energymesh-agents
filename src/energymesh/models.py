@@ -301,7 +301,9 @@ class ApprovalDecisionRequest(BaseModel):
     context_hash: str
     approved: bool = True
     approver: str = Field(default="human-operator", min_length=2, max_length=80)
-    reason: str = Field(default="人工确认审核通过方案可执行", min_length=2, max_length=500)
+    reason: str = Field(
+        default="人工确认审核通过方案可执行", min_length=2, max_length=500
+    )
 
 
 class ExecuteRequest(BaseModel):
@@ -480,7 +482,9 @@ class ReoptimizationRequest(BaseModel):
     soc_delta: float = Field(default=0.0, ge=-0.3, le=0.3)
     battery_available: bool = True
     transformer_temperature_c: float | None = Field(default=None, ge=-30, le=150)
-    transformer_redundant_temperature_c: float | None = Field(default=None, ge=-30, le=150)
+    transformer_redundant_temperature_c: float | None = Field(
+        default=None, ge=-30, le=150
+    )
     emergency_production: bool = False
     simulate_execution_deviation: bool = False
 
@@ -494,7 +498,9 @@ class RollingHorizonRequest(BaseModel):
         default="worst_case",
         pattern="^(worst_case|expected_value|ignore)$",
     )
-    trigger: str = Field(default="rolling_horizon_monitor_step", min_length=2, max_length=120)
+    trigger: str = Field(
+        default="rolling_horizon_monitor_step", min_length=2, max_length=120
+    )
 
 
 class RollingHorizonResponse(BaseModel):

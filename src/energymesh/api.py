@@ -158,7 +158,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.post("/api/agents/{agent_id}/model/test", response_model=AgentModelTestResponse)
+    @app.post(
+        "/api/agents/{agent_id}/model/test", response_model=AgentModelTestResponse
+    )
     def test_agent_model(
         agent_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -196,7 +198,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             reply = chat_with_agent_config(config, body.message)
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
-        return AgentChatResponse(agent_id=normalized, model=config.model, response=reply)
+        return AgentChatResponse(
+            agent_id=normalized, model=config.model, response=reply
+        )
 
     @app.post("/api/runtime/chat", response_model=AgentRuntimeChatResponse)
     def chat_with_runtime(
@@ -223,7 +227,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         def events() -> Iterator[str]:
             try:
-                for event in runtime.stream_chat(body.message, body.session_id, body.task_id):
+                for event in runtime.stream_chat(
+                    body.message, body.session_id, body.task_id
+                ):
                     yield from sse_event(event)
             except AgentRuntimeError as error:
                 yield from sse_event({"type": "runtime_error", "detail": str(error)})
@@ -232,7 +238,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(events(), media_type="text/event-stream")
 
-    @app.get("/api/runtime/sessions/{session_id}/messages", response_model=list[AgentMessage])
+    @app.get(
+        "/api/runtime/sessions/{session_id}/messages", response_model=list[AgentMessage]
+    )
     def list_runtime_messages(
         session_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -240,14 +248,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[AgentMessage]:
         return evidence_store.list_agent_messages(session_id, limit=limit)
 
-    @app.get("/api/runtime/tasks/{task_id}/artifacts", response_model=list[RuntimeArtifact])
+    @app.get(
+        "/api/runtime/tasks/{task_id}/artifacts", response_model=list[RuntimeArtifact]
+    )
     def list_runtime_artifacts(
         task_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
     ) -> list[RuntimeArtifact]:
         return evidence_store.list_runtime_artifacts(task_id)
 
-    @app.get("/api/runtime/tasks/{task_id}/tool-calls", response_model=list[RuntimeToolCall])
+    @app.get(
+        "/api/runtime/tasks/{task_id}/tool-calls", response_model=list[RuntimeToolCall]
+    )
     def list_runtime_tool_calls(
         task_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -295,7 +307,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def download_opencem_sample() -> FileResponse:
         sample_path = Path(__file__).parents[2] / "data" / "opencem" / "2025-07-a.csv"
         if not sample_path.exists():
-            raise HTTPException(status_code=404, detail="OpenCEM sample CSV is not available")
+            raise HTTPException(
+                status_code=404, detail="OpenCEM sample CSV is not available"
+            )
         return FileResponse(
             sample_path,
             media_type="text/csv",
@@ -318,7 +332,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def current_uploaded_snapshot(request: Request) -> ExternalDataSnapshot:
         snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
         if snapshot is None:
-            raise HTTPException(status_code=404, detail="no normalized Snapshot is loaded")
+            raise HTTPException(
+                status_code=404, detail="no normalized Snapshot is loaded"
+            )
         return snapshot
 
     @app.post("/api/monitor/start")
@@ -372,6 +388,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
     ) -> ParallelStepResponse:
         return simulator.status()
+
+    @app.get("/api/parallel/slo")
+    def slo_parallel(
+        simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
+    ) -> dict[str, object]:
+        return simulator.get_slo()
+
+    @app.get("/api/parallel/rag")
+    def rag_parallel(
+        simulator: Annotated[ParallelSimulator, Depends(get_parallel_sim)],
+        interval: int | None = None,
+    ) -> dict[str, str]:
+        return {"insight": simulator.get_rag_insight(interval)}
 
     @app.post("/api/external/dispatch", response_model=TaskRecord, status_code=201)
     def dispatch_from_external_data(

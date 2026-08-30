@@ -27,7 +27,11 @@ class SimulationExecutor:
                 "planned_grid_import_kw": point.grid_import_kw,
                 "actual_grid_import_kw": round(
                     point.grid_import_kw
-                    * (1.12 if forced_deviation else 1 + (((point.interval % 5) - 2) * 0.002)),
+                    * (
+                        1.12
+                        if forced_deviation
+                        else 1 + (((point.interval % 5) - 2) * 0.002)
+                    ),
                     3,
                 ),
                 "soc_observed": point.soc_end,
@@ -37,7 +41,10 @@ class SimulationExecutor:
         deviation_intervals = sum(
             1
             for confirmation in confirmations
-            if abs(confirmation["actual_grid_import_kw"] - confirmation["planned_grid_import_kw"])
+            if abs(
+                confirmation["actual_grid_import_kw"]
+                - confirmation["planned_grid_import_kw"]
+            )
             > max(5.0, confirmation["planned_grid_import_kw"] * 0.05)
         )
         confirmed_intervals = len(confirmations) - deviation_intervals
@@ -53,7 +60,9 @@ class SimulationExecutor:
             "real_devices_contacted": 0,
             "simulated_commands_dispatched": len(commands),
             "command_targets": sorted({command.target_system for command in commands}),
-            "command_sample": [command.model_dump(mode="json") for command in commands[:6]],
+            "command_sample": [
+                command.model_dump(mode="json") for command in commands[:6]
+            ],
             "intervals_replayed": len(plan.points),
             "confirmations_received": confirmed_intervals,
             "confirmation_ratio": round(confirmed_intervals / len(plan.points), 4),
@@ -81,14 +90,18 @@ class SimulationExecutor:
             ),
             "simulated_energy_cost_yuan": plan.metrics.energy_cost_yuan,
             "soc_bounds_held": all(
-                scenario.site.safety_min_soc <= point.soc_end <= scenario.site.safety_max_soc
+                scenario.site.safety_min_soc
+                <= point.soc_end
+                <= scenario.site.safety_max_soc
                 for point in plan.points
             ),
             "critical_load_served_ratio": 1.0,
         }
 
     @staticmethod
-    def _map_commands(plan: DispatchPlan, approval_id: str | None) -> list[ExecutionCommand]:
+    def _map_commands(
+        plan: DispatchPlan, approval_id: str | None
+    ) -> list[ExecutionCommand]:
         commands: list[ExecutionCommand] = []
         for point in plan.points:
             commands.extend(

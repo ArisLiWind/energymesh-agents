@@ -57,7 +57,9 @@ class SnapshotFactory:
         except UnicodeDecodeError as error:
             raise EnergyDataError("CSV must be UTF-8 encoded") from error
         reader = csv.DictReader(io.StringIO(text))
-        if reader.fieldnames is None or not self.required_columns.issubset(reader.fieldnames):
+        if reader.fieldnames is None or not self.required_columns.issubset(
+            reader.fieldnames
+        ):
             missing = sorted(self.required_columns.difference(reader.fieldnames or []))
             raise EnergyDataError(f"OpenCEM CSV missing columns: {', '.join(missing)}")
         rows = list(reader)
@@ -109,8 +111,14 @@ class SnapshotFactory:
             temperature_values: list[float] = []
             battery_power_kw = 0.0
             for inverter_rows in inverter_groups.values():
-                loads = [value for row in inverter_rows if (value := _number(row, "outsumw"))]
-                pvs = [value for row in inverter_rows if (value := _number(row, "pv1power"))]
+                loads = [
+                    value for row in inverter_rows if (value := _number(row, "outsumw"))
+                ]
+                pvs = [
+                    value
+                    for row in inverter_rows
+                    if (value := _number(row, "pv1power"))
+                ]
                 grids = [
                     value
                     for row in inverter_rows
@@ -126,10 +134,14 @@ class SnapshotFactory:
                 grid_kw += max(0.0, _mean(grids, 0.0) / 1000)
                 battery_power_kw += _mean(battery_powers, 0.0) / 1000
                 soc_values.extend(
-                    value for row in inverter_rows if (value := _number(row, "battsoc")) is not None
+                    value
+                    for row in inverter_rows
+                    if (value := _number(row, "battsoc")) is not None
                 )
                 temperature_values.extend(
-                    value for row in inverter_rows if (value := _number(row, "temper1")) is not None
+                    value
+                    for row in inverter_rows
+                    if (value := _number(row, "temper1")) is not None
                 )
             raw_points.append(
                 {
@@ -144,7 +156,9 @@ class SnapshotFactory:
 
         available = [point for point in raw_points if point is not None]
         if len(available) < 48:
-            raise EnergyDataError("CSV needs at least 48 populated quarter-hour intervals")
+            raise EnergyDataError(
+                "CSV needs at least 48 populated quarter-hour intervals"
+            )
         first = available[0]
         last = first
         normalized: list[dict[str, float]] = []
@@ -289,7 +303,9 @@ class ReplayMonitor:
         self.task: TaskRecord | None = None
         self.events: list[dict[str, Any]] = []
 
-    def start(self, snapshot: ExternalDataSnapshot, start_interval: int = 20) -> dict[str, Any]:
+    def start(
+        self, snapshot: ExternalDataSnapshot, start_interval: int = 20
+    ) -> dict[str, Any]:
         self.snapshot = snapshot
         self.cursor = min(max(start_interval, 1), 94)
         self.running = True
@@ -305,12 +321,18 @@ class ReplayMonitor:
         current = self.snapshot.telemetry[self.cursor]
         signals: list[str] = []
         if previous.pv_kw >= 0.5 and current.pv_kw < previous.pv_kw * 0.45:
-            signals.append(f"PV output dropped {100 * (1 - current.pv_kw / previous.pv_kw):.1f}%")
+            signals.append(
+                f"PV output dropped {100 * (1 - current.pv_kw / previous.pv_kw):.1f}%"
+            )
         if previous.load_kw >= 0.25 and current.load_kw > previous.load_kw * 1.55:
-            signals.append(f"load increased {100 * (current.load_kw / previous.load_kw - 1):.1f}%")
+            signals.append(
+                f"load increased {100 * (current.load_kw / previous.load_kw - 1):.1f}%"
+            )
 
         if signals and self.task is None:
-            self._event("DEEPSEEK_ROLLING_CONTEXT", self._rolling_context(current, signals))
+            self._event(
+                "DEEPSEEK_ROLLING_CONTEXT", self._rolling_context(current, signals)
+            )
             decision = self._ask_deepseek(current, signals)
             if decision:
                 self._event("DEEPSEEK_DECISION", decision)
@@ -318,7 +340,9 @@ class ReplayMonitor:
                 update={"alerts": ["V1 plan invalidated by Monitor", *signals]}
             )
             self._event("V1_INVALIDATED", "; ".join(signals))
-            self._event("AGENTTEAMS_WOKEN", "Monitor handed trusted Snapshot to Team Leader")
+            self._event(
+                "AGENTTEAMS_WOKEN", "Monitor handed trusted Snapshot to Team Leader"
+            )
             self.task = self.orchestrator.run(
                 scenario,
                 trigger="OPENCEM_MONITOR_PLAN_INVALIDATION",
@@ -332,9 +356,11 @@ class ReplayMonitor:
         else:
             self._event(
                 "SNAPSHOT_READ",
-                f"interval {self.cursor:02d}: V1 valid; AgentTeams sleeping"
-                if self.task is None
-                else f"interval {self.cursor:02d}: V2 gate remains {self.task.state.value}",
+                (
+                    f"interval {self.cursor:02d}: V1 valid; AgentTeams sleeping"
+                    if self.task is None
+                    else f"interval {self.cursor:02d}: V2 gate remains {self.task.state.value}"
+                ),
             )
 
         self.cursor += 1
@@ -352,7 +378,9 @@ class ReplayMonitor:
         self.refresh_task()
         current = None
         if self.snapshot is not None:
-            current = self.snapshot.telemetry[min(self.cursor, 95)].model_dump(mode="json")
+            current = self.snapshot.telemetry[min(self.cursor, 95)].model_dump(
+                mode="json"
+            )
         return {
             "running": self.running,
             "source": self.snapshot.source if self.snapshot else None,
@@ -378,7 +406,9 @@ class ReplayMonitor:
             }
         )
 
-    def _rolling_context(self, current: ExternalTelemetryPoint, signals: list[str]) -> str:
+    def _rolling_context(
+        self, current: ExternalTelemetryPoint, signals: list[str]
+    ) -> str:
         today = self.snapshot.telemetry[: current.interval + 1] if self.snapshot else []
         grid_kw = max(current.load_kw - current.pv_kw, 0)
         grid_kwh = sum(max(point.load_kw - point.pv_kw, 0) * 0.25 for point in today)
@@ -389,7 +419,9 @@ class ReplayMonitor:
             f"grid_today={grid_kwh:.2f}kWh; signals={'; '.join(signals)}"
         )
 
-    def _ask_deepseek(self, current: ExternalTelemetryPoint, signals: list[str]) -> str | None:
+    def _ask_deepseek(
+        self, current: ExternalTelemetryPoint, signals: list[str]
+    ) -> str | None:
         if self.decision_callback is None:
             return "未配置 DeepSeek 网关；使用确定性优化器继续 V2 重规划。"
         today = self.snapshot.telemetry[: current.interval + 1] if self.snapshot else []
