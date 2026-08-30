@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -11,6 +12,7 @@ from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.compound_demo import CompoundChangeDemo, DemoWorkflowError
 from energymesh.config import Settings
+from energymesh.data_pipeline import EnergyDataError, ReplayMonitor, SnapshotFactory
 from energymesh.demo import apply_operational_change, load_demo_scenario
 from energymesh.external_data import ExternalDataSimulator
 from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
@@ -59,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     scenario = load_demo_scenario()
     external_data = ExternalDataSimulator()
+    snapshot_factory = SnapshotFactory()
+    monitor = ReplayMonitor(orchestrator)
 
     app = FastAPI(
         title="EnergyMesh Agents API",
@@ -72,6 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.orchestrator = orchestrator
     app.state.scenario = scenario
     app.state.external_data = external_data
+    app.state.snapshot_factory = snapshot_factory
+    app.state.monitor = monitor
+    app.state.uploaded_snapshot = None
 
     def get_orchestrator(request: Request) -> EnergyMeshOrchestrator:
         return cast(EnergyMeshOrchestrator, request.app.state.orchestrator)
@@ -183,11 +190,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body: AgentRuntimeChatRequest,
         runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
     ) -> StreamingResponse:
-        def sse_event(event: dict[str, object]):
+        def sse_event(event: dict[str, object]) -> Iterator[str]:
             yield f"event: {event['type']}\n"
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-        def events():
+        def events() -> Iterator[str]:
             try:
                 for event in runtime.stream_chat(body.message, body.session_id, body.task_id):
                     yield from sse_event(event)
@@ -235,6 +242,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> ExternalDataSnapshot:
         return simulator.snapshot(seed, current_interval, fault_mode)
 
+    @app.get("/api/data/sources")
+    def data_sources(request: Request) -> dict[str, object]:
+        return {
+            "snapshot_contract": "ExternalDataSnapshot",
+            "simulation_mode": request.app.state.settings.simulation_mode,
+            "sources": [
+                {
+                    "id": "opencem_csv_upload",
+                    "label": "OpenCEM history replay",
+                    "status": "ready",
+                    "write_permission": False,
+                },
+                {
+                    "id": "site_readonly_connector",
+                    "label": "Park EMS / BMS / PCS connector",
+                    "status": "deployment adapter contract ready",
+                    "write_permission": False,
+                    "note": "No production endpoint is contacted by this repository.",
+                },
+            ],
+        }
+
+    @app.get("/api/data/opencem/sample.csv")
+    def download_opencem_sample() -> FileResponse:
+        sample_path = Path(__file__).parents[2] / "data" / "opencem" / "2025-07-a.csv"
+        if not sample_path.exists():
+            raise HTTPException(status_code=404, detail="OpenCEM sample CSV is not available")
+        return FileResponse(
+            sample_path,
+            media_type="text/csv",
+            filename="opencem-cuhk-shenzhen-2025-07-a.csv",
+        )
+
+    @app.post("/api/data/upload", response_model=ExternalDataSnapshot)
+    async def upload_energy_csv(
+        request: Request, filename: str = "upload.csv"
+    ) -> ExternalDataSnapshot:
+        factory: SnapshotFactory = request.app.state.snapshot_factory
+        try:
+            snapshot = factory.from_opencem_csv(await request.body(), filename)
+        except EnergyDataError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        request.app.state.uploaded_snapshot = snapshot
+        return snapshot
+
+    @app.get("/api/data/snapshot/current", response_model=ExternalDataSnapshot)
+    def current_uploaded_snapshot(request: Request) -> ExternalDataSnapshot:
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="no normalized Snapshot is loaded")
+        return snapshot
+
+    @app.post("/api/monitor/start")
+    def start_monitor(request: Request, start_interval: int = 20) -> dict[str, object]:
+        active_monitor: ReplayMonitor = request.app.state.monitor
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        if snapshot is None:
+            raise HTTPException(
+                status_code=409,
+                detail="no live or uploaded energy data is connected",
+            )
+        return cast(dict[str, object], active_monitor.start(snapshot, start_interval))
+
+    @app.post("/api/monitor/step")
+    def step_monitor(request: Request) -> dict[str, object]:
+        active_monitor: ReplayMonitor = request.app.state.monitor
+        try:
+            return cast(dict[str, object], active_monitor.step())
+        except EnergyDataError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @app.get("/api/monitor/status")
+    def monitor_status(request: Request) -> dict[str, object]:
+        active_monitor: ReplayMonitor = request.app.state.monitor
+        return cast(dict[str, object], active_monitor.status())
+
     @app.post("/api/external/dispatch", response_model=TaskRecord, status_code=201)
     def dispatch_from_external_data(
         body: ExternalDispatchRequest,
@@ -276,6 +359,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> TaskRecord:
         try:
             return workflow.decide(task_id, body)
+        except WorkflowError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+
+    @app.post("/api/tasks/{task_id}/approval-only", response_model=TaskRecord)
+    def approve_without_execution(
+        task_id: str,
+        body: ApprovalRequest,
+        workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
+    ) -> TaskRecord:
+        try:
+            return workflow.approve_only(task_id, body)
+        except WorkflowError as error:
+            message = str(error)
+            status = 404 if message == "task not found" else 409
+            raise HTTPException(status_code=status, detail=message) from error
+
+    @app.post("/api/tasks/{task_id}/execute-approved", response_model=TaskRecord)
+    def execute_approved_task(
+        task_id: str,
+        workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
+    ) -> TaskRecord:
+        try:
+            return workflow.execute_approved(task_id)
         except WorkflowError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409

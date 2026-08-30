@@ -1,8 +1,18 @@
 # Project Status
 
-Updated: 2026-07-28
+Updated: 2026-08-29
 
 ## Implemented
+
+- Official OpenCEM CUHK-Shenzhen real PV-and-battery microgrid CSV replay, with an unmodified,
+  checksum-pinned public measurement partition and explicit CC BY 4.0 attribution.
+- Shared `ExternalDataSnapshot` normalization boundary for uploaded history and future read-only
+  park connectors; downstream Monitor, perception, optimizer, auditor, and executor are source
+  agnostic.
+- Deterministic continuous Monitor that keeps AgentTeams asleep during valid V1 operation and wakes
+  the team only after a material measured load/PV deviation invalidates the plan.
+- Separate V2 audit, human approval, simulated execution, rollback, and SHA-256 evidence controls in
+  the operator console. Approval no longer implies execution on the real-data replay path.
 
 - 96-point synthetic park forecast with load, PV, tariff, and battery temperature event.
 - External-data simulator for EMS/BMS/PCS/weather/MES-style inputs, covering load, PV, battery

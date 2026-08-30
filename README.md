@@ -146,6 +146,10 @@ AGENTTEAMS_ENABLED=true
 | `GET /api/health` | 运行状态与安全配置 |
 | `GET /api/agentteams/manifest` | Team、Worker、Skill、Human 和模型配置清单 |
 | `GET /api/external/snapshot` | 模拟 EMS / BMS / PCS / 气象 / MES 外部态势 |
+| `POST /api/data/upload` | 上传 OpenCEM CSV 并归一化为统一 `ExternalDataSnapshot` |
+| `POST /api/monitor/start` / `step` | 15 分钟历史回放；Monitor 异常时才唤醒 AgentTeams |
+| `POST /api/tasks/{id}/approval-only` | 人工批准 V2，但不自动执行 |
+| `POST /api/tasks/{id}/execute-approved` | 模拟执行已审核、已人工批准的 V2 |
 | `POST /api/external/dispatch` | 用外部态势触发完整调度闭环 |
 | `POST /api/demo/run` | 运行 14:00 复合变化演示 |
 | `POST /api/tasks/{task_id}/approve` | 对获审方案进行人工审批 |
@@ -167,6 +171,10 @@ make run
 
 打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。OpenAPI 文档位于
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。
+
+界面右侧点击“一键真实数据回放”即可使用仓库内置的 OpenCEM 官方测量分区，观察
+`V1 active → Monitor invalidates → AgentTeams wakes → V2 audited → human approval → execution →
+evidence`。也可上传兼容 CSV；“连接数据源”保留相同 Snapshot 契约供园区只读适配器部署。
 
 Docker Compose：
 

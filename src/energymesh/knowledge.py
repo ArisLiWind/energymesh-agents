@@ -25,7 +25,7 @@ class KnowledgeBase:
             text = path.read_text(encoding="utf-8")
             title = self._title(text, path)
             lower = text.lower()
-            score = sum(lower.count(term) for term in terms)
+            score: float = sum(lower.count(term) for term in terms)
             if score == 0:
                 score = 0.2 if any(char in text for char in query[:12]) else 0
             if score <= 0:

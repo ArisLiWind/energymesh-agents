@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import os
@@ -342,9 +343,7 @@ class EvidenceStore:
                 values,
             )
 
-    def _list_payload_rows(
-        self, table: str, model: type[BaseModel], task_id: str
-    ) -> PayloadRows:
+    def _list_payload_rows(self, table: str, model: type[BaseModel], task_id: str) -> PayloadRows:
         with self._connect() as connection:
             rows = connection.execute(
                 f"SELECT payload FROM {table} WHERE task_id = ? ORDER BY created_at, rowid",
@@ -849,7 +848,7 @@ class EvidenceStore:
 
     def list_agent_messages(
         self, session_id: str, limit: int = 50, agent_id: str | None = None
-    ) -> list[AgentMessage]:
+    ) -> builtins.list[AgentMessage]:
         where = "session_id = ?"
         parameters: list[object] = [session_id]
         if agent_id is not None:
@@ -905,7 +904,7 @@ class EvidenceStore:
             )
         return artifact
 
-    def list_runtime_artifacts(self, task_id: str) -> list[RuntimeArtifact]:
+    def list_runtime_artifacts(self, task_id: str) -> builtins.list[RuntimeArtifact]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -954,7 +953,7 @@ class EvidenceStore:
             )
         return call
 
-    def list_runtime_tool_calls(self, task_id: str) -> list[RuntimeToolCall]:
+    def list_runtime_tool_calls(self, task_id: str) -> builtins.list[RuntimeToolCall]:
         with self._connect() as connection:
             rows = connection.execute(
                 """

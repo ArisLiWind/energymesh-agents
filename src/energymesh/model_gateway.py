@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import cast
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -123,25 +125,31 @@ def chat_with_agent_config(
 ) -> str:
     try:
         from openai import OpenAI
+        from openai.types.chat import ChatCompletionMessageParam
     except ImportError as error:
         raise RuntimeError("openai package is not installed") from error
 
-    client_options = {
-        "api_key": config.api_key,
-        "base_url": normalize_base_url(config.base_url),
-        "timeout": 30,
-    }
+    base_url = normalize_base_url(config.base_url)
     proxy_url = os.getenv("ENERGYMESH_MODEL_PROXY")
     if proxy_url:
         import httpx
 
-        client_options["http_client"] = httpx.Client(proxy=proxy_url, timeout=30)
-    client = OpenAI(**client_options)
-    messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPTS[config.agent_id]},
-        *(history or []),
-        {"role": "user", "content": message},
-    ]
+        client = OpenAI(
+            api_key=config.api_key,
+            base_url=base_url,
+            timeout=30,
+            http_client=httpx.Client(proxy=proxy_url, timeout=30),
+        )
+    else:
+        client = OpenAI(api_key=config.api_key, base_url=base_url, timeout=30)
+    messages = cast(
+        Iterable[ChatCompletionMessageParam],
+        [
+            {"role": "system", "content": AGENT_SYSTEM_PROMPTS[config.agent_id]},
+            *(history or []),
+            {"role": "user", "content": message},
+        ],
+    )
     try:
         response = client.chat.completions.create(
             model=config.model,

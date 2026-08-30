@@ -271,9 +271,7 @@ class CompoundChangeDemo:
             "结构化指令已生成，进入执行偏差验证",
         )
         deviation = (
-            request.force_deviation_percent
-            if request.force_deviation_percent is not None
-            else 2.4
+            request.force_deviation_percent if request.force_deviation_percent is not None else 2.4
         )
         evidence_hash = self._evidence_hash(task_id)
         verification = VerificationResult(

@@ -173,6 +173,12 @@ class EnergyMeshOrchestrator:
         return self._execute(task)
 
     def decide(self, task_id: str, request: ApprovalRequest) -> TaskRecord:
+        task = self.approve_only(task_id, request)
+        if not request.approved:
+            return task
+        return self.execute_approved(task_id)
+
+    def approve_only(self, task_id: str, request: ApprovalRequest) -> TaskRecord:
         task = self.store.get(task_id)
         if task is None:
             raise WorkflowError("task not found")
@@ -203,6 +209,16 @@ class EnergyMeshOrchestrator:
             approval_id=task.approval.approval_id,
         )
         self.store.save(task)
+        return task
+
+    def execute_approved(self, task_id: str) -> TaskRecord:
+        task = self.store.get(task_id)
+        if task is None:
+            raise WorkflowError("task not found")
+        if task.state != TaskState.APPROVED:
+            raise WorkflowError(f"task is not approved for execution: {task.state.value}")
+        if task.approval is None or not task.approval.approved:
+            raise WorkflowError("valid human approval is required before execution")
         return self._execute(task)
 
     def _execute(self, task: TaskRecord) -> TaskRecord:

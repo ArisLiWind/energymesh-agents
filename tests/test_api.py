@@ -31,7 +31,9 @@ def test_health_and_demo_workflow(settings) -> None:
         assert manifest.status_code == 200
         manifest_body = manifest.json()
         assert manifest_body["framework"] == "agentscope-ai/AgentTeams open-source runtime"
-        assert manifest_body["framework_repository"] == "https://github.com/agentscope-ai/AgentTeams"
+        assert (
+            manifest_body["framework_repository"] == "https://github.com/agentscope-ai/AgentTeams"
+        )
         assert manifest_body["team_name"] == "energymesh-test-team"
         assert manifest_body["declarative_resources"] == "agentteams/agentteams-resources.yaml"
         assert [worker["worker_id"] for worker in manifest_body["workers"]] == [
@@ -85,8 +87,7 @@ def test_health_and_demo_workflow(settings) -> None:
         assert external_body["trigger"] == "EXTERNAL_DATA_CLOUD_AND_TRANSFORMER_HEAT"
         assert external_body["scenario_snapshot"]["production_plan"]["source"] == "simulated_mes"
         assert any(
-            event["action"] == "independent_policy_audit"
-            for event in external_body["trace"]
+            event["action"] == "independent_policy_audit" for event in external_body["trace"]
         )
 
         created = client.post("/api/demo/run")
@@ -355,9 +356,7 @@ def test_runtime_stream_emits_progressive_agent_events(settings, monkeypatch) ->
             body = response.read().decode()
 
     events = [
-        line.removeprefix("event: ")
-        for line in body.splitlines()
-        if line.startswith("event: ")
+        line.removeprefix("event: ") for line in body.splitlines() if line.startswith("event: ")
     ]
     assert events == [
         "runtime_started",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from energymesh.knowledge import KnowledgeBase, KnowledgeHit
@@ -416,8 +416,7 @@ class PersistentAgentRuntime:
                 },
             ],
             "agent_boundary": (
-                "Dispatch generates candidate plans only; it cannot verify, approve, "
-                "or execute."
+                "Dispatch generates candidate plans only; it cannot verify, approve, or execute."
             ),
         }
         artifact = self._save_artifact(
@@ -454,9 +453,11 @@ class PersistentAgentRuntime:
                 "production_constraint": candidate["plan_id"] != "Plan-C",
                 "approval_required": candidate["plan_id"] in {"Plan-B", "Plan-C"},
             }
-            decision = "PASS" if all(
-                [passes["transformer"], passes["soc"], passes["production_constraint"]]
-            ) else "REJECT"
+            decision = (
+                "PASS"
+                if all([passes["transformer"], passes["soc"], passes["production_constraint"]])
+                else "REJECT"
+            )
             verifications.append(
                 {
                     "plan_id": candidate["plan_id"],
@@ -564,7 +565,7 @@ class PersistentAgentRuntime:
         return self._local_agent_response(
             agent_id,
             payload,
-            f"model gateway status: no api_key configured",
+            "model gateway status: no api_key configured",
         )
 
     def _runtime_config(self, agent_id: str) -> StoredModelConfig:
@@ -642,9 +643,7 @@ class PersistentAgentRuntime:
             )
         if agent_id == "audit_agent":
             verification = payload.get("verification", [])
-            summary = [
-                f"{item.get('plan_id')}={item.get('decision')}" for item in verification
-            ]
+            summary = [f"{item.get('plan_id')}={item.get('decision')}" for item in verification]
             return (
                 "审核 Worker 已完成独立安全复算："
                 f"{'；'.join(summary)}。不可验证或违反硬约束的方案默认拒绝。"
@@ -726,7 +725,7 @@ class PersistentAgentRuntime:
         )
 
     def _list_runtime_artifacts(self, task_id: str) -> list[RuntimeArtifact]:
-        return cast(list[RuntimeArtifact], self.store.list_runtime_artifacts(task_id))
+        return self.store.list_runtime_artifacts(task_id)
 
     def _record_agent_response(
         self,
@@ -786,14 +785,11 @@ class PersistentAgentRuntime:
     @staticmethod
     def _audit_reason(plan_id: str, checks: dict[str, bool]) -> str:
         failed = [
-            name
-            for name, passed in checks.items()
-            if name != "approval_required" and not passed
+            name for name, passed in checks.items() if name != "approval_required" and not passed
         ]
         if not failed:
             return (
-                f"{plan_id} passes hard checks; approval is required if it changes "
-                "flexible load."
+                f"{plan_id} passes hard checks; approval is required if it changes flexible load."
             )
         return f"{plan_id} rejected because these checks failed: {', '.join(failed)}."
 

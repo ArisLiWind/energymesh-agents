@@ -70,9 +70,7 @@ def build_agentteams_manifest(
     settings: Settings,
     model_configs: dict[str, AgentModelConfigPublic] | None = None,
 ) -> AgentTeamsManifest:
-    runtime_mode = (
-        "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
-    )
+    runtime_mode = "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
     return AgentTeamsManifest(
         framework="agentscope-ai/AgentTeams open-source runtime",
         framework_repository="https://github.com/agentscope-ai/AgentTeams",
@@ -171,8 +169,7 @@ def build_agentteams_manifest(
             AgentTeamsSkillSpec(
                 name="execution_mapping",
                 description=(
-                    "将获批策略脚本的确定性输出映射为 EMS、PCS、"
-                    "负荷控制系统的结构化幂等指令。"
+                    "将获批策略脚本的确定性输出映射为 EMS、PCS、负荷控制系统的结构化幂等指令。"
                 ),
                 local_module="energymesh.simulator.SimulationExecutor",
                 tool_contract="POST /api/tasks/{task_id}/approval",

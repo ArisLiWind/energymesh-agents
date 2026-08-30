@@ -3,10 +3,10 @@ import * as THREE from "/static/vendor/three.module.min.js";
 const GRID_STEP = 2;
 const GRID_LIMIT = 22;
 const MODULE_TYPES = {
-  factory: { title: "负载", metric: "25 MW", note: "日用电量 100 MWh", category: "用电端" },
-  solar: { title: "光伏", metric: "10 MW", note: "日发电量 42 MWh", category: "发电端" },
-  storage: { title: "储能", metric: "SOC 20%", note: "当前功率 0 MW", category: "储能端" },
-  grid: { title: "电网", metric: "15 MW", note: "日购电量 100 MWh", category: "外部输入" },
+  factory: { title: "园区用电", metric: "0.00 kW", note: "所有设备总需求", category: "用电端" },
+  solar: { title: "自有发电", metric: "0.00 kW", note: "PV 等自发电汇总", category: "发电端" },
+  storage: { title: "储能", metric: "SOC 55%", note: "待命 0.00 kW", category: "储能端" },
+  grid: { title: "电网购电", metric: "0.00 kW", note: "缺口由外部电网补足", category: "外部输入" },
   charge: { title: "充电负载", metric: "2 MW", note: "日用电量 8 MWh", category: "用电端" },
   compute: { title: "数据负载", metric: "5 MW", note: "日用电量 28 MWh", category: "用电端" },
   datacenter: { title: "数据中心", metric: "6 MW", note: "新增用电端", category: "用电端" },
@@ -435,12 +435,14 @@ export function createCampus3D(canvas, onLabels) {
     },
     applyEnergyState(payload = {}) {
       flowMultiplier = payload.optimized ? 0.5 : 0.22;
-      MODULE_TYPES.grid.metric = payload.optimized ? "8 MW" : "15 MW";
-      MODULE_TYPES.grid.note = payload.optimized ? "日购电量 70 MWh" : "日购电量 100 MWh";
+      MODULE_TYPES.grid.metric = payload.gridImport || (payload.optimized ? "8 MW" : "0.00 kW");
+      MODULE_TYPES.grid.note = payload.optimized ? "已按批准方案执行" : "缺口由外部电网补足";
+      MODULE_TYPES.solar.metric = payload.generation || MODULE_TYPES.solar.metric;
+      MODULE_TYPES.solar.note = "OpenCEM 实测发电";
       MODULE_TYPES.storage.metric = payload.storage || (payload.optimized ? "SOC 79%" : "SOC 20%");
-      MODULE_TYPES.storage.note = payload.optimized ? "充放电调峰中" : "当前功率 0 MW";
+      MODULE_TYPES.storage.note = payload.storageFlow || (payload.optimized ? "充放电调峰中" : "待命 0.00 kW");
       MODULE_TYPES.factory.metric = payload.load || "25 MW";
-      MODULE_TYPES.factory.note = payload.optimized ? "总用电量下降 15%" : "日用电量 100 MWh";
+      MODULE_TYPES.factory.note = payload.optimized ? "已纳入 V2 调度" : "OpenCEM 实测负载";
       MODULE_TYPES.compute.note = payload.optimized ? "安全接入完成" : "关键负载";
       rebuildModules();
       if (selectedId) select(selectedId);

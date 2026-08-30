@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260807-agent-identity-fix2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260830-prod-data-boundary" />
   </head>
   <body>
     <main class="app-shell">
@@ -20,6 +20,7 @@
         <button id="nav-trace" class="rail-item" type="button" aria-label="Trace" title="Trace">↻</button>
         <button id="nav-chat" class="rail-item" type="button" aria-label="AI chat" title="AI chat">⌁</button>
         <button id="nav-safety" class="rail-item" type="button" aria-label="Safety rollback" title="Safety rollback">◌</button>
+        <button id="nav-connect" class="rail-item" type="button" aria-label="Connect energy data" title="连接能源数据">⇄</button>
         <button id="translate-button" class="rail-item translate-item" type="button" aria-label="Translate to Chinese" title="翻译为中文">文</button>
       </nav>
 
@@ -123,22 +124,47 @@
 
         <section class="plot-card">
           <div class="plot-caption">
+            <div class="plot-monitor" aria-label="Monitor state">
+              <i id="monitor-pulse"></i>
+              <span>Monitor <strong id="monitor-state">IDLE</strong></span>
+              <span>Plan <strong id="monitor-plan">V1</strong></span>
+              <span>AgentTeams <strong id="monitor-agents">SLEEPING</strong></span>
+              <span id="monitor-interval">--</span>
+            </div>
+            <div class="monitor-gate">
+              <button id="monitor-approve" type="button" disabled>人工确认 V2</button>
+              <button id="monitor-execute" type="button" disabled>执行已批准计划</button>
+              <button id="monitor-evidence" type="button" disabled>查看证据</button>
+            </div>
             <span id="task-state">IDLE</span>
           </div>
           <div class="visual-grid">
             <div class="campus">
               <canvas id="campus-3d" aria-label="EnergyMesh 3D campus sandbox"></canvas>
-              <section class="campus-hud" aria-label="Energy simulation state">
-                <div class="campus-score-row">
-                  <article><span>能源成本</span><strong id="campus-cost">¥10,000</strong><small id="campus-saved">待优化</small></article>
-                  <article><span>浪费率</span><strong id="campus-waste">20%</strong><small>光伏弃电 / 空耗</small></article>
-                  <article><span>稳定性</span><strong id="campus-stability">82%</strong><small>负载满足率</small></article>
+              <section class="campus-hud" aria-label="Energy runtime state">
+                <time id="campus-current-time">未接入真实数据</time>
+                <article class="campus-balance">
+                  <span>账户余额</span>
+                  <strong id="campus-balance">--</strong>
+                  <small>生产接入后由账户系统回读</small>
+                </article>
+                <div class="campus-power-row">
+                  <article><span>当前用电功率</span><strong id="campus-load">-- kW</strong></article>
+                  <article><span>当前发电功率</span><strong id="campus-generation">-- kW</strong></article>
                 </div>
-                <div class="energy-pool-row">
-                  <article><span>发电端</span><strong id="pool-generation">30 MW</strong><small id="pool-generation-note">PV + Generator</small></article>
-                  <article><span>储能端</span><strong id="pool-storage">SOC 20%</strong><small id="pool-storage-note">待充电</small></article>
-                  <article><span>用电端</span><strong id="pool-load">25 MW</strong><small id="pool-load-note">Factory + Data</small></article>
-                </div>
+                <article class="campus-storage">
+                  <span>当前储能</span>
+                  <strong id="campus-storage">SOC --%</strong>
+                  <small id="campus-storage-flow">未接入</small>
+                </article>
+                <article>
+                  <span>当前电网购电功率</span>
+                  <strong id="campus-grid-import">-- kW</strong>
+                </article>
+                <article>
+                  <span>今日累计购电量</span>
+                  <strong id="campus-grid-energy">-- kWh</strong>
+                </article>
               </section>
               <div class="campus-tools" aria-label="Campus editor tools">
                 <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
@@ -149,10 +175,10 @@
                 <button id="campus-delete" type="button">删除选中</button>
               </div>
               <div class="campus-hint">拖动建筑到网格位置 · 滚轮缩放 · 空白处旋转视角</div>
-              <article class="asset metric-card" data-anchor="factory"><span>负载</span><strong>464.32 kW</strong><small>日用电量 2,726.00 kWh</small><small>月用电量 31.88 MWh</small><small>总用电量 13,593.96 MWh</small></article>
-              <article class="asset metric-card" data-anchor="solar"><span>光伏</span><strong>335 kW</strong><small>日发电量 0.00 kWh</small><small>月发电量 4.40 MWh</small><small>总发电量 2,218.80 MWh</small></article>
-              <article class="asset metric-card critical" data-anchor="storage"><span>储能</span><strong>SOC 55%</strong><small>总功率 0.00 kW</small><small>日充电量 0.00 kWh</small><small>日放电量 0.00 kWh</small></article>
-              <article class="asset warning" data-anchor="grid"><span data-i18n="assetGrid">Grid</span><strong>475 kW</strong><small data-i18n="assetGridNote">import limited</small></article>
+              <article class="asset metric-card" data-anchor="factory"><span>园区用电</span><strong>-- kW</strong><small>等待数据接入</small></article>
+              <article class="asset metric-card" data-anchor="solar"><span>自有发电</span><strong>-- kW</strong><small>等待数据接入</small></article>
+              <article class="asset metric-card critical" data-anchor="storage"><span>储能</span><strong>SOC --%</strong><small>等待数据接入</small></article>
+              <article class="asset warning" data-anchor="grid"><span data-i18n="assetGrid">Grid</span><strong>-- kW</strong><small data-i18n="assetGridNote">import limited</small></article>
               <article class="asset" data-anchor="charge"><span data-i18n="assetCharge">Charging</span><strong>65 kW</strong><small data-i18n="assetChargeNote">flexible load</small></article>
               <article class="asset" data-anchor="compute"><span data-i18n="assetCompute">Compute</span><strong>243 kW</strong><small data-i18n="assetComputeNote">critical load</small></article>
             </div>
@@ -330,7 +356,34 @@
         </div>
       </form>
     </dialog>
+    <dialog id="connector-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <div><span>ENERGY DATA</span><h2>连接能源数据</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="connector-dialog">×</button>
+        </div>
+        <div class="gateway-body connector-copy">
+          <input id="energy-csv-file" type="file" accept=".csv,text/csv" hidden />
+          <div class="connector-choice">
+            <button id="connect-energy-source" class="primary" type="button">接入园区系统数据</button>
+            <button id="upload-energy-data" class="secondary" type="button">上传历史数据测试</button>
+          </div>
+          <div class="connector-status">
+            <span id="monitor-source-note">尚未加载真实数据</span>
+            <div id="monitor-event-list" class="monitor-event-list">
+              <p>Monitor 持续读取；异常前不调用 LLM。</p>
+            </div>
+          </div>
+          <pre>{
+  "mode": "read_only",
+  "interval_minutes": 15,
+  "output": "ExternalDataSnapshot",
+  "production_write": false
+}</pre>
+        </div>
+      </form>
+    </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260807-runtime-streaming2"></script>
+    <script type="module" src="/static/app.js?v=20260830-prod-data-boundary"></script>
   </body>
 </html>

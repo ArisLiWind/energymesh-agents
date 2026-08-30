@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260806-energy-pool";
+import { createCampus3D } from "/static/campus3d.js?v=20260829-campus-ledger";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -22,20 +22,21 @@ const state = {
   runtimeSessionId: window.localStorage.getItem("energymesh.runtimeSessionId") || null,
   campusSimulation: {
     optimized: false,
-    cost: "¥10,000",
-    saved: "待优化",
-    waste: "20%",
-    stability: "82%",
-    generation: "30 MW",
-    generationNote: "PV + Generator",
-    storage: "SOC 20%",
-    storageNote: "待充电",
-    load: "25 MW",
-    loadNote: "Factory + Data",
+    time: "未接入真实数据",
+    balance: "--",
+    load: "-- kW",
+    generation: "-- kW",
+    storage: "SOC --%",
+    storageFlow: "未接入",
+    gridImport: "-- kW",
+    gridEnergy: "-- kWh",
   },
   pendingExecutionScenario: null,
   selectedDeviceId: "pcs",
   selectedDeviceMode: "runtime",
+  energySnapshot: null,
+  monitor: null,
+  monitorTimer: null,
 };
 
 const agentProfiles = {
@@ -1710,15 +1711,19 @@ function drawScenarioChart() {
   const canvas = $("#scenario-chart");
   const { context, width, height } = resizeCanvas(canvas);
   const livePhase = state.chartTick * 0.19;
-  const load = seededSeries(96, 760, 210, livePhase).map((value, index) => {
+  const measured = state.energySnapshot?.telemetry;
+  const load = measured?.length === 96 ? measured.map((point) => point.load_kw) : seededSeries(96, 760, 210, livePhase).map((value, index) => {
     const liveRipple = Math.sin(index * 0.33 + livePhase) * 24;
     return index >= 56 ? value + 420 + liveRipple : value + liveRipple;
   });
-  const pv = seededSeries(96, 240, 250, 1.7 + livePhase).map((value, index) => {
+  const pv = measured?.length === 96 ? measured.map((point) => point.pv_kw) : seededSeries(96, 240, 250, 1.7 + livePhase).map((value, index) => {
     const cloudDip = index >= 56 && index < 64 ? 0.814 : 1;
     return Math.max(0, value * cloudDip + Math.sin(index * 0.41 + livePhase) * 18);
   });
-  const tariff = Array.from({ length: 96 }, (_, index) => (index >= 56 && index <= 80 ? 980 : index > 32 && index < 56 ? 620 : 380));
+  const measuredMax = Math.max(...load, ...pv, 1);
+  const tariff = measured?.length === 96
+    ? measured.map((point) => point.tariff_yuan_per_kwh * measuredMax * .75)
+    : Array.from({ length: 96 }, (_, index) => (index >= 56 && index <= 80 ? 980 : index > 32 && index < 56 ? 620 : 380));
   const series = [
     { label: state.language === "zh" ? "负荷" : "Load", color: "#6c73e6", values: load },
     { label: state.language === "zh" ? "光伏" : "PV", color: "#4ca3ff", values: pv },
@@ -1760,7 +1765,7 @@ function drawScenarioChart() {
     context.lineWidth = 1.8;
     context.stroke();
   });
-  const currentIndex = state.chartTick % 96;
+  const currentIndex = state.monitor?.cursor ?? state.chartTick % 96;
   const currentX = inset.left + (plotWidth * currentIndex) / 95;
   context.strokeStyle = "rgba(255,255,255,.42)";
   context.lineWidth = 1;
@@ -1783,6 +1788,53 @@ function drawScenarioChart() {
     context.fillStyle = "#c9cbd1";
     context.fillText(item.label, x + 22, 12);
   });
+}
+
+function formatSnapshotTime(timestamp) {
+  if (!timestamp) return "未接入真实数据";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "未接入真实数据";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function snapshotAtCurrentCursor() {
+  const telemetry = state.energySnapshot?.telemetry;
+  if (!Array.isArray(telemetry) || !telemetry.length) return null;
+  const cursor = state.monitor?.cursor ?? state.energySnapshot.current_interval ?? 0;
+  return telemetry[Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1)] || null;
+}
+
+function gridEnergyUntil(cursor) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const end = Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1);
+  return telemetry.slice(0, end + 1).reduce((total, point) => (
+    total + Number(point.grid_import_kw || 0) * 0.25
+  ), 0);
+}
+
+function gridCostUntil(cursor) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const end = Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1);
+  return telemetry.slice(0, end + 1).reduce((total, point) => (
+    total + Number(point.grid_import_kw || 0) * Number(point.tariff_yuan_per_kwh || 0) * 0.25
+  ), 0);
+}
+
+function batteryPowerAt(cursor) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const point = telemetry[cursor];
+  if (!point) return { label: "待命", kw: 0 };
+  const previous = telemetry[Math.max(0, cursor - 1)] || point;
+  const capacity = Number(state.energySnapshot?.scenario?.site?.battery_capacity_kwh || 800);
+  const deltaKwh = (Number(point.battery_soc || 0) - Number(previous.battery_soc || 0)) * capacity;
+  const kw = Math.abs(deltaKwh / 0.25);
+  if (kw < 0.01) return { label: "待命", kw: 0 };
+  return { label: deltaKwh >= 0 ? "充电" : "放电", kw };
 }
 
 function drawMiniChart(canvas, seed = 0) {
@@ -1859,16 +1911,51 @@ function updateAssetLabels(labels) {
 
 function renderCampusSimulation() {
   const sim = state.campusSimulation;
-  $("#campus-cost").textContent = sim.cost;
-  $("#campus-saved").textContent = sim.saved;
-  $("#campus-waste").textContent = sim.waste;
-  $("#campus-stability").textContent = sim.stability;
-  $("#pool-generation").textContent = sim.generation;
-  $("#pool-generation-note").textContent = sim.generationNote;
-  $("#pool-storage").textContent = sim.storage;
-  $("#pool-storage-note").textContent = sim.storageNote;
-  $("#pool-load").textContent = sim.load;
-  $("#pool-load-note").textContent = sim.loadNote;
+  $("#campus-current-time").textContent = sim.time;
+  $("#campus-balance").textContent = sim.balance;
+  $("#campus-load").textContent = sim.load;
+  $("#campus-generation").textContent = sim.generation;
+  $("#campus-storage").textContent = sim.storage;
+  $("#campus-storage-flow").textContent = sim.storageFlow;
+  $("#campus-grid-import").textContent = sim.gridImport;
+  $("#campus-grid-energy").textContent = sim.gridEnergy;
+}
+
+function applySnapshotToCampus() {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const point = snapshotAtCurrentCursor();
+  if (!point) {
+    renderCampusSimulation();
+    return;
+  }
+  const cursor = Math.min(Math.max(Number(point.interval) || 0, 0), telemetry.length - 1);
+  const storageFlow = batteryPowerAt(cursor);
+  const balanceStart = 10000;
+  const cumulativeGridEnergy = gridEnergyUntil(cursor);
+  const cumulativeCost = gridCostUntil(cursor);
+  state.campusSimulation = {
+    optimized: Boolean(state.task?.approval?.approved),
+    time: formatSnapshotTime(point.timestamp),
+    balance: `¥${Math.max(0, balanceStart - cumulativeCost).toLocaleString("zh-CN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`,
+    load: `${Number(point.load_kw || 0).toFixed(2)} kW`,
+    generation: `${Number(point.pv_kw || 0).toFixed(2)} kW`,
+    storage: `SOC ${(Number(point.battery_soc || 0) * 100).toFixed(0)}%`,
+    storageFlow: `${storageFlow.label} ${storageFlow.kw.toFixed(2)} kW`,
+    gridImport: `${Number(point.grid_import_kw || 0).toFixed(2)} kW`,
+    gridEnergy: `${cumulativeGridEnergy.toFixed(2)} kWh`,
+  };
+  renderCampusSimulation();
+  state.campus3d?.applyEnergyState?.({
+    optimized: state.campusSimulation.optimized,
+    gridImport: state.campusSimulation.gridImport,
+    generation: state.campusSimulation.generation,
+    storage: state.campusSimulation.storage,
+    storageFlow: state.campusSimulation.storageFlow,
+    load: state.campusSimulation.load,
+  });
 }
 
 function applyRuntimeToCampus(runtime) {
@@ -1884,22 +1971,19 @@ function applyRuntimeToCampus(runtime) {
   if (!planArtifact && !verification) return;
   state.campusSimulation = {
     optimized: true,
-    cost: "¥7,000",
-    saved: "节省 ¥3,000",
-    waste: "5%",
-    stability: "96%",
+    time: "2026-07-31 14:00",
+    balance: "¥7,000.00",
     generation: `${Math.max(10, pvForecast + 20).toFixed(0)} MW`,
-    generationNote: "光伏优先消纳",
     storage: `SOC ${Math.min(88, soc + 18).toFixed(0)}%`,
-    storageNote: `${recommendedPlan} 调峰中`,
+    storageFlow: `${recommendedPlan} 调峰中`,
     load: `${currentLoad.toFixed(1)} MW`,
-    loadNote: "负载已满足",
+    gridImport: "8.00 MW",
+    gridEnergy: "70.00 MWh",
   };
   renderCampusSimulation();
   state.campus3d?.applyEnergyState?.({
     optimized: true,
     storage: state.campusSimulation.storage,
-    waste: state.campusSimulation.waste,
     load: state.campusSimulation.load,
     recommendedPlan,
   });
@@ -2324,11 +2408,185 @@ async function restoreLatestDemo() {
   }
 }
 
+async function restoreEnergyDataConnection() {
+  try {
+    state.energySnapshot = await request("/api/data/snapshot/current");
+    state.monitor = await request("/api/monitor/status");
+    state.chartTick = state.monitor?.cursor ?? state.energySnapshot.current_interval ?? state.chartTick;
+    if (state.monitor?.task_id) await loadMonitorTask(state.monitor.task_id);
+    renderMonitor();
+    applySnapshotToCampus();
+  } catch {
+    applySnapshotToCampus();
+  }
+}
+
+function renderMonitor() {
+  const monitor = state.monitor;
+  if (!monitor) return;
+  $("#monitor-state").textContent = monitor.running ? "READING" : "STOPPED";
+  $("#monitor-plan").textContent = monitor.plan_version || "V1";
+  $("#monitor-agents").textContent = monitor.agentteams_awake ? "AWAKE" : "SLEEPING";
+  $("#monitor-interval").textContent = `${String(monitor.cursor).padStart(2, "0")} / 95`;
+  $("#monitor-pulse").className = monitor.agentteams_awake ? "alert" : monitor.running ? "live" : "";
+  const current = monitor.current;
+  $("#monitor-source-note").textContent = current
+    ? `Load ${Number(current.load_kw).toFixed(2)} kW · PV ${Number(current.pv_kw).toFixed(2)} kW · SOC ${(Number(current.battery_soc) * 100).toFixed(0)}%`
+    : "真实 PV / Load / SOC / Grid · 15分钟 Snapshot";
+  const lifecycleKinds = new Set(["V1_INVALIDATED", "AGENTTEAMS_WOKEN", "V2_REPLANNED_AND_AUDITED"]);
+  const lifecycle = (monitor.events || []).filter((event) => lifecycleKinds.has(event.kind));
+  const recent = (monitor.events || []).filter((event) => !lifecycleKinds.has(event.kind)).slice(-3);
+  const visibleEvents = [...lifecycle, ...recent].slice(-7).reverse();
+  $("#monitor-event-list").innerHTML = visibleEvents.map((event) => `
+    <p><strong>${escapeHTML(event.kind)}</strong> · ${escapeHTML(event.detail)}</p>
+  `).join("") || "<p>Monitor 持续读取；异常前不调用 LLM。</p>";
+  const approved = Boolean(state.task?.approval?.approved);
+  $("#monitor-approve").disabled = !monitor.task_id || approved || state.task?.state !== "AWAITING_APPROVAL";
+  $("#monitor-execute").disabled = !approved || Boolean(state.task?.execution_summary);
+  $("#monitor-evidence").disabled = !state.task?.evidence_sha256;
+  drawScenarioChart();
+  applySnapshotToCampus();
+}
+
+async function loadMonitorTask(taskId) {
+  const task = await request(`/api/tasks/${taskId}`);
+  state.task = task;
+  state.run = { task_id: task.task_id, task_version: task.task_version, state: task.state };
+  state.context = { context_hash: task.context_hash || "opencem-snapshot-contract" };
+  state.approval = task.approval;
+  state.candidates = task.plans.map((plan) => ({
+    candidate_id: plan.plan_id,
+    name: plan.profile,
+    cost_yuan: plan.metrics.total_cost_yuan,
+    max_power_kw: plan.metrics.peak_grid_kw,
+    soc_min_percent: Math.round(Math.min(...plan.points.map((point) => point.soc_end)) * 100),
+    soc_max_percent: Math.round(Math.max(...plan.points.map((point) => point.soc_end)) * 100),
+    transformer_load_percent: Math.round(plan.metrics.peak_grid_kw / task.scenario_snapshot.site.transformer_capacity_kw * 1000) / 10,
+  }));
+  state.audit = task.audits.map((audit) => ({
+    candidate_id: audit.plan_id,
+    verdict: audit.decision === "rejected" ? "rejected" : "audit_approved",
+    reason: audit.findings.map((item) => item.message).join("; ") || `Independent checks passed; improvement ¥${audit.improvement_yuan.toFixed(2)}`,
+  }));
+  state.events = task.trace.map((event) => ({
+    timestamp: event.timestamp,
+    actor: event.actor,
+    reason: event.action,
+    to_state: event.status === "blocked" ? "FAILED" : task.state,
+    detail: event.detail,
+  }));
+  renderTask();
+  renderCandidates();
+  renderTrace();
+  applySnapshotToCampus();
+}
+
+async function pollMonitorStep() {
+  try {
+    state.monitor = await request("/api/monitor/step", { method: "POST" });
+    state.chartTick = state.monitor.cursor;
+    if (state.monitor.task_id) await loadMonitorTask(state.monitor.task_id);
+    renderMonitor();
+    if (!state.monitor.running && state.monitorTimer) {
+      window.clearInterval(state.monitorTimer);
+      state.monitorTimer = null;
+    }
+  } catch (error) {
+    if (state.monitorTimer) window.clearInterval(state.monitorTimer);
+    state.monitorTimer = null;
+    toast(error.message);
+  }
+}
+
+async function startOpenCemReplay() {
+  try {
+    if (state.monitorTimer) window.clearInterval(state.monitorTimer);
+    state.activeScenario = null;
+    state.task = null;
+    state.approval = null;
+    state.monitor = await request("/api/monitor/start?start_interval=20", { method: "POST" });
+    state.energySnapshot = await request("/api/data/snapshot/current");
+    renderMonitor();
+    applySnapshotToCampus();
+    state.monitorTimer = window.setInterval(pollMonitorStep, 900);
+    toast("OpenCEM 真实数据开始按 15 分钟步长回放");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function uploadEnergyCsv(file) {
+  if (!file) return;
+  try {
+    const response = await fetch(`/api/data/upload?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/csv" },
+      body: await file.arrayBuffer(),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "CSV upload failed");
+    state.energySnapshot = body;
+    $("#connector-dialog").close();
+    drawScenarioChart();
+    applySnapshotToCampus();
+    toast(`历史回放测试：已归一化 ${body.environment_signals.raw_rows} 条测量为 96 个 Snapshot`);
+    await startOpenCemReplay();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function approveMonitorPlan() {
+  if (!state.monitor?.task_id) return;
+  try {
+    state.task = await request(`/api/tasks/${state.monitor.task_id}/approval-only`, {
+      method: "POST",
+      body: JSON.stringify({
+        approved: true,
+        approver: "Human Operator",
+        reason: "OpenCEM V2 passed independent audit; approve current Snapshot-bound plan.",
+      }),
+    });
+    state.approval = state.task.approval;
+    renderTask();
+    renderMonitor();
+    toast("V2 已人工批准，尚未执行");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function executeMonitorPlan() {
+  if (!state.monitor?.task_id) return;
+  try {
+    state.task = await request(`/api/tasks/${state.monitor.task_id}/execute-approved`, { method: "POST" });
+    state.approval = state.task.approval;
+    state.monitor = await request("/api/monitor/status");
+    await loadMonitorTask(state.task.task_id);
+    renderMonitor();
+    toast(state.task.state === "ROLLBACK" ? "偏差超限，已安全回滚" : "V2 模拟执行完成，证据已封存");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 function setupEvents() {
   $("#run-button")?.addEventListener("click", runDemo);
   $("#approve-b")?.addEventListener("click", approveCandidateB);
   $("#execute-b")?.addEventListener("click", executeCandidateB);
   $("#rollback-button")?.addEventListener("click", runRollback);
+  $("#upload-energy-data").addEventListener("click", () => $("#energy-csv-file").click());
+  $("#energy-csv-file").addEventListener("change", (event) => uploadEnergyCsv(event.target.files?.[0]));
+  $("#connect-energy-source").addEventListener("click", () => {
+    toast("生产环境需要配置只读 EMS/BMS/PCS 适配器和设备点表；未连接时不产生实时数据");
+  });
+  $("#nav-connect").addEventListener("click", () => {
+    setWorkspaceMode("nav-connect");
+    $("#connector-dialog").showModal();
+  });
+  $("#monitor-approve").addEventListener("click", approveMonitorPlan);
+  $("#monitor-execute").addEventListener("click", executeMonitorPlan);
+  $("#monitor-evidence").addEventListener("click", openEvidence);
   $("#open-evidence").addEventListener("click", openEvidence);
   $("#review-candidates").addEventListener("click", reviewCandidates);
   $("#translate-button").addEventListener("click", toggleLanguage);
@@ -2406,4 +2664,5 @@ loadGateways();
 renderSelectedAgent();
 applyLanguage(window.localStorage.getItem("energymesh.language") === "zh" ? "zh" : "en");
 restoreLatestDemo();
+restoreEnergyDataConnection();
 startLiveCharts();
