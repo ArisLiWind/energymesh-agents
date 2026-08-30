@@ -4,7 +4,7 @@
 > 项目以官方 agentscope-ai/AgentTeams` 为协同底座，目的是提高现有园区微电网能源调度效率。
 > 集合能源态势感知、滚动调度、独立审核、人工审批、模拟执行、偏差回退、证据审计和经验沉淀为可复现的闭环链路。
 
-[项目展示](https://transrealm.ltd/energymesh-official?view=solutions) ·
+[超境创新官网](https://transrealm.ltd/energymesh-official?view=solutions) ·
 [AgentTeams 资源](agentteams/) · [架构](ARCHITECTURE.md) · [当前状态](STATUS.md) ·
 [安全边界](SECURITY.md)
 
