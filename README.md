@@ -1,9 +1,8 @@
 # EnergyMesh Agents
 
-2026 GOAI 新智基座 AI infra：面向工业园区、算力中心与分布式能源的多 Agent 电力自主协同调度系统。
+面向工业园区、算力中心与分布式能源的多 Agent 电力自主协同调度系统。
 
-EnergyMesh Agents 是 TRANSREALM 超境创新为真实能源场景构建的 AgentTeams 业务团队。它不让单一
-大模型直接控制设备，而是在既有 EMS、BMS、PCS、SCADA、气象和 MES 系统之上增加一层可审计的
+它不让单一大模型直接控制设备，而是在既有 EMS、BMS、PCS、SCADA、气象和 MES 系统之上增加一层可审计的
 自主协同：当负荷、电价、光伏、储能、生产计划或设备状态发生变化时，系统重新判断原任务是否
 仍然成立，由 Team Leader 指挥多个 Worker Agent 完成感知、规划、审核、审批、执行、验证、
 回滚与证据沉淀。
