@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#08090b" />
+    <meta name="theme-color" content="#f6f8fb" />
     <title>EnergyMesh Agents · Workspace</title>
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260830-green-ring-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260831-flow-sandbox-v3" />
   </head>
   <body>
     <main class="app-shell">
@@ -21,6 +21,7 @@
         <button id="nav-chat" class="rail-item" type="button" aria-label="AI chat" title="AI chat">⌁</button>
         <button id="nav-safety" class="rail-item" type="button" aria-label="Safety rollback" title="Safety rollback">◌</button>
         <button id="nav-connect" class="rail-item" type="button" aria-label="Connect energy data" title="连接能源数据">⇄</button>
+        <button id="nav-ops" class="rail-item" type="button" aria-label="Operations evidence" title="闭环证据">✓</button>
         <button id="translate-button" class="rail-item translate-item" type="button" aria-label="Translate to Chinese" title="翻译为中文">文</button>
       </nav>
 
@@ -35,57 +36,60 @@
             <input data-i18n-placeholder="homeSearchPlaceholder" placeholder="Search tasks" />
           </label>
         </header>
-        <div class="insight-board">
-          <article class="history-card active" data-open-workspace="current">
-            <canvas class="mini-chart" data-seed="0" aria-label="Current power cover"></canvas>
-            <div class="history-body">
-              <div class="history-tags"><span class="tag critical" data-i18n="historyCritical">Critical</span><span data-i18n="historyApproved">Awaiting approval</span></div>
-              <h2 data-i18n="historyCurrentTitle">14:00 compound change dispatch loop</h2>
-              <time>2026-07-31 14:00</time>
-              <p data-i18n="historyCurrentText">PV drops below forecast, production load rises, transformer readings conflict, and peak tariff starts.</p>
-            </div>
-          </article>
-          <article class="history-card" data-open-workspace="context">
-            <canvas class="mini-chart" data-seed="1" aria-label="Context power cover"></canvas>
-            <div class="history-body">
-              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyTraceReady">Trace ready</span></div>
-              <h2 data-i18n="historyContextTitle">Transformer sensor conflict review</h2>
-              <time>2026-07-30 18:40</time>
-              <p data-i18n="historyContextText">Perception Worker found two incompatible temperature streams and blocked direct replanning.</p>
-            </div>
-          </article>
-          <article class="history-card" data-open-workspace="audit">
-            <canvas class="mini-chart" data-seed="2" aria-label="Audit power cover"></canvas>
-            <div class="history-body">
-              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyRejected">Rejected</span></div>
-              <h2 data-i18n="historyAuditTitle">Candidate A failed safety audit</h2>
-              <time>2026-07-29 09:15</time>
-              <p data-i18n="historyAuditText">Audit Worker rejected the plan because transformer load and minimum production constraints diverged.</p>
-            </div>
-          </article>
-          <article class="history-card" data-open-workspace="rollback">
-            <canvas class="mini-chart" data-seed="3" aria-label="Rollback power cover"></canvas>
-            <div class="history-body">
-              <div class="history-tags"><span data-i18n="historyHigh">High</span><span data-i18n="historyRollback">Rollback</span></div>
-              <h2 data-i18n="historyRollbackTitle">Safe fallback after approval denial</h2>
-              <time>2026-07-28 21:05</time>
-              <p data-i18n="historyRollbackText">Execution was stopped, evidence was sealed, and control returned to the human operator.</p>
-            </div>
-          </article>
+        <div class="insight-board daily-ledger">
+          <section class="day-group today-group" data-day-group="today">
+            <header>
+              <div><strong id="today-ledger-date">今天</strong><span>实时运行日</span></div>
+              <small id="today-ledger-status">等待园区接入</small>
+            </header>
+            <article class="history-card ledger-summary" data-ledger-summary="today">
+              <div class="history-body">
+                <div class="history-tags"><span class="tag">Today</span><span id="today-ledger-source">No live feed</span></div>
+                <h2>今日电力调度与使用情况</h2>
+                <time id="today-ledger-time">00:00-24:00 · 96 点计划</time>
+                <p id="today-ledger-copy">接入真实园区后，这里按天汇总负荷、光伏、储能、购电、成本、偏差、重调度、审批和执行回读。</p>
+                <div class="history-metrics">
+                  <span id="today-ledger-load">Load --</span>
+                  <span id="today-ledger-cost">Cost --</span>
+                  <span id="today-ledger-runs">0 runs</span>
+                </div>
+              </div>
+            </article>
+          </section>
+          <section class="day-group" data-day-group="2026-07-31">
+            <header>
+              <div><strong>2026-07-31</strong><span>园区日调度</span></div>
+              <small>1 run · Trace ready</small>
+            </header>
+            <article class="history-card active" data-open-workspace="weather">
+              <canvas class="mini-chart" data-seed="0" aria-label="Weather shock power cover"></canvas>
+              <div class="history-body">
+                <div class="history-tags"><span class="tag critical" data-i18n="historyCritical">Critical</span><span data-i18n="historyTraceReady">Trace ready</span></div>
+                <h2 data-i18n="historyWeatherTitle">天气突变后的园区重调度</h2>
+                <time>TASK-20260731-014 · 14:00</time>
+                <p data-i18n="historyWeatherText">云层突变导致光伏低于预测，生产负荷上升，系统废止旧计划并重新生成更低成本的安全方案。</p>
+                <div class="history-metrics">
+                  <span>V2 replanned</span>
+                  <span>Candidate B pending</span>
+                  <span>Evidence linked</span>
+                </div>
+              </div>
+            </article>
+          </section>
         </div>
       </section>
 
       <section class="brief-pane" aria-label="Workspace brief">
         <header class="workspace-title">
-          <strong data-i18n="workspaceTitle">New workspace</strong>
+          <strong data-i18n="workspaceTitle">Energy flow cockpit</strong>
           <span>↗</span>
         </header>
 
         <section id="ai-chat-panel" class="ai-chat-panel">
           <div class="chat-head">
             <div>
-              <span id="active-agent-role">EnergyMesh Runtime</span>
-              <strong id="active-agent-name">Autonomous agent scheduler</strong>
+              <span id="active-agent-role">EnergyMesh Team Leader</span>
+              <strong id="active-agent-name">和你一起调园区电流</strong>
             </div>
             <button id="active-agent-gateway" class="mini-close gateway-open" type="button" aria-label="Open model gateway" title="Model gateway">⚙</button>
           </div>
@@ -97,14 +101,14 @@
                   <strong class="chat-speaker">Team Leader</strong>
                 </header>
                 <div class="chat-message-body">
-                  <p data-i18n="chatIntro">我是EnergyMesh leader，目前您要下达什么调度任务？</p>
+                  <p data-i18n="chatIntro">我先看右侧沙盘：现在要确认发电、储能、用电和电网之间哪里浪费最大。你可以直接说“帮我减少购电和限发”，我会先给你一版新流向预览，确认后再切换园区。</p>
                 </div>
               </div>
             </article>
           </div>
           <div id="runtime-status" class="runtime-status-line" hidden><i></i><span>模型处理中</span></div>
           <form id="ai-chat-form" class="chat-form">
-            <input id="ai-chat-input" autocomplete="off" data-i18n-placeholder="chatPlaceholder" placeholder="Ask the Team Leader..." />
+            <input id="ai-chat-input" autocomplete="off" data-i18n-placeholder="chatPlaceholder" placeholder="例如：帮我减少购电和限发，先预览新流向" />
             <button class="action" type="submit" data-i18n="chatSend">Send</button>
           </form>
         </section>
@@ -114,10 +118,10 @@
       <section class="visual-pane" aria-label="Dispatch visualization">
         <header class="visual-title">
           <div>
-            <h1 data-i18n="visualTitle">Console</h1>
+            <h1 data-i18n="visualTitle">能源流动沙盘</h1>
           </div>
           <div class="run-status">
-            <span data-i18n="taskLabel">Task</span>
+            <span data-i18n="taskLabel">当前任务</span>
             <strong id="task-id">未创建</strong>
           </div>
         </header>
@@ -140,7 +144,7 @@
         </div>
 
         <div class="energy-status">
-          <article class="status-balance"><span data-i18n="statusBalance">账户余额</span><strong id="campus-balance">¥10,000.00</strong><small data-i18n="statusBalanceNote">系统初始值</small></article>
+          <article class="status-balance"><span data-i18n="statusBalance">账户余额</span><strong id="campus-balance">等待 CSV</strong><small data-i18n="statusBalanceNote">上传数据后计算</small></article>
           <article class="status-load"><span data-i18n="statusLoad">当前用电</span><strong id="campus-load">-- kW</strong><small data-i18n="statusLoadNote">此刻园区所有设备正在消耗的总功率</small></article>
           <article class="status-gen"><span data-i18n="statusGen">当前发电</span><strong id="campus-generation">-- kW</strong><small data-i18n="statusGenNote">此刻园区自有发电设备的总发电功率</small></article>
           <article class="status-storage"><span data-i18n="statusStorage">当前储能</span><strong id="campus-storage">--</strong><small id="campus-storage-flow">--</small></article>
@@ -150,6 +154,13 @@
         <div class="energy-main">
           <div class="campus">
             <canvas id="campus-3d" aria-label="EnergyMesh 3D campus sandbox"></canvas>
+            <div class="campus-day-hud" id="campus-day-hud">
+              <div class="day-clock"><span>当前时间</span><strong id="campus-current-time">等待 CSV</strong><small id="campus-time-sync">未对时</small></div>
+              <div class="day-problems">
+                <article><span>未有效利用</span><strong id="campus-waste-kwh">-- kWh</strong></article>
+                <article><span>额外购电成本</span><strong id="campus-extra-cost">--</strong></article>
+              </div>
+            </div>
             <div class="campus-tools" aria-label="Campus editor tools">
               <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
               <button class="campus-add" type="button" data-campus-add="datacenter">+ 数据中心</button>
@@ -158,7 +169,23 @@
               <button class="campus-add" type="button" data-campus-add="storage">+ 储能</button>
               <button id="campus-delete" type="button">删除选中</button>
             </div>
-            <div class="campus-hint">拖动建筑到网格位置 · 滚轮缩放 · 空白处旋转视角</div>
+            <div class="flow-preview-card" id="flow-preview-card" hidden>
+              <header>
+              <span>新方案预览</span>
+              <strong>储能优先消纳方案</strong>
+              </header>
+              <p id="flow-plan-reason">把白天未利用的发电更多存进储能，晚高峰由储能优先供给用电格，减少电网购电。</p>
+              <div class="flow-deltas">
+                <div><span>电网购电</span><strong id="delta-grid">--</strong></div>
+                <div><span>储能放电</span><strong id="delta-storage">--</strong></div>
+                <div><span>限发浪费</span><strong id="delta-curtail">--</strong></div>
+              </div>
+              <div class="flow-plan-actions">
+                <button id="reject-flow-plan" class="secondary" type="button">拒绝采用</button>
+                <button id="adopt-flow-plan" type="button">采用方案</button>
+              </div>
+            </div>
+            <div class="campus-hint">CSV 接入后，园区会自动运行；0 kW 线路熄灭，粗细和粒子速度表示当前功率。</div>
             <article class="asset metric-card" data-anchor="factory"><span data-i18n="assetFactory">园区用电</span><strong id="asset-factory">-- kW</strong><small data-i18n="assetFactoryNote">等待数据接入</small></article>
             <article class="asset metric-card" data-anchor="solar"><span data-i18n="assetSolar">自有发电</span><strong id="asset-solar">-- kW</strong><small data-i18n="assetSolarNote">等待数据接入</small></article>
             <article class="asset metric-card critical" data-anchor="storage"><span data-i18n="assetStorageLabel">储能</span><strong id="asset-storage">SOC --%</strong><small data-i18n="assetStorageNote">等待数据接入</small></article>
@@ -246,6 +273,16 @@
           </div>
           <div class="compare-note">
             <p>Timeline A：原始策略累计电费；Timeline B：Agent 优化累计电费。偏差超阈值时自动重优化。</p>
+          </div>
+        </section>
+
+        <section class="plan-ledger-section" aria-label="Adopted dispatch plan ledger">
+          <header>
+            <h2>方案留档</h2>
+            <span id="plan-ledger-count">0 条记录</span>
+          </header>
+          <div id="plan-ledger-list" class="plan-ledger-list">
+            <p class="empty">采用或拒绝 Agent 方案后，会在这里留下方案内容、理由和预期变化。</p>
           </div>
         </section>
 
@@ -343,6 +380,45 @@
       </div>
     </aside>
 
+    <aside id="ops-drawer" class="agent-directory-drawer ops-drawer" hidden aria-label="Operations evidence">
+      <div class="drawer-head">
+        <div><span>OPERATIONS</span><strong>闭环证据</strong></div>
+        <button id="ops-drawer-close" class="icon-button" type="button" aria-label="Close operations evidence">×</button>
+      </div>
+      <div class="ops-drawer-body">
+        <section class="ops-status-strip">
+          <article><span>数据快照</span><strong id="ops-data-state">Waiting</strong></article>
+          <article><span>计划状态</span><strong id="ops-plan-state">--</strong></article>
+          <article><span>Agent Trace</span><strong id="ops-trace-count">0</strong></article>
+        </section>
+        <section class="ops-panel">
+          <header><span>BUSINESS LOOP</span><strong>从园区数据到执行回读</strong></header>
+          <ol id="ops-loop-list" class="ops-loop-list"></ol>
+        </section>
+        <section class="ops-panel">
+          <header><span>AGENTTEAMS</span><strong>职责、权限与交接</strong></header>
+          <div id="ops-agent-list" class="ops-agent-list"></div>
+        </section>
+        <section class="ops-panel">
+          <header><span>MCP / SKILL</span><strong>最小权限运行边界</strong></header>
+          <div id="ops-permission-list" class="ops-permission-list"></div>
+        </section>
+        <section class="ops-panel">
+          <header><span>POLARDB RAG</span><strong>记忆只解释，不直接调度</strong></header>
+          <p id="ops-rag-insight" class="ops-rag-insight">等待偏差记录。</p>
+          <div class="ops-memory-grid">
+            <article><span>偏差事件</span><strong id="ops-memory-deviation">0</strong></article>
+            <article><span>人工调整</span><strong id="ops-memory-human">0</strong></article>
+            <article><span>结果回写</span><strong id="ops-memory-outcome">0</strong></article>
+          </div>
+        </section>
+        <section class="ops-panel">
+          <header><span>SLO</span><strong>运行门槛</strong></header>
+          <div id="ops-slo-list" class="ops-slo-list"></div>
+        </section>
+      </div>
+    </aside>
+
     <dialog id="trace-dialog">
       <form method="dialog">
         <div class="dialog-heading">
@@ -421,6 +497,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260830-green-ring-v1"></script>
+    <script type="module" src="/static/app.js?v=20260831-flow-sandbox-v3"></script>
   </body>
 </html>

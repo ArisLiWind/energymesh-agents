@@ -1,432 +1,610 @@
 import * as THREE from "/static/vendor/three.module.min.js";
 
-const GRID_STEP = 2;
-const GRID_LIMIT = 22;
-const HEX_R = 2.1;
-const HEX_H = 0.06;
-
-const MODULE_TYPES = {
-  factory: { title: "园区用电", metric: "0.00 kW", note: "所有设备总需求", category: "用电端" },
-  solar: { title: "自有发电", metric: "0.00 kW", note: "PV 等自发电汇总", category: "发电端" },
-  storage: { title: "储能", metric: "SOC 55%", note: "待命 0.00 kW", category: "储能端" },
-  grid: { title: "电网购电", metric: "0.00 kW", note: "缺口由外部电网补足", category: "外部输入" },
-  charge: { title: "充电负载", metric: "2 MW", note: "日用电量 8 MWh", category: "用电端" },
-  compute: { title: "数据负载", metric: "5 MW", note: "日用电量 28 MWh", category: "用电端" },
-  datacenter: { title: "数据中心", metric: "6 MW", note: "新增用电端", category: "用电端" },
-  generation: { title: "发电机", metric: "20 MW", note: "日发电量 58 MWh", category: "发电端" },
-};
-
-const PALETTE = {
-  hexWhite: 0xffffff,
-  hexGray: 0x999999,
-  grass: 0x58c48f,
-  treeDark: 0x2d9d6b,
-  treeLight: 0x6bd4a0,
-  bush: 0x7ec97f,
-  buildingWhite: 0xf8fbfd,
-  buildingSide: 0xd4e3ed,
-  buildingDark: 0x8aa8bd,
-  glass: 0x7fd3e0,
-  solar: 0x2a6b8a,
-  pipe: 0x4ecdc4,
-  selected: 0x9ff3e5,
-};
-
-const materials = {
-  hexWhite: new THREE.MeshStandardMaterial({ color: PALETTE.hexWhite, roughness: 0.35 }),
-  hexLight: new THREE.MeshStandardMaterial({ color: PALETTE.hexLight, roughness: 0.35 }),
-  hexPale: new THREE.MeshStandardMaterial({ color: PALETTE.hexPale, roughness: 0.35 }),
-  grass: new THREE.MeshStandardMaterial({ color: PALETTE.grass, roughness: 1 }),
-  tree: new THREE.MeshStandardMaterial({ color: PALETTE.treeDark, roughness: 0.8 }),
-  treeLight: new THREE.MeshStandardMaterial({ color: PALETTE.treeLight, roughness: 0.7 }),
-  bush: new THREE.MeshStandardMaterial({ color: PALETTE.bush, roughness: 0.9 }),
-  white: new THREE.MeshStandardMaterial({ color: PALETTE.buildingWhite, roughness: 0.6 }),
-  side: new THREE.MeshStandardMaterial({ color: PALETTE.buildingSide, roughness: 0.7 }),
-  dark: new THREE.MeshStandardMaterial({ color: PALETTE.buildingDark, roughness: 0.6 }),
-  glass: new THREE.MeshStandardMaterial({ color: PALETTE.glass, roughness: 0.2, metalness: 0.1 }),
-  solar: new THREE.MeshStandardMaterial({ color: PALETTE.solar, roughness: 0.35 }),
-  pipe: new THREE.MeshStandardMaterial({ color: PALETTE.pipe, emissive: 0x22bba4, emissiveIntensity: 0.35, roughness: 0.4 }),
-  selected: new THREE.MeshStandardMaterial({ color: PALETTE.selected, emissive: 0x28d2b9, emissiveIntensity: 0.3, transparent: true, opacity: 0.35 }),
-};
-
-const initialModules = [
-  { id: "factory", type: "factory", x: -8, z: -2 },
-  { id: "solar", type: "solar", x: -4, z: -10 },
-  { id: "generation", type: "generation", x: -10, z: -8 },
-  { id: "storage", type: "storage", x: 6, z: -4 },
-  { id: "grid", type: "grid", x: -10, z: 8 },
-  { id: "charge", type: "charge", x: 2, z: 8 },
-  { id: "compute", type: "compute", x: 8, z: 4 },
+const FLOW_DEFS = [
+  { id: "solar_load", from: "solar", to: "load", title: "自发自用", color: 0x2ac7a5 },
+  { id: "solar_storage", from: "solar", to: "storage", title: "光伏充电", color: 0x2ac7a5 },
+  { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x20a8bf },
+  { id: "grid_load", from: "grid", to: "load", title: "电网购电", color: 0xd79a31 },
+  { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x64b980 },
 ];
 
-function box(g, size, pos, mat = materials.white) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
-  m.position.set(...pos);
-  m.castShadow = true; m.receiveShadow = true;
-  g.add(m); return m;
+const MODULES = [
+  { id: "solar", title: "发电格", device: "屋顶光伏", metric: "-- kW", note: "限发 --", x: -3.6, z: 1.35, kind: "solar" },
+  { id: "storage", title: "储能格", device: "电池 + PCS", metric: "SOC --", note: "待机", x: -.9, z: 1.35, kind: "storage" },
+  { id: "load", title: "用电格", device: "车间 + 算力", metric: "-- kW", note: "连续负荷", x: 1.8, z: 1.35, kind: "load" },
+  { id: "grid", title: "电网格", device: "公共电网", metric: "-- kW", note: "购电/上网", x: -3.6, z: -1.35, kind: "grid" },
+  { id: "factory", title: "生产车间", device: "不可中断", metric: "运行中", note: "用电子格", x: -.9, z: -1.35, kind: "factory" },
+  { id: "charge", title: "柔性负荷", device: "充电区", metric: "可移峰", note: "Agent 可调整", x: 1.8, z: -1.35, kind: "charge" },
+];
+
+const FLOW_PATHS = {
+  solar_load: [[-3.9, 1.35], [-1.55, 1.35], [-.05, .35], [2.65, -.25]],
+  solar_storage: [[-3.9, 1.35], [-2.25, .65], [-.95, .55]],
+  storage_load: [[-.95, .55], [.6, .55], [2.65, -.25]],
+  grid_load: [[-3.85, -2.05], [-1.15, -2.05], [.85, -1.1], [2.65, -.25]],
+  solar_grid: [[-3.9, 1.35], [-5.05, .15], [-3.85, -2.05]],
+};
+
+const MUTED = 0xcbd5df;
+const INK = 0x1f2937;
+const ZERO_FLOW = { solar_load: 0, solar_storage: 0, storage_load: 0, grid_load: 0, solar_grid: 0, curtail: 0 };
+
+function makeCanvasTexture(draw) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 168;
+  const ctx = canvas.getContext("2d");
+  draw(ctx, canvas);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
-function cyl(g, r, h, pos, mat = materials.side, seg = 24) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), mat);
-  m.position.set(...pos);
-  m.castShadow = true; m.receiveShadow = true;
-  g.add(m); return m;
+function makeLabel(def) {
+  const texture = makeCanvasTexture((ctx) => {
+    ctx.clearRect(0, 0, 640, 168);
+    ctx.shadowColor = "rgba(15, 23, 42, .12)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "rgba(255,255,255,.96)";
+    ctx.fillRect(30, 20, 580, 118);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(190, 203, 215, .8)";
+    ctx.strokeRect(30.5, 20.5, 579, 117);
+    ctx.fillStyle = "#1f2937";
+    ctx.font = "700 26px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.title, 54, 58);
+    ctx.fillStyle = "#667085";
+    ctx.font = "500 18px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.device || "", 54, 88);
+    ctx.fillStyle = def.kind === "solar" ? "#17a67f" : def.kind === "grid" ? "#b8751d" : "#2563eb";
+    ctx.font = "800 22px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.metric || "--", 54, 120);
+    ctx.fillStyle = "#7c8794";
+    ctx.font = "500 16px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.note || "", 260, 120);
+  });
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+  sprite.scale.set(2.55, .67, 1);
+  sprite.userData.texture = texture;
+  return sprite;
 }
 
-function cone(g, r, h, pos, mat = materials.tree) {
-  const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), mat);
-  m.position.set(...pos);
-  m.castShadow = true;
-  g.add(m); return m;
+function updateLabel(sprite, def) {
+  sprite.material.map?.dispose?.();
+  sprite.material.map = makeCanvasTexture((ctx) => {
+    ctx.clearRect(0, 0, 640, 168);
+    ctx.shadowColor = "rgba(15, 23, 42, .12)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "rgba(255,255,255,.97)";
+    ctx.fillRect(30, 20, 580, 118);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(190, 203, 215, .8)";
+    ctx.strokeRect(30.5, 20.5, 579, 117);
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 26px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.title, 54, 58);
+    ctx.fillStyle = "#667085";
+    ctx.font = "500 18px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.device || "", 54, 88);
+    ctx.fillStyle = def.kind === "solar" ? "#17a67f" : def.kind === "grid" ? "#b8751d" : "#2563eb";
+    ctx.font = "800 22px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.metric || "--", 54, 120);
+    ctx.fillStyle = "#7c8794";
+    ctx.font = "500 16px Inter, PingFang SC, sans-serif";
+    ctx.fillText(def.note || "", 260, 120);
+  });
+  sprite.material.needsUpdate = true;
 }
 
-function sphere(g, r, pos, mat = materials.bush) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
-  m.position.set(...pos);
-  m.castShadow = true;
-  g.add(m); return m;
-}
-
-
-
-function addGreen(group, count = 6) {
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 1.2 + Math.random() * 0.8;
-    const rx = Math.cos(angle) * dist;
-    const rz = Math.sin(angle) * dist;
-    const r = Math.random();
-    if (r < 0.4) {
-      cone(group, 0.2 + Math.random() * 0.15, 0.6 + Math.random() * 0.5, [rx, 0.35 + Math.random() * 0.2, rz], Math.random() > 0.5 ? materials.tree : materials.treeLight);
-    } else if (r < 0.75) {
-      sphere(group, 0.15 + Math.random() * 0.12, [rx, 0.15, rz], materials.bush);
-    } else {
-      box(group, [0.3, 0.04, 0.3], [rx, 0.02, rz], materials.grass);
-    }
-  }
-}
-
-function makeNameLabel(text) {
-  const c = document.createElement("canvas");
-  c.width = 300; c.height = 44;
-  const ctx = c.getContext("2d");
-  ctx.font = "bold 22px sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = "#556677";
-  ctx.fillText(text, 150, 22);
-  const t = new THREE.CanvasTexture(c);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }));
-  s.scale.set(2.4, 0.36, 1); s.position.set(0, -0.1, 0);
-  return s;
-}
-
-function buildModule(type) {
+function box(size, color = 0xffffff) {
   const group = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(HEX_R * 0.98, HEX_R * 0.98, 0.08, 6), materials.side);
-  pad.position.y = 0.04;
-  pad.receiveShadow = true;
-  group.add(pad);
-  const info = MODULE_TYPES[type];
-  if (info) group.add(makeNameLabel(info.title));
-
-  if (type === "factory") {
-    box(group, [2.6, 0.95, 1.6], [-0.2, 0.55, 0], materials.white);
-    box(group, [2.9, 0.28, 1.9], [-0.2, 1.2, 0], materials.dark);
-    for (let i = 0; i < 3; i++) cyl(group, 0.12, 1.25, [-1.0 + i * 0.5, 1.45, -0.5], materials.side, 16);
-    for (let i = 0; i < 4; i++) box(group, [0.07, 0.3, 0.3], [1.15, 0.68, -0.6 + i * 0.4], materials.glass);
-    box(group, [1.8, 0.06, 1.0], [0, 0.12, 1.4], materials.grass);
-  } else if (type === "solar") {
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 3; col++) {
-        const p = box(group, [0.65, 0.07, 0.48], [-0.75 + col * 0.75, 0.32, -0.55 + row * 0.55], materials.solar);
-        p.rotation.x = -0.26;
-        p.userData.part = "solarPanel";
-      }
-    }
-    box(group, [2.2, 0.05, 1.6], [0, 0.08, 0.2], materials.grass);
-  } else if (type === "storage") {
-    const stgMat = new THREE.MeshStandardMaterial({ color: 0x5a7a99, roughness: 0.5 });
-    for (let i = 0; i < 3; i++) {
-      const b = box(group, [0.52, 1.2, 0.95], [-0.65 + i * 0.68, 0.68, 0], i % 2 ? stgMat : materials.white);
-      b.userData.part = "battery";
-      box(group, [0.34, 0.07, 0.45], [-0.65 + i * 0.68, 1.0, 0.26], new THREE.MeshStandardMaterial({ color: 0x88bbee, roughness: 0.2, metalness: 0.3 }));
-    }
-    box(group, [1.6, 0.05, 0.8], [0, 0.1, 1.1], materials.grass);
-  } else if (type === "grid") {
-    const tower = cyl(group, 0.18, 0.14, [0, 0.25, 0], materials.pipe);
-    tower.userData.part = "gridTower";
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x8092a0 });
-    const pts = [[-0.6,0.16,-0.5],[0,2.4,0],[0.6,0.16,-0.5],[-0.5,1.0,-0.4],[0.5,1.0,-0.4],[-0.3,1.6,-0.2],[0.3,1.6,-0.2]].map(p=>new THREE.Vector3(...p));
-    group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
-    box(group, [1.2, 0.05, 0.8], [0, 0.08, 1.1], materials.grass);
-  } else if (type === "charge") {
-    for (let i = 0; i < 3; i++) {
-      box(group, [0.3, 0.9, 0.34], [-0.65 + i * 0.68, 0.52, 0.1], materials.white);
-      box(group, [0.2, 0.22, 0.04], [-0.65 + i * 0.68, 0.7, -0.1], materials.glass);
-    }
-    box(group, [2.2, 0.14, 0.6], [0, 0.2, 0.85], materials.side);
-    box(group, [1.4, 0.05, 0.6], [0, 0.1, -1.1], materials.grass);
-  } else if (type === "compute" || type === "datacenter") {
-    const h = type === "datacenter" ? 2.4 : 1.35;
-    box(group, [2.0, h, 1.5], [0, 0.14 + h / 2, 0], materials.white);
-    box(group, [1.4, 0.16, 1.1], [0, h + 0.3, 0], materials.side);
-    for (let i = 0; i < 5; i++) box(group, [0.06, 0.3, 0.3], [-1.0, 0.7, -0.6 + i * 0.32], materials.glass);
-    for (let i = 0; i < 2; i++) cyl(group, 0.2, 0.14, [-0.3 + i * 0.65, h + 0.48, 0], materials.dark, 20);
-    box(group, [1.6, 0.05, 1.0], [0, 0.1, 1.2], materials.grass);
-  } else if (type === "generation") {
-    box(group, [2.0, 0.72, 1.2], [0, 0.45, 0], materials.white);
-    cyl(group, 0.3, 1.3, [-0.5, 1.0, -0.28], materials.side, 28);
-    cyl(group, 0.22, 1.75, [0.5, 1.25, -0.24], materials.side, 28);
-    box(group, [1.4, 0.05, 0.9], [0, 0.1, 1.0], materials.grass);
-  }
-  addGreen(group, 7);
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0], size[1], size[2]),
+    new THREE.MeshStandardMaterial({ color, roughness: .78, metalness: .02 }),
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry),
+    new THREE.LineBasicMaterial({ color: 0xaeb9c5, transparent: true, opacity: .8 }),
+  );
+  group.add(edges);
   return group;
 }
 
-function snap(v) { return Math.round(v / GRID_STEP) * GRID_STEP; }
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-
-function makePipe(f, t) {
-  const len = Math.hypot(t.x - f.x, t.z - f.z);
-  const horiz = Math.abs(t.x - f.x) > Math.abs(t.z - f.z);
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(horiz ? len : 0.14, 0.06, horiz ? 0.14 : len),
-    materials.pipe,
+function pad(w, d, color = 0xf2f5f8) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, .06, d),
+    new THREE.MeshStandardMaterial({ color, roughness: .92 }),
   );
-  m.position.set((f.x + t.x) / 2, 0.16, (f.z + t.z) / 2);
-  return m;
+  mesh.position.y = -.04;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function makeModule(def) {
+  const group = new THREE.Group();
+  group.position.set(def.x, 0, def.z);
+  group.userData = { ...def };
+  const baseColor = def.kind === "solar" ? 0xdff8ef : def.kind === "grid" ? 0xf7f0e5 : def.kind === "storage" ? 0xe9efff : 0xf5f7fa;
+  group.add(pad(def.kind === "load" ? 1.75 : 1.38, def.kind === "load" ? 1.32 : 1.1, baseColor));
+
+  if (def.kind === "solar") {
+    for (let i = 0; i < 6; i += 1) {
+      const panel = box([.46, .05, .62], 0xecfaff);
+      panel.position.set(-.48 + (i % 3) * .5, .1, -.22 + Math.floor(i / 3) * .52);
+      panel.rotation.y = -.18;
+      group.add(panel);
+    }
+  } else if (def.kind === "grid") {
+    const mast = box([.16, 1.05, .16], 0xffffff);
+    mast.position.y = .53;
+    const top = box([.9, .12, .12], 0xffffff);
+    top.position.y = 1.1;
+    const cross = box([.12, .12, .82], 0xffffff);
+    cross.position.y = .86;
+    group.add(mast, top, cross);
+  } else if (def.kind === "storage") {
+    const shell = box([.82, 1.35, .56], 0xffffff);
+    shell.position.y = .68;
+    shell.name = "storageShell";
+    group.add(shell);
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(.7, 1.14, .04),
+      new THREE.MeshBasicMaterial({ color: 0xdffbff, transparent: true, opacity: .42 }),
+    );
+    glass.position.set(0, .68, -.285);
+    group.add(glass);
+    const fill = new THREE.Mesh(
+      new THREE.BoxGeometry(.62, 1, .05),
+      new THREE.MeshStandardMaterial({ color: 0xb6f023, transparent: true, opacity: .86, roughness: .38, emissive: 0x315c08, emissiveIntensity: .18 }),
+    );
+    fill.name = "socFill";
+    fill.position.set(0, .12, -.32);
+    fill.scale.y = .02;
+    group.add(fill);
+  } else if (def.kind === "load") {
+    const hall = box([1.26, .68, .96], 0xffffff);
+    hall.position.y = .35;
+    const tower = box([.48, 1.36, .54], 0xf8fafc);
+    tower.position.set(-.42, .7, -.18);
+    const server = box([.4, 1.05, .44], 0xffffff);
+    server.position.set(.46, .54, .22);
+    group.add(hall, tower, server);
+  } else {
+    const unit = box([.8, .72, .72], 0xffffff);
+    unit.position.y = .38;
+    group.add(unit);
+  }
+
+  const label = makeLabel(def);
+  label.position.set(0, 1.64, 0);
+  label.name = "label";
+  label.visible = false;
+  group.add(label);
+  return group;
+}
+
+function routePoints(path) {
+  return path.map(([x, z]) => new THREE.Vector3(x, .13, z));
+}
+
+function routedPoints(modules, fromId, toId, routeId = "") {
+  const from = modules.get(fromId)?.position || new THREE.Vector3();
+  const to = modules.get(toId)?.position || new THREE.Vector3();
+  const midX = (from.x + to.x) / 2;
+  const sameRow = Math.abs(from.z - to.z) < .01;
+  const laneMap = {
+    solar_load: .22,
+    solar_storage: -.18,
+    storage_load: -.18,
+    grid_load: -.28,
+    solar_grid: .34,
+  };
+  const laneOffset = sameRow ? (laneMap[routeId] || 0) : (laneMap[routeId] || (from.z < to.z ? -.34 : .34));
+  return [
+    new THREE.Vector3(from.x, .16, from.z),
+    new THREE.Vector3(midX, .16, from.z + laneOffset),
+    new THREE.Vector3(midX, .16, to.z + laneOffset),
+    new THREE.Vector3(to.x, .16, to.z),
+  ];
+}
+
+function makeRoute(def, dashed = false) {
+  const points = routePoints(FLOW_PATHS[def.id]);
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = dashed
+    ? new THREE.LineDashedMaterial({ color: def.color, dashSize: .18, gapSize: .13, transparent: true, opacity: .38 })
+    : new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: .9 });
+  const line = new THREE.Line(geometry, material);
+  line.visible = true;
+  if (dashed) line.computeLineDistances();
+  const tube = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, dashed ? .014 : .052, 8, false),
+    new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: dashed ? .16 : .42 }),
+  );
+
+  const particles = Array.from({ length: dashed ? 4 : 6 }, () => {
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(dashed ? .032 : .036, 12, 12),
+      new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: dashed ? .48 : .78 }),
+    );
+    return dot;
+  });
+  const group = new THREE.Group();
+  group.add(tube, line, ...particles);
+  group.visible = !dashed;
+  group.userData = { def, points, line, tube, particles, power: 0, preview: dashed, progress: Math.random() };
+  return group;
+}
+
+function rebuildRouteGeometry(route, points) {
+  route.userData.points = points;
+  route.userData.line.geometry.dispose();
+  route.userData.line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  if (route.userData.line.computeLineDistances) route.userData.line.computeLineDistances();
+  if (route.userData.tube) {
+    route.userData.tube.geometry.dispose();
+    route.userData.tube.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, route.userData.preview ? .014 : .052, 8, false);
+  }
+}
+
+function valueNumber(raw) {
+  const match = String(raw || "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+function pointAlong(points, t) {
+  if (points.length === 1) return points[0].clone();
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const len = points[i].distanceTo(points[i + 1]);
+    lengths.push(len);
+    total += len;
+  }
+  let target = ((t % 1) + 1) % 1 * total;
+  for (let i = 0; i < lengths.length; i += 1) {
+    if (target <= lengths[i]) return points[i].clone().lerp(points[i + 1], target / lengths[i]);
+    target -= lengths[i];
+  }
+  return points[points.length - 1].clone();
+}
+
+function setRoutePower(route, power, maxPower, previewActive = false) {
+  route.userData.power = Math.max(0, Number(power) || 0);
+  const active = route.userData.power > .05;
+  const preview = route.userData.preview;
+  const opacity = active ? (preview ? .58 : previewActive ? .24 : .9) : 0;
+  route.userData.line.material.color.set(active ? route.userData.def.color : MUTED);
+  route.userData.line.material.opacity = opacity;
+  route.userData.line.material.linewidth = 1 + Math.min(8, route.userData.power / Math.max(maxPower, 1) * 8);
+  if (route.userData.tube) {
+    route.userData.tube.material.color.set(active ? route.userData.def.color : MUTED);
+    route.userData.tube.material.opacity = active ? (preview ? .16 : previewActive ? .08 : .3) : 0;
+    const scale = 1 + Math.min(1.9, route.userData.power / Math.max(maxPower, 1) * 1.9);
+    route.userData.tube.scale.setScalar(scale);
+  }
+  route.userData.particles.forEach((dot) => {
+    dot.material.color.set(active ? route.userData.def.color : MUTED);
+    dot.material.opacity = active ? (preview ? .58 : previewActive ? .2 : .9) : 0;
+    const scale = .72 + Math.min(1.8, route.userData.power / Math.max(maxPower, 1) * 1.8);
+    dot.scale.setScalar(scale);
+  });
+}
+
+function buildFlowState(state = {}) {
+  const load = valueNumber(state.load);
+  const generation = valueNumber(state.generation);
+  const gridImport = valueNumber(state.gridImport);
+  const storageFlowText = String(state.storageFlow || "");
+  const storagePower = valueNumber(storageFlowText);
+  const isCharging = storageFlowText.includes("充");
+  const isDischarging = storageFlowText.includes("放") || state.optimized;
+  const rawCurtail = state.curtailKw == null ? Math.max(0, generation - load - (isCharging ? storagePower : 0)) : Number(state.curtailKw);
+  const curtailKw = Math.max(0, rawCurtail);
+  const solarStorage = isCharging ? storagePower : 0;
+  const storageLoad = isDischarging ? storagePower : 0;
+  const gridLoad = Math.max(0, gridImport);
+  const solarLoad = Math.max(0, Math.min(generation - solarStorage - curtailKw, load - storageLoad - gridLoad));
+  const solarGrid = Math.max(0, Number(state.exportKw ?? 0));
+  return { solar_load: solarLoad, solar_storage: solarStorage, storage_load: storageLoad, grid_load: gridLoad, solar_grid: solarGrid, curtail: curtailKw };
 }
 
 export function createCampus3D(canvas, onLabels) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0xf0f5f9);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0xf8fafc, 1);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xf0f5f9, 45, 90);
-  const camera = new THREE.OrthographicCamera(-10, 10, 7, -7, 0.1, 120);
+  scene.background = new THREE.Color(0xf8fafc);
+  const camera = new THREE.OrthographicCamera(-6, 6, 3.6, -3.6, .1, 100);
+  camera.position.set(5.8, 5.4, 6.4);
+  camera.lookAt(0, 0, 0);
+  const cameraTarget = new THREE.Vector3(0, 0, 0);
+  let zoom = 1.22;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 2.25));
+  const light = new THREE.DirectionalLight(0xffffff, 1.9);
+  light.position.set(4, 8, 5);
+  light.castShadow = true;
+  scene.add(light);
+
+  const grid = new THREE.GridHelper(160, 160, 0xdde5ee, 0xf0f3f7);
+  grid.position.y = -.055;
+  scene.add(grid);
+
+  const modules = new Map();
+  MODULES.forEach((def) => {
+    const module = makeModule(def);
+    modules.set(def.id, module);
+    scene.add(module);
+  });
+
+  const liveRoutes = new Map();
+  const previewRoutes = new Map();
+  FLOW_DEFS.forEach((def) => {
+    const route = makeRoute(def, false);
+    liveRoutes.set(def.id, route);
+    scene.add(route);
+    const preview = makeRoute(def, true);
+    previewRoutes.set(def.id, preview);
+    scene.add(preview);
+  });
+  let selectedId = "load";
+  let dragging = null;
+  let previewFlow = null;
+  let liveFlow = {};
+  const pointer = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const hit = new THREE.Vector3();
+  let running = true;
 
-  let azimuth = -0.72, elevation = 0.82, zoom = 1.02;
-  let orbiting = false, draggingModule = false, selectedId = null;
-  let pointer = [0, 0], idCounter = 1, flowMultiplier = 1;
-
-  const moduleRoot = new THREE.Group();
-  const pipeRoot = new THREE.Group();
-  const poolRoot = new THREE.Group();
-  const hexRoot = new THREE.Group();
-  const selectable = [];
-
-  const hexW = HEX_R * Math.sqrt(3);
-  const hexHStep = HEX_R * 1.5;
-  const hexColors = [materials.hexWhite, materials.hexLight, materials.hexPale];
-
-  function snapToHexGrid(x, z) {
-    const row = Math.round(z / hexHStep);
-    const offset = (row % 2) * (hexW / 2);
-    const col = Math.round((x - offset) / hexW);
-    return { x: col * hexW + offset, z: row * hexHStep, row, col };
-  }
-  const modules = initialModules.map((item) => { const s = snapToHexGrid(item.x, item.z); return { ...item, x: s.x, z: s.z }; });
-
-  // hexagonal honeycomb floor
-  for (let row = -20; row <= 20; row++) {
-    for (let col = -20; col <= 20; col++) {
-      const x = col * hexW + (row % 2) * (hexW / 2);
-      const z = row * hexHStep;
-      const idx = (Math.abs(row) + Math.abs(col)) % 3;
-      const tile = new THREE.Mesh(new THREE.CylinderGeometry(HEX_R, HEX_R, 0.05, 6), hexColors[idx]);
-      tile.position.set(x, -0.03, z);
-      tile.receiveShadow = true;
-      hexRoot.add(tile);
-    }
-  }
-
-  scene.add(hexRoot, pipeRoot, poolRoot, moduleRoot);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xa8c8e0, 2.4));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.8);
-  sun.position.set(-8, 14, 8);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -24; sun.shadow.camera.right = 24;
-  sun.shadow.camera.top = 24; sun.shadow.camera.bottom = -24;
-  scene.add(sun);
-
-  const poolBase = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.12, 42), materials.pipe);
-  poolBase.position.set(0, 0.14, 0); poolRoot.add(poolBase);
-  const poolRing = new THREE.Mesh(new THREE.TorusGeometry(1.14, 0.03, 8, 48), materials.pipe);
-  poolRing.rotation.x = Math.PI / 2; poolRing.position.set(0, 0.26, 0); poolRoot.add(poolRing);
-
-  function posCam() {
-    const r = 31;
-    camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * r, Math.sin(elevation) * r, Math.cos(azimuth) * Math.cos(elevation) * r);
-    camera.zoom = zoom; camera.lookAt(0, 0, 0); camera.updateProjectionMatrix();
-  }
-
-  function rebuildModules() {
-    moduleRoot.clear(); selectable.length = 0;
-    modules.forEach((mod) => {
-      const g = buildModule(mod.type);
-      g.scale.setScalar(1.15);
-      g.position.set(mod.x, 0, mod.z);
-      g.userData = { moduleId: mod.id };
-      g.traverse((c) => { if (c.isMesh) { c.userData.moduleId = mod.id; selectable.push(c); } });
-      const sel = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.04, 3.8), materials.selected);
-      sel.position.set(0, 0.16, 0); sel.visible = mod.id === selectedId; sel.userData.moduleId = mod.id;
-      g.add(sel); moduleRoot.add(g);
+  function syncRoutesToModules() {
+    liveRoutes.forEach((route) => {
+      const { from, to } = route.userData.def;
+      rebuildRouteGeometry(route, routedPoints(modules, from, to, route.userData.def.id));
     });
-    rebuildPipes();
-  }
-
-  function rebuildPipes() {
-    pipeRoot.clear();
-    const pool = { x: 0, z: 0 };
-    modules.forEach((mod) => {
-      const corner = { x: mod.x, z: 0 };
-      pipeRoot.add(makePipe(corner, mod));
-      pipeRoot.add(makePipe(pool, corner));
+    previewRoutes.forEach((route) => {
+      const { from, to } = route.userData.def;
+      rebuildRouteGeometry(route, routedPoints(modules, from, to, route.userData.def.id));
     });
-  }
-
-  function moduleAtPtr(e) {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hit = raycaster.intersectObjects(selectable, false)[0];
-    return hit ? modules.find((m) => m.id === hit.object.userData.moduleId) : null;
-  }
-
-  function groundPt(e) {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const pt = new THREE.Vector3();
-    raycaster.ray.intersectPlane(groundPlane, pt);
-    return { x: clamp(snap(pt.x), -GRID_LIMIT, GRID_LIMIT), z: clamp(snap(pt.z), -GRID_LIMIT, GRID_LIMIT) };
-  }
-
-  function select(id) {
-    selectedId = id;
-    moduleRoot.children.forEach((g) => { g.children[g.children.length - 1].visible = g.userData.moduleId === selectedId; });
   }
 
   function resize() {
-    const w = Math.max(1, canvas.clientWidth), h = Math.max(1, canvas.clientHeight);
-    renderer.setSize(w, h, false);
-    const a = w / h;
-    camera.left = -9 * a; camera.right = 9 * a; camera.top = 9; camera.bottom = -9;
+    const { clientWidth, clientHeight } = canvas;
+    renderer.setSize(clientWidth, clientHeight, false);
+    const aspect = clientWidth / Math.max(clientHeight, 1);
+    camera.left = -4.95 * aspect;
+    camera.right = 4.95 * aspect;
+    camera.top = 4.55;
+    camera.bottom = -4.55;
+    camera.zoom = zoom;
     camera.updateProjectionMatrix();
   }
 
   function updateLabels() {
-    if (!onLabels) return;
-    const w = canvas.clientWidth, h = canvas.clientHeight;
     const labels = {};
-    modules.forEach((mod) => {
-      const t = MODULE_TYPES[mod.type] || MODULE_TYPES.factory;
-      const a = new THREE.Vector3(mod.x, 2.2, mod.z).project(camera);
-      const x = (a.x * 0.5 + 0.5) * w;
-      const y = (-a.y * 0.5 + 0.5) * h;
-      labels[mod.id] = { x: clamp(x, 68, w - 68), y: clamp(y, 42, h - 26), visible: mod.id === selectedId && a.z > -1 && a.z < 1, title: `${t.title} · ${t.category}`, metric: t.metric, note: t.note };
+    const rect = canvas.getBoundingClientRect();
+    modules.forEach((module, id) => {
+      const world = module.position.clone();
+      world.y = 1.38;
+      world.project(camera);
+      labels[id] = {
+        x: (world.x * .5 + .5) * rect.width + (["solar", "grid"].includes(id) ? -46 : 46),
+        y: (-world.y * .5 + .5) * rect.height,
+        visible: ["solar", "storage", "load", "grid"].includes(id),
+        placement: ["storage", "grid"].includes(id) ? "below" : "above",
+        title: module.userData.title,
+        device: module.userData.device,
+        metric: module.userData.metric,
+        note: module.userData.note,
+      };
     });
-    onLabels(labels);
+    onLabels?.(labels);
   }
 
-  canvas.addEventListener("pointerdown", (e) => {
-    const mod = moduleAtPtr(e); pointer = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId);
-    if (mod) { select(mod.id); draggingModule = true; return; }
-    orbiting = true;
-  });
+  function animateRoute(route, elapsed) {
+    const power = route.userData.power || 0;
+    const active = power > .05;
+    const speed = active ? .12 + Math.min(.72, power / 24) : 0;
+    route.userData.particles.forEach((dot, index) => {
+      const t = route.userData.progress + elapsed * speed + index / route.userData.particles.length;
+      dot.position.copy(pointAlong(route.userData.points, t));
+      dot.visible = active;
+    });
+  }
 
-  canvas.addEventListener("pointermove", (e) => {
-    if (draggingModule && selectedId) {
-      const mod = modules.find((m) => m.id === selectedId); if (!mod) return;
-      const pt = groundPt(e); const s = snapToHexGrid(pt.x, pt.z); mod.x = s.x; mod.z = s.z;
-      const g = moduleRoot.children.find((c) => c.userData.moduleId === selectedId);
-      if (g) g.position.set(mod.x, 0, mod.z); rebuildPipes(); return;
+  function render(elapsed = 0) {
+    resize();
+    const all = [...liveRoutes.values(), ...previewRoutes.values()];
+    all.forEach((route) => animateRoute(route, elapsed));
+    updateLabels();
+    renderer.render(scene, camera);
+  }
+
+  function loop(now = 0) {
+    if (!running) return;
+    render(now / 1000);
+    window.requestAnimationFrame(loop);
+  }
+
+  function pick(event) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects([...modules.values()], true);
+    if (!hits.length) return null;
+    let object = hits[0].object;
+    while (object && !object.userData.id) object = object.parent;
+    return object || null;
+  }
+
+  canvas.addEventListener("pointerdown", (event) => {
+    const module = pick(event);
+    selectedId = module?.userData.id || selectedId;
+    dragging = module || { pan: true, x: event.clientX, y: event.clientY };
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    if (dragging.pan) {
+      const dx = (event.clientX - dragging.x) / 95 / zoom;
+      const dz = (event.clientY - dragging.y) / 95 / zoom;
+      cameraTarget.x -= dx;
+      cameraTarget.z -= dz;
+      camera.position.x -= dx;
+      camera.position.z -= dz;
+      camera.lookAt(cameraTarget);
+      dragging.x = event.clientX;
+      dragging.y = event.clientY;
+      return;
     }
-    if (!orbiting) return;
-    azimuth -= (e.clientX - pointer[0]) * 0.005;
-    elevation = clamp(elevation + (e.clientY - pointer[1]) * 0.003, 0.48, 1.18);
-    pointer = [e.clientX, e.clientY]; posCam();
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    raycaster.ray.intersectPlane(plane, hit);
+    dragging.position.x = hit.x;
+    dragging.position.z = hit.z;
+    syncRoutesToModules();
   });
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoom = THREE.MathUtils.clamp(zoom * (event.deltaY > 0 ? .92 : 1.08), .62, 2.6);
+    resize();
+  }, { passive: false });
+  window.addEventListener("pointerup", () => { dragging = null; });
+  window.addEventListener("resize", render);
 
-  canvas.addEventListener("pointerup", () => { draggingModule = false; orbiting = false; });
-
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoom = clamp(zoom - e.deltaY * 0.0007, 0.62, 1.45); posCam(); }, { passive: false });
-
-  let frame = 0;
-  function renderLoop(time) {
-    materials.pipe.emissiveIntensity = 0.25 + flowMultiplier + Math.sin(time * 0.004) * 0.1;
-    poolRing.rotation.z += 0.01 * flowMultiplier;
-    updateLabels(); renderer.render(scene, camera); frame = requestAnimationFrame(renderLoop);
+  function syncModules(state = {}) {
+    if (state.noData) {
+      const waitingValues = {
+        solar: { metric: "-- kW", note: "等待 CSV" },
+        storage: { metric: "SOC --", note: "等待 CSV 接入" },
+        load: { metric: "-- kW", note: "等待 CSV" },
+        grid: { metric: "-- kW", note: "0 kW 熄灭" },
+      };
+      Object.entries(waitingValues).forEach(([id, value]) => {
+        const module = modules.get(id);
+        if (!module) return;
+        module.userData.metric = value.metric;
+        module.userData.note = value.note;
+        const label = module.getObjectByName("label");
+        if (label) updateLabel(label, module.userData);
+      });
+      const socFill = modules.get("storage")?.getObjectByName("socFill");
+      if (socFill) {
+        socFill.scale.y = .02;
+        socFill.position.y = .2;
+        socFill.material.color.set(0xcbd5df);
+      }
+      return;
+    }
+    const load = valueNumber(state.load);
+    const generation = valueNumber(state.generation);
+    const gridImport = valueNumber(state.gridImport);
+    const storage = valueNumber(state.storage);
+    const curtailKw = state.curtailKw ?? liveFlow.curtail ?? 0;
+    const values = {
+      solar: { metric: `${generation.toFixed(1)} kW`, note: `限发 ${Number(curtailKw || 0).toFixed(1)} kW` },
+      storage: { metric: storage ? `SOC ${storage.toFixed(0)}%` : "SOC --", note: state.storageFlow || "待机" },
+      load: { metric: `${load.toFixed(1)} kW`, note: "正在用电" },
+      grid: { metric: `${gridImport.toFixed(1)} kW`, note: gridImport > .05 ? "购电中" : "0 kW 熄灭" },
+    };
+    Object.entries(values).forEach(([id, value]) => {
+      const module = modules.get(id);
+      if (!module) return;
+      module.userData.metric = value.metric;
+      module.userData.note = value.note;
+      const label = module.getObjectByName("label");
+      if (label) updateLabel(label, module.userData);
+    });
+    const socFill = modules.get("storage")?.getObjectByName("socFill");
+    if (socFill) {
+      const socRatio = THREE.MathUtils.clamp(Number(state.socPercent ?? storage) / 100, 0, 1);
+      const fillHeight = Math.max(.03, socRatio * 1.04);
+      socFill.scale.y = fillHeight;
+      socFill.position.y = .12 + fillHeight / 2;
+      socFill.material.color.set(socRatio > .55 ? 0xb6f023 : socRatio > .28 ? 0xf1d33b : 0xef6f62);
+      socFill.material.emissive.set(String(state.storageFlow || "").includes("充") ? 0x166c82 : 0x315c08);
+    }
   }
 
-  posCam(); resize(); rebuildModules(); select("factory"); renderLoop(0);
-  const observer = new ResizeObserver(resize); observer.observe(canvas);
+  function applyFlows(flow, preview = null) {
+    const maxPower = Math.max(1, ...Object.values(flow || {}), ...Object.values(preview || {}));
+    liveRoutes.forEach((route, id) => setRoutePower(route, flow[id] || 0, maxPower, Boolean(preview)));
+    previewRoutes.forEach((route, id) => {
+      route.visible = Boolean(preview);
+      route.userData.line.visible = Boolean(preview);
+      route.userData.tube.visible = Boolean(preview);
+      setRoutePower(route, preview?.[id] || 0, maxPower, false);
+    });
+  }
 
-  return {
-    addModule(type = "datacenter") {
-      const t = MODULE_TYPES[type] ? type : "datacenter";
-      const id = `${t}-${idCounter++}`;
-      modules.push({ id, type: t, x: clamp(snap(-2 + idCounter * 2), -GRID_LIMIT, GRID_LIMIT), z: clamp(snap(2 + idCounter), -GRID_LIMIT, GRID_LIMIT) });
-      rebuildModules(); select(id);
-    },
-    deleteSelected() {
-      if (!selectedId || modules.length <= 1) return;
-      const i = modules.findIndex((m) => m.id === selectedId);
-      if (i >= 0) modules.splice(i, 1); selectedId = modules[0]?.id || null;
-      rebuildModules(); if (selectedId) select(selectedId);
-    },
-    applyEnergyState(p = {}) {
-      flowMultiplier = p.optimized ? 0.5 : 0.22;
-      MODULE_TYPES.grid.metric = p.gridImport || (p.optimized ? "8 MW" : "0.00 kW");
-      MODULE_TYPES.grid.note = p.optimized ? "已按批准方案执行" : "缺口由外部电网补足";
-      MODULE_TYPES.solar.metric = p.generation || MODULE_TYPES.solar.metric;
-      MODULE_TYPES.storage.metric = p.storage || (p.optimized ? "SOC 79%" : "SOC 20%");
-      MODULE_TYPES.storage.note = p.storageFlow || (p.optimized ? "充放电调峰中" : "待命 0.00 kW");
-      MODULE_TYPES.factory.metric = p.load || "25 MW";
-      MODULE_TYPES.factory.note = p.optimized ? "已纳入 V2 调度" : "OpenCEM 实测负载";
-      rebuildModules(); if (selectedId) select(selectedId);
-      const pvVal = parseFloat((p.generation || "0").replace(/[^0-9.]/g, "")) || 0;
-      const gridVal = parseFloat((p.gridImport || "0").replace(/[^0-9.]/g, "")) || 0;
-      const loadVal = parseFloat((p.load || "0").replace(/[^0-9.]/g, "")) || 0;
-      const socMatch = (p.storage || "").match(/(\d+)/);
-      const socVal = socMatch ? parseInt(socMatch[1]) : 55;
-      moduleRoot.traverse((child) => {
-        if (!child.userData.part || !child.isMesh) return;
-        if (child.userData.part === "solarPanel") {
-          const intensity = Math.min(0.7, pvVal / 3);
-          if (!child._origMat) child._origMat = child.material;
-          child.material = child._origMat.clone();
-          child.material.emissive = new THREE.Color(0x2dd4bf);
-          child.material.emissiveIntensity = intensity;
-        }
-        if (child.userData.part === "battery") {
-          const ratio = socVal / 100;
-          if (!child._origMat) child._origMat = child.material;
-          child.material = child._origMat.clone();
-          child.material.color = new THREE.Color(`rgb(${Math.floor((1-ratio)*100+30)},${Math.floor(ratio*120+60)},180)`);
-        }
-        if (child.userData.part === "gridTower") {
-          const intensity = gridVal > 0.01 ? Math.min(0.9, gridVal / 3 + 0.2) : 0.05;
-          if (!child._origMat) child._origMat = child.material;
-          child.material = child._origMat.clone();
-          child.material.emissiveIntensity = intensity;
-        }
-      });
-      const solarGlow = scene.children.find(c => c.userData?.isSolarGlow);
-      if (solarGlow) scene.remove(solarGlow);
-      (scene.userData.flowParticles || []).forEach(p => scene.remove(p));
-      scene.userData.flowParticles = null;
-    },
-    reset() { azimuth = -0.72; elevation = 0.82; zoom = 1.02; posCam(); },
-    resize, destroy() { cancelAnimationFrame(frame); observer.disconnect(); renderer.dispose(); },
-  };
+  function applyEnergyState(state = {}) {
+    liveFlow = state.flows || buildFlowState(state);
+    previewFlow = state.previewFlows || null;
+    syncModules({ ...state, curtailKw: liveFlow.curtail });
+    applyFlows(liveFlow, previewFlow);
+  }
+
+  function previewEnergyState(nextState = {}) {
+    previewFlow = nextState.flows || buildFlowState(nextState);
+    applyFlows(liveFlow, previewFlow);
+  }
+
+  function adoptPreview() {
+    if (!previewFlow) return;
+    liveFlow = { ...previewFlow };
+    previewFlow = null;
+    applyFlows(liveFlow, null);
+  }
+
+  function addModule(type = "factory") {
+    const id = `${type}-${modules.size + 1}`;
+    const def = { id, title: type === "storage" ? "新增储能" : type === "generation" ? "新增发电" : "新增用电", device: "拖动定位", metric: "待接入", note: "未进入主调度", x: 4.2, z: -2.4 + (modules.size % 3) * .7, kind: type };
+    const module = makeModule(def);
+    modules.set(id, module);
+    scene.add(module);
+    selectedId = id;
+    syncRoutesToModules();
+  }
+
+  function deleteSelected() {
+    const module = modules.get(selectedId);
+    if (!module || ["grid", "solar", "storage", "load"].includes(selectedId)) return;
+    scene.remove(module);
+    modules.delete(selectedId);
+    selectedId = "load";
+    syncRoutesToModules();
+  }
+
+  function reset() {
+    MODULES.forEach((def) => {
+      const module = modules.get(def.id);
+      if (module) module.position.set(def.x, 0, def.z);
+    });
+    cameraTarget.set(0, 0, 0);
+    camera.position.set(5.8, 5.4, 6.4);
+    camera.lookAt(cameraTarget);
+    zoom = 1.22;
+    selectedId = "load";
+    syncRoutesToModules();
+  }
+
+  function destroy() {
+    running = false;
+    window.removeEventListener("resize", render);
+    renderer.dispose();
+  }
+
+  applyEnergyState({ load: "-- kW", generation: "-- kW", storage: "SOC --", storageFlow: "等待 CSV 接入", gridImport: "-- kW", noData: true, flows: ZERO_FLOW });
+  syncRoutesToModules();
+  window.requestAnimationFrame(loop);
+  return { addModule, deleteSelected, applyEnergyState, previewEnergyState, adoptPreview, reset, resize, destroy };
 }

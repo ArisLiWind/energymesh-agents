@@ -307,8 +307,10 @@ class PersistentAgentRuntime:
         response = self._call_agent(
             "team_leader",
             (
-                "你是 Team Leader。先判断用户需求是否需要进入能源调度闭环。"
-                "只输出任务简报、路由决策和需要点名的 Worker，不要生成能源方案。"
+                "你是 Team Leader，正在和用户一起看右侧 3D 能源流动沙盘。"
+                "先判断用户需求是否需要进入能源调度闭环。只输出任务简报、"
+                "路由决策和需要点名的 Worker，不要生成能源方案。"
+                "语气要像真人同事：直接指出你准备先看哪条电流、哪类浪费和哪种预览。"
             ),
             {"operator_request": user_message, "task_brief": payload},
         )
@@ -342,7 +344,7 @@ class PersistentAgentRuntime:
             "team_leader",
             (
                 "你是 Team Leader。这个请求不需要点名 Worker。"
-                "请直接给用户简洁回答，并说明如需调度闭环可再下达具体能源任务。"
+                "请直接给用户简洁回答；如果用户在问沙盘体验，就说明你可以控制右侧面板显示新方案预览、等待采用后再切换真实流向。"
             ),
             {"task_brief": task_brief.payload},
         )
@@ -582,6 +584,7 @@ class PersistentAgentRuntime:
             (
                 "你是 Team Leader。现在且仅现在可以汇总 Perception、Dispatch、"
                 "Audit artifacts，给用户可读报告。必须说明推荐方案来自审核结果。"
+                "报告要围绕右侧沙盘：旧电流哪里浪费、新方案预览怎样改变购电/储能/限发、用户采用后会发生什么。"
             ),
             {
                 "task_brief": task_brief.payload,
@@ -616,21 +619,14 @@ class PersistentAgentRuntime:
                 self.store.update_model_status(config.agent_id, "正常", None)
                 return response
             except Exception as error:
-                self.store.update_model_status(
-                    config.agent_id, "失败", describe_model_error(error)
-                )
-                return self._local_agent_response(agent_id, payload, str(error))
+                message = describe_model_error(error)
+                self.store.update_model_status(config.agent_id, "失败", message)
+                return self._local_agent_response(agent_id, payload, message)
         if config.api_key:
             return self._local_agent_response(
-                agent_id,
-                payload,
-                f"model gateway status: {config.connection_status}",
+                agent_id, payload, f"gateway status {config.connection_status}"
             )
-        return self._local_agent_response(
-            agent_id,
-            payload,
-            "model gateway status: no api_key configured",
-        )
+        return self._local_agent_response(agent_id, payload, "model config not saved")
 
     def _runtime_config(self, agent_id: str) -> StoredModelConfig:
         config = self.store.get_model_config(agent_id)
@@ -866,7 +862,9 @@ class PersistentAgentRuntime:
             if name != "approval_required" and not passed
         ]
         if not failed:
-            return f"{plan_id} passes hard checks; approval is required if it changes flexible load."
+            return (
+                f"{plan_id} passes hard checks; approval is required if it changes flexible load."
+            )
         return f"{plan_id} rejected because these checks failed: {', '.join(failed)}."
 
     @staticmethod
