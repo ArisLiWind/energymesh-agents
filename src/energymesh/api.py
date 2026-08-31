@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
+from energymesh.agentteams_runtime import probe_agentteams_runtime
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.compound_demo import CompoundChangeDemo, DemoWorkflowError
 from energymesh.config import Settings
@@ -164,6 +165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     def health(request: Request) -> dict[str, object]:
         runtime: Settings = request.app.state.settings
+        agentteams_runtime = probe_agentteams_runtime().model_dump()
         return {
             "status": "ok",
             "version": app.version,
@@ -172,6 +174,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "agent_framework": "agentscope-ai/AgentTeams",
             "agentteams_enabled": runtime.agentteams_enabled,
             "agentteams_team_name": runtime.agentteams_team_name,
+            "agentteams_runtime": agentteams_runtime,
         }
 
     @app.get("/api/agentteams/manifest", response_model=AgentTeamsManifest)
@@ -179,6 +182,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime: Settings = request.app.state.settings
         store: EvidenceStore = request.app.state.store
         return build_agentteams_manifest(runtime, store.list_public_model_configs())
+
+    @app.get("/api/agentteams/runtime")
+    def agentteams_runtime_status() -> dict[str, object]:
+        return probe_agentteams_runtime().model_dump()
 
     @app.put("/api/agents/{agent_id}/model", response_model=AgentModelConfigPublic)
     def save_agent_model(
