@@ -16,6 +16,7 @@ from energymesh.data_pipeline import EnergyDataError, ReplayMonitor, SnapshotFac
 from energymesh.demo import apply_operational_change, load_demo_scenario
 from energymesh.external_data import ExternalDataSimulator
 from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
+from energymesh.mcp_gateway import EnergyMCPGateway
 from energymesh.models import (
     AgentChatRequest,
     AgentChatResponse,
@@ -55,7 +56,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings.assert_safe_runtime()
     store = EvidenceStore(active_settings.db_path, active_settings.evidence_dir)
     compound_demo = CompoundChangeDemo(store)
-    agent_runtime = PersistentAgentRuntime(store)
     orchestrator = EnergyMeshOrchestrator(
         perception=PerceptionAgent(),
         optimizer=DispatchOptimizer(),
@@ -86,6 +86,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     monitor = ReplayMonitor(orchestrator, rolling_decision)
+
+    def current_world_state() -> dict[str, object] | None:
+        snapshot: ExternalDataSnapshot | None = app.state.uploaded_snapshot
+        status = monitor.status()
+        current = status.get("current")
+        if current is None and snapshot and snapshot.telemetry:
+            index = min(max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1)
+            current = snapshot.telemetry[index].model_dump(mode="json")
+        if not isinstance(current, dict):
+            return None
+        load_kw = float(current.get("load_kw") or 0)
+        pv_kw = float(current.get("pv_kw") or 0)
+        battery_soc = float(current.get("battery_soc") or 0)
+        grid_import_kw = max(0.0, load_kw - pv_kw)
+        return {
+            "current": current,
+            "source": status.get("source") or (snapshot.source if snapshot else "uploaded_snapshot"),
+            "cursor": status.get("cursor") if status.get("current") else snapshot.current_interval if snapshot else 0,
+            "current_load_mw": round(load_kw / 1000, 4),
+            "pv_forecast_mw": round(pv_kw / 1000, 4),
+            "storage_soc_percent": round(battery_soc * 100, 1),
+            "grid_import_mw": round(grid_import_kw / 1000, 4),
+            "transformer_load_percent": round(min(100.0, grid_import_kw / 10), 1),
+            "available_capacity_mw": round(max(0.0, 10000 - grid_import_kw) / 1000, 4),
+            "device_status": {
+                "ems": "online",
+                "pcs": "from_uploaded_snapshot",
+                "bms": "from_uploaded_snapshot",
+                "mes": "simulation",
+            },
+        }
+
+    agent_runtime = PersistentAgentRuntime(
+        store,
+        mcp_gateway=EnergyMCPGateway(current_world_state),
+    )
 
     app = FastAPI(
         title="EnergyMesh Agents API",
@@ -195,7 +231,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if config is None:
             raise HTTPException(status_code=409, detail="Model config not saved")
         try:
-            reply = chat_with_agent_config(config, body.message)
+            history = [
+                item
+                for item in body.history
+                if item.get("role") in {"user", "assistant"}
+                and isinstance(item.get("content"), str)
+                and item.get("content", "").strip()
+            ][-12:]
+            try:
+                reply = chat_with_agent_config(config, body.message, history=history)
+            except TypeError:
+                reply = chat_with_agent_config(config, body.message)
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
         return AgentChatResponse(

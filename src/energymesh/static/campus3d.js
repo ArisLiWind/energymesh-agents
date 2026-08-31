@@ -218,11 +218,11 @@ function makeRoute(def, dashed = false) {
     ? new THREE.LineDashedMaterial({ color: def.color, dashSize: .18, gapSize: .13, transparent: true, opacity: .38 })
     : new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: .9 });
   const line = new THREE.Line(geometry, material);
-  line.visible = true;
+  line.visible = false;
   if (dashed) line.computeLineDistances();
   const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, dashed ? .014 : .052, 8, false),
-    new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: dashed ? .16 : .42 }),
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, dashed ? .012 : .026, 8, false),
+    new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: dashed ? .14 : .34 }),
   );
 
   const particles = Array.from({ length: dashed ? 4 : 6 }, () => {
@@ -246,7 +246,7 @@ function rebuildRouteGeometry(route, points) {
   if (route.userData.line.computeLineDistances) route.userData.line.computeLineDistances();
   if (route.userData.tube) {
     route.userData.tube.geometry.dispose();
-    route.userData.tube.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, route.userData.preview ? .014 : .052, 8, false);
+    route.userData.tube.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, route.userData.preview ? .012 : .026, 8, false);
   }
 }
 
@@ -276,14 +276,17 @@ function setRoutePower(route, power, maxPower, previewActive = false, previewLin
   route.userData.power = Math.max(0, Number(power) || 0);
   const active = route.userData.power > .05;
   const preview = route.userData.preview;
-  const opacity = active ? (preview ? 0 : previewLine ? .86 : previewActive ? .18 : .9) : 0;
+  const opacity = 0;
+  route.visible = active;
+  route.userData.line.visible = false;
   route.userData.line.material.color.set(active ? route.userData.def.color : MUTED);
   route.userData.line.material.opacity = opacity;
   route.userData.line.material.linewidth = 1 + Math.min(8, route.userData.power / Math.max(maxPower, 1) * 8);
   if (route.userData.tube) {
+    route.userData.tube.visible = active;
     route.userData.tube.material.color.set(active ? route.userData.def.color : MUTED);
-    route.userData.tube.material.opacity = active ? (preview ? 0 : previewLine ? .32 : previewActive ? .06 : .3) : 0;
-    const scale = 1 + Math.min(1.9, route.userData.power / Math.max(maxPower, 1) * 1.9);
+    route.userData.tube.material.opacity = active ? (preview ? 0 : previewLine ? .26 : previewActive ? 0 : .36) : 0;
+    const scale = 1 + Math.min(1.3, route.userData.power / Math.max(maxPower, 1) * 1.3);
     route.userData.tube.scale.setScalar(scale);
   }
   route.userData.particles.forEach((dot) => {

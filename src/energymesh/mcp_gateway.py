@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Any
 
 
@@ -16,7 +17,24 @@ class MCPToolResult:
 class EnergyMCPGateway:
     """Local MCP-style gateway for EMS/BMS/PCS/MES/forecast data."""
 
+    def __init__(self, world_state_provider: Callable[[], dict[str, Any] | None] | None = None) -> None:
+        self.world_state_provider = world_state_provider
+
     def get_energy_state(self, task: str) -> MCPToolResult:
+        world_state = self.world_state_provider() if self.world_state_provider else None
+        if world_state:
+            output = {
+                "source": "mcp://energymesh/world.current_state",
+                "generated_at": datetime.now(UTC).isoformat(),
+                "task": task,
+                **world_state,
+            }
+            return MCPToolResult(
+                tool_name="energy.get_state",
+                input_payload={"task": task},
+                output_payload=output,
+            )
+
         load_delta_kw = self._load_delta_kw(task)
         base_load_mw = 6.0
         current_load_mw = round(base_load_mw + load_delta_kw / 1000, 3)

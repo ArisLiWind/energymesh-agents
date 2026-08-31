@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260831-flow-sandbox-v4";
+import { createCampus3D } from "/static/campus3d.js?v=20260831-gateway-chat-v5";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -860,6 +860,7 @@ function updateModelStatusFromPublic(config) {
     connectionStatus: config.connection_status,
     lastError: config.last_error,
   };
+  updateChatGatewayGate();
 }
 
 async function chatWithConfiguredModel(message) {
@@ -929,10 +930,20 @@ async function chatWithRuntimeStream(message, handlers = {}) {
   return completed;
 }
 
-async function chatWithSelectedAgent(agentId, message) {
+function agentHistoryForRequest(agentId) {
+  return ensureAgentThread(agentId)
+    .filter((item) => !item.intro && item.text)
+    .slice(-12)
+    .map((item) => ({
+      role: item.role === "user" ? "user" : "assistant",
+      content: item.text,
+    }));
+}
+
+async function chatWithSelectedAgent(agentId, message, history = []) {
   const { ok, body } = await requestAllowingError(`/api/agents/${agentId}/chat`, {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
   if (!ok) {
     throw new Error(body.detail || "agent chat request failed");
@@ -1501,110 +1512,33 @@ async function sendChatMessage(event) {
   const message = input.value.trim();
   if (!message) return;
   const agentId = state.selectedAgent || "team_leader";
+  if (!hasReadyAgentGateway(agentId)) {
+    toast(state.language === "zh" ? "请先接入并测试模型网关，成功后才能对话" : "Connect and test the model gateway before chatting");
+    openGateway(agentId);
+    return;
+  }
   input.value = "";
   state.activeHistory = "new";
   state.activeScenario = null;
   renderSelectedAgent();
+  const history = agentHistoryForRequest(agentId);
   addChatMessage("user", message, agentId);
-  if (agentId === "team_leader" && handleLocalFlowTuningRequest(message)) {
-    input.focus();
-    return;
-  }
   input.disabled = true;
   sendButton.disabled = true;
   const routedMessage = messageWithCampusContext(message);
   try {
     runtimeStatus.hidden = false;
-    if (agentId === "team_leader") {
-      runtimeStatus.querySelector("span").textContent = state.language === "zh" ? "Runtime 已启动" : "Runtime started";
-      let finalLeaderStep = null;
-      const agentSteps = [];
-      let dispatchArtifact = null;
-      let auditArtifact = null;
-      let isDispatchLoop = false;
-
-      const runtime = await chatWithRuntimeStream(routedMessage, {
-        onRoute: (route) => {
-          const workerNames = (route.routing_plan?.workers || []).map(agentName).join(" → ");
-          isDispatchLoop = route.routing_plan?.mode === "dispatch_closed_loop";
-          runtimeStatus.querySelector("span").textContent = state.language === "zh"
-            ? `Leader 已决定路由：${workerNames || "直接回答"}`
-            : `Leader routed the task: ${workerNames || "direct response"}`;
-        },
-        onStage: (stage) => {
-          const statusText = state.language === "zh"
-            ? `${agentName(stage.agent_id)} 正在处理：${stage.stage}`
-            : `${agentName(stage.agent_id)} is working: ${stage.stage}`;
-          runtimeStatus.querySelector("span").textContent = statusText;
-        },
-        onStep: (event) => {
-          const step = event.step;
-          runtimeStatus.querySelector("span").textContent = state.language === "zh"
-            ? `${agentName(step.agent_id)} 已完成`
-            : `${agentName(step.agent_id)} completed`;
-          agentSteps.push(step);
-
-          let chatText = step.response || "";
-          const artifact = event.artifacts?.find(a => a.artifact_id === step.output_artifact);
-          if (artifact?.payload) {
-            const payload = artifact.payload;
-            if (payload.energy_state || payload.plans || payload.verification || payload.task_brief) {
-              chatText += `\n\n\`\`\`json\n${JSON.stringify(payload, null, 2).substring(0, 2000)}\n\`\`\``;
-            }
-          }
-
-          if (step.agent_id === "dispatch_agent" && event.artifacts) {
-            dispatchArtifact = event.artifacts.find(a => a.artifact_type === "candidate_plan");
-          }
-          if (step.agent_id === "audit_agent" && event.artifacts) {
-            auditArtifact = event.artifacts.find(a => a.artifact_type === "verification");
-          }
-
-          addChatMessage("agent", chatText, step.agent_id, {
-            meta: { model: step.model, runtimeSessionId: event.session_id },
-            persist: false,
-          });
-        },
-        onComplete: (event) => {
-          runtimeStatus.querySelector("span").textContent = state.language === "zh" ? "Runtime 已完成" : "Runtime completed";
-          state.task = {
-            ...(state.task || {}),
-            task_id: event.task_id,
-            state: isDispatchLoop ? "AWAITING_APPROVAL" : "COMPLETED",
-          };
-
-          if (isDispatchLoop && dispatchArtifact && auditArtifact) {
-            const passed = auditArtifact.payload?.verification?.filter(v => v.decision === "PASS") || [];
-            const rejected = auditArtifact.payload?.verification?.filter(v => v.decision !== "PASS") || [];
-            const recommended = auditArtifact.payload?.recommended_plan_id || "Plan-B";
-            const plans = dispatchArtifact.payload?.plans || [];
-            const recPlan = plans.find(p => p.plan_id === recommended) || plans[0];
-            const flowPreview = previewFlowFromLatestSnapshot();
-            if (flowPreview) {
-              const plan = planNarrativeFromFlow(message, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
-              plan.title = recPlan?.name || plan.title;
-              plan.reason = `LLM/Runtime 推荐 ${recPlan?.name || recommended}：${plan.reason.replace(/^LLM 根据当前沙盘和这轮对话生成：/, "")}`;
-              showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, plan);
-            }
-
-            const approvalText = state.language === "zh"
-              ? `## 审批请求\n\n推荐方案：**${recPlan?.name || recommended}**\n\n- 预计峰值电网功率: ${recPlan?.expected_peak_grid_mw || "--"} MW\n- 风险: ${recPlan?.risk || "--"}\n\n审核结论:\n${passed.map(v => `- ${v.plan_id}: 通过 ✅`).join("\n")}\n${rejected.map(v => `- ${v.plan_id}: 拒绝 ❌ (${v.reason || ""})`).join("\n")}\n\n请在下方选择:`
-              : `## Approval Request\n\nRecommended: **${recPlan?.name || recommended}**\n\n- Expected peak grid: ${recPlan?.expected_peak_grid_mw || "--"} MW\n- Risk: ${recPlan?.risk || "--"}\n\nAudit:\n${passed.map(v => `- ${v.plan_id}: PASS ✅`).join("\n")}\n${rejected.map(v => `- ${v.plan_id}: REJECT ❌ (${v.reason || ""})`).join("\n")}\n\nChoose an action:`;
-
-            addChatMessage("agent", approvalText, "execution_agent", {
-              meta: { action: "confirm_execution", scenarioKey: "runtime_dispatch" },
-              persist: false,
-            });
-          }
-        },
-      });
-      if (runtime) applyRuntimeToCampus(runtime);
-    } else {
-      runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
-      const reply = await chatWithSelectedAgent(agentId, routedMessage);
-      addChatMessage("agent", reply.response, agentId, {
-        meta: { model: reply.model },
-      });
+    runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
+    const reply = await chatWithSelectedAgent(agentId, routedMessage, history);
+    addChatMessage("agent", reply.response, agentId, {
+      meta: { model: reply.model },
+    });
+    if (agentId === "team_leader" && isFlowTuningRequest(message) && state.energySnapshot) {
+      const flowPreview = previewFlowFromLatestSnapshot();
+      if (flowPreview) {
+        const plan = planNarrativeFromFlow(`${message}\n${reply.response || ""}`, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
+        showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, plan);
+      }
     }
   } catch (error) {
     const missingGateway = isGatewayMissingError(error);
@@ -1615,9 +1549,8 @@ async function sendChatMessage(event) {
     if (missingGateway) window.setTimeout(() => openGateway(agentId), 180);
   } finally {
     runtimeStatus.hidden = true;
-    input.disabled = false;
-    sendButton.disabled = false;
-    input.focus();
+    updateChatGatewayGate();
+    if (!input.disabled) input.focus();
   }
 }
 
@@ -1627,6 +1560,7 @@ function renderSelectedAgent() {
   $$("#agent-directory-list article").forEach((row) => {
     row.classList.toggle("active", row.dataset.agentId === state.selectedAgent);
   });
+  updateChatGatewayGate();
 }
 
 function selectAgent(agentId) {
@@ -1701,6 +1635,7 @@ async function testGatewayConnection() {
       connectionStatus: "失败",
       lastError: error,
     };
+    updateChatGatewayGate();
     return;
   }
   state.gateways[state.selectedAgent] = {
@@ -1709,6 +1644,7 @@ async function testGatewayConnection() {
     connectionStatus: "正常",
     lastError: null,
   };
+  updateChatGatewayGate();
   $("#gateway-status").textContent = state.language === "zh"
     ? `模型接入成功：${body.model}。现在可在聊天中直接使用该模型。`
     : `Model connected: ${body.model}. You can now chat with this model.`;
@@ -2063,6 +1999,23 @@ function isFrustratedChatRequest(message) {
 function hasReadyTeamLeaderGateway() {
   const gateway = state.gateways?.team_leader || state.gateways?.[state.selectedAgent];
   return Boolean(gateway?.apiKey && gateway.connectionStatus === "正常");
+}
+
+function hasReadyAgentGateway(agentId = state.selectedAgent) {
+  const gateway = state.gateways?.[agentId] || (agentId !== "team_leader" ? state.gateways?.team_leader : null);
+  return Boolean(gateway?.apiKey && gateway.connectionStatus === "正常");
+}
+
+function updateChatGatewayGate() {
+  const input = $("#ai-chat-input");
+  const sendButton = $("#ai-chat-form button");
+  if (!input || !sendButton) return;
+  const ready = hasReadyAgentGateway(state.selectedAgent);
+  input.disabled = !ready;
+  sendButton.disabled = !ready;
+  input.placeholder = ready
+    ? "例如：帮我减少购电和限发，先预览新流向"
+    : "请先点齿轮接入模型网关，测试成功后才能对话";
 }
 
 function normalizeLegacyUserText(text) {
