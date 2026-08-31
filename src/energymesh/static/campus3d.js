@@ -2,10 +2,10 @@ import * as THREE from "/static/vendor/three.module.min.js";
 
 const FLOW_DEFS = [
   { id: "solar_load", from: "solar", to: "load", title: "自发自用", color: 0x2ac7a5 },
-  { id: "solar_storage", from: "solar", to: "storage", title: "光伏充电", color: 0x2ac7a5 },
-  { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x20a8bf },
+  { id: "solar_storage", from: "solar", to: "storage", title: "光伏充电", color: 0x27bfd0 },
+  { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x5b7cff },
   { id: "grid_load", from: "grid", to: "load", title: "电网购电", color: 0xd79a31 },
-  { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x64b980 },
+  { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x8fcf70 },
 ];
 
 const MODULES = [
@@ -272,23 +272,23 @@ function pointAlong(points, t) {
   return points[points.length - 1].clone();
 }
 
-function setRoutePower(route, power, maxPower, previewActive = false) {
+function setRoutePower(route, power, maxPower, previewActive = false, previewLine = false) {
   route.userData.power = Math.max(0, Number(power) || 0);
   const active = route.userData.power > .05;
   const preview = route.userData.preview;
-  const opacity = active ? (preview ? .58 : previewActive ? .24 : .9) : 0;
+  const opacity = active ? (preview ? 0 : previewLine ? .86 : previewActive ? .18 : .9) : 0;
   route.userData.line.material.color.set(active ? route.userData.def.color : MUTED);
   route.userData.line.material.opacity = opacity;
   route.userData.line.material.linewidth = 1 + Math.min(8, route.userData.power / Math.max(maxPower, 1) * 8);
   if (route.userData.tube) {
     route.userData.tube.material.color.set(active ? route.userData.def.color : MUTED);
-    route.userData.tube.material.opacity = active ? (preview ? .16 : previewActive ? .08 : .3) : 0;
+    route.userData.tube.material.opacity = active ? (preview ? 0 : previewLine ? .32 : previewActive ? .06 : .3) : 0;
     const scale = 1 + Math.min(1.9, route.userData.power / Math.max(maxPower, 1) * 1.9);
     route.userData.tube.scale.setScalar(scale);
   }
   route.userData.particles.forEach((dot) => {
     dot.material.color.set(active ? route.userData.def.color : MUTED);
-    dot.material.opacity = active ? (preview ? .58 : previewActive ? .2 : .9) : 0;
+    dot.material.opacity = active ? (preview ? 0 : previewLine ? .78 : previewActive ? .12 : .9) : 0;
     const scale = .72 + Math.min(1.8, route.userData.power / Math.max(maxPower, 1) * 1.8);
     dot.scale.setScalar(scale);
   });
@@ -537,12 +537,18 @@ export function createCampus3D(canvas, onLabels) {
 
   function applyFlows(flow, preview = null) {
     const maxPower = Math.max(1, ...Object.values(flow || {}), ...Object.values(preview || {}));
-    liveRoutes.forEach((route, id) => setRoutePower(route, flow[id] || 0, maxPower, Boolean(preview)));
+    liveRoutes.forEach((route, id) => {
+      const currentPower = flow[id] || 0;
+      const previewPower = preview?.[id] || 0;
+      const hasPreview = Boolean(preview);
+      const displayPower = hasPreview && previewPower > .05 ? previewPower : currentPower;
+      setRoutePower(route, displayPower, maxPower, hasPreview && previewPower <= .05, hasPreview && previewPower > .05);
+    });
     previewRoutes.forEach((route, id) => {
-      route.visible = Boolean(preview);
-      route.userData.line.visible = Boolean(preview);
-      route.userData.tube.visible = Boolean(preview);
-      setRoutePower(route, preview?.[id] || 0, maxPower, false);
+      route.visible = false;
+      route.userData.line.visible = false;
+      route.userData.tube.visible = false;
+      setRoutePower(route, 0, maxPower, false);
     });
   }
 

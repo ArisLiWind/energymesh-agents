@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260831-flow-sandbox-v3";
+import { createCampus3D } from "/static/campus3d.js?v=20260831-flow-sandbox-v4";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -1579,6 +1579,13 @@ async function sendChatMessage(event) {
             const recommended = auditArtifact.payload?.recommended_plan_id || "Plan-B";
             const plans = dispatchArtifact.payload?.plans || [];
             const recPlan = plans.find(p => p.plan_id === recommended) || plans[0];
+            const flowPreview = previewFlowFromLatestSnapshot();
+            if (flowPreview) {
+              const plan = planNarrativeFromFlow(message, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
+              plan.title = recPlan?.name || plan.title;
+              plan.reason = `LLM/Runtime 推荐 ${recPlan?.name || recommended}：${plan.reason.replace(/^LLM 根据当前沙盘和这轮对话生成：/, "")}`;
+              showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, plan);
+            }
 
             const approvalText = state.language === "zh"
               ? `## 审批请求\n\n推荐方案：**${recPlan?.name || recommended}**\n\n- 预计峰值电网功率: ${recPlan?.expected_peak_grid_mw || "--"} MW\n- 风险: ${recPlan?.risk || "--"}\n\n审核结论:\n${passed.map(v => `- ${v.plan_id}: 通过 ✅`).join("\n")}\n${rejected.map(v => `- ${v.plan_id}: 拒绝 ❌ (${v.reason || ""})`).join("\n")}\n\n请在下方选择:`
@@ -1971,21 +1978,50 @@ function formatDelta(before, after, unit = "kW") {
   return `${Number(before || 0).toFixed(1)} → ${Number(after || 0).toFixed(1)} ${unit}`;
 }
 
-function renderFlowPreviewCard(currentFlow, previewFlow) {
+function planNarrativeFromFlow(message = "", currentFlow = {}, previewFlow = {}, source = "local") {
+  const gridDrop = Number(currentFlow.grid_load || 0) - Number(previewFlow.grid_load || 0);
+  const storageGain = Number(previewFlow.storage_load || 0) - Number(currentFlow.storage_load || 0);
+  const chargeGain = Number(previewFlow.solar_storage || 0) - Number(currentFlow.solar_storage || 0);
+  const curtailDrop = Number(currentFlow.curtail || 0) - Number(previewFlow.curtail || 0);
+  const asksStorage = /储能|充电|放电|battery|storage/i.test(message);
+  const asksCurtail = /限发|浪费|curtail|waste/i.test(message);
+  const asksGrid = /购电|电网|grid/i.test(message);
+  let title = "动态调度预览";
+  if (asksStorage && chargeGain > storageGain) title = "发电补储预览";
+  else if (asksStorage) title = "储能接管预览";
+  else if (asksCurtail) title = "限发回收预览";
+  else if (asksGrid) title = "降购电预览";
+  const reasonBits = [];
+  if (gridDrop > .05) reasonBits.push(`把电网购电压低 ${gridDrop.toFixed(1)} kW`);
+  if (storageGain > .05) reasonBits.push(`让储能多放电 ${storageGain.toFixed(1)} kW 给用电格`);
+  if (chargeGain > .05) reasonBits.push(`把发电多送 ${chargeGain.toFixed(1)} kW 进储能格`);
+  if (curtailDrop > .05) reasonBits.push(`减少限发 ${curtailDrop.toFixed(1)} kW`);
+  if (!reasonBits.length) reasonBits.push("当前时刻约束较紧，先保持主流向，只做小幅调度预演");
+  const prefix = source === "llm" ? "LLM 根据当前沙盘和这轮对话生成：" : "本地临时预览，不是 LLM 方案：";
+  return {
+    title,
+    source,
+    reason: `${prefix}${reasonBits.join("，")}。`,
+  };
+}
+
+function renderFlowPreviewCard(currentFlow, previewFlow, plan = {}) {
   const card = $("#flow-preview-card");
   if (!card) return;
   const visible = Boolean(previewFlow);
   card.hidden = !visible;
   if (!visible) return;
+  card.querySelector("header strong").textContent = plan.title || "动态调度预览";
+  card.querySelector("header span").textContent = plan.source === "llm" ? "LLM 新方案预览" : "本地临时预览";
   $("#delta-grid").textContent = formatDelta(currentFlow.grid_load, previewFlow.grid_load);
   $("#delta-storage").textContent = formatDelta(currentFlow.storage_load, previewFlow.storage_load);
   $("#delta-curtail").textContent = formatDelta(currentFlow.curtail, previewFlow.curtail);
-  $("#flow-plan-reason").textContent = "把白天未利用的发电更多存进储能，晚高峰由储能优先供给用电格，减少电网购电。";
+  $("#flow-plan-reason").textContent = plan.reason || "根据当前沙盘状态生成新的电流预演。";
 }
 
-function showCampusPlanPreview(currentFlow, previewFlow) {
-  state.flowPreview = { currentFlow, previewFlow };
-  renderFlowPreviewCard(currentFlow, previewFlow);
+function showCampusPlanPreview(currentFlow, previewFlow, plan = {}) {
+  state.flowPreview = { currentFlow, previewFlow, plan };
+  renderFlowPreviewCard(currentFlow, previewFlow, plan);
   state.campus3d?.previewEnergyState?.({ flows: previewFlow });
 }
 
@@ -1996,13 +2032,14 @@ function clearCampusPlanPreview(adopt = false) {
 }
 
 function ledgerRecord(action, currentFlow = {}, previewFlow = {}) {
+  const plan = state.flowPreview?.plan || {};
   const now = new Date();
   const record = {
     id: `PLAN-${now.getTime()}`,
     action,
     time: state.campusSimulation?.time || now.toLocaleString("zh-CN", { hour12: false }),
-    title: "储能优先消纳方案",
-    reason: "把白天未利用的发电更多存进储能，晚高峰由储能优先供给用电格，减少电网购电。",
+    title: plan.title || "动态调度预览",
+    reason: plan.reason || "根据当前沙盘状态生成新的电流预演。",
     expected: {
       grid: formatDelta(currentFlow.grid_load, previewFlow.grid_load),
       storage: formatDelta(currentFlow.storage_load, previewFlow.storage_load),
@@ -2021,6 +2058,11 @@ function isFlowTuningRequest(message) {
 
 function isFrustratedChatRequest(message) {
   return /正常说话|不和我对话|有毛病|好好看看|咋回事|为什么没有|能不能|一直没充|一直浪费/i.test(message);
+}
+
+function hasReadyTeamLeaderGateway() {
+  const gateway = state.gateways?.team_leader || state.gateways?.[state.selectedAgent];
+  return Boolean(gateway?.apiKey && gateway.connectionStatus === "正常");
 }
 
 function normalizeLegacyUserText(text) {
@@ -2072,6 +2114,7 @@ function previewFlowFromLatestSnapshot() {
 
 function handleLocalFlowTuningRequest(message) {
   if (!isFlowTuningRequest(message) && !isFrustratedChatRequest(message)) return false;
+  if (hasReadyTeamLeaderGateway()) return false;
   if (!state.energySnapshot) {
     addChatMessage(
       "agent",
@@ -2082,13 +2125,14 @@ function handleLocalFlowTuningRequest(message) {
   }
   const preview = previewFlowFromLatestSnapshot();
   if (!preview) return false;
-  showCampusPlanPreview(preview.currentFlow, preview.previewFlow);
+  const plan = planNarrativeFromFlow(message, preview.currentFlow, preview.previewFlow, "local");
+  showCampusPlanPreview(preview.currentFlow, preview.previewFlow, plan);
   const reply = [
-    "你说得对，我先接住这个问题：储能没充进去，不应该让电一直浪费。",
+    "你说得对，我先接住这个问题：储能没充进去，不应该让电一直浪费。先说清楚：当前没有可用的真实 LLM 网关，所以这不是 LLM 生成的新方案，只是我按右侧实时数值给你的本地临时预览。",
     "",
-    `我已经把右侧沙盘切到“新方案预览”。现在看两条关键变化：电网购电 ${formatDelta(preview.currentFlow.grid_load, preview.previewFlow.grid_load)}，限发 ${formatDelta(preview.currentFlow.curtail, preview.previewFlow.curtail)}。旧线路变淡，虚线就是我建议的新电流走法。`,
+    `我已经把右侧沙盘切到“${plan.title}”。现在看三条关键变化：电网购电 ${formatDelta(preview.currentFlow.grid_load, preview.previewFlow.grid_load)}，储能放电 ${formatDelta(preview.currentFlow.storage_load, preview.previewFlow.storage_load)}，限发 ${formatDelta(preview.currentFlow.curtail, preview.previewFlow.curtail)}。`,
     "",
-    "我的判断：优先把可用发电送到用电格和储能格，储能满/受限时才上网或限发。你确认后点“采用方案”，虚线会变成实时电流；不想采用就拒绝，我保持当前流向。",
+    "要让它变成真正的 LLM 方案，需要先把 Team Leader 模型网关测试到“正常”。那样下一次你问我，我会先把当前沙盘状态发给 LLM，再由它生成方案标题、理由和调度方向，然后唤起右侧预览。",
   ].join("\n");
   addChatMessage("agent", reply, "team_leader", {
     meta: { action: "confirm_execution", scenarioKey: "flow_preview" },
@@ -2210,11 +2254,6 @@ function applySnapshotToCampus() {
     batteryPowerKw,
     batteryMode,
   });
-  const shouldPreview = Boolean(
-    state.task?.state === "AWAITING_APPROVAL"
-    || state.monitor?.agentteams_awake
-    || state.parallel?.agentteams_active
-  );
   state.lastCampusFlow = currentFlow;
 
   // Energy balance decomposition
@@ -2265,9 +2304,9 @@ function applySnapshotToCampus() {
     load: `${(point.load_kw || 0).toFixed(2)} kW`,
     socPercent: (point.battery_soc || 0) * 100,
     flows: currentFlow,
-    previewFlows: shouldPreview ? previewFlow : null,
+    previewFlows: state.flowPreview ? previewFlow : null,
   });
-  if (shouldPreview) showCampusPlanPreview(currentFlow, previewFlow);
+  if (state.flowPreview) showCampusPlanPreview(currentFlow, previewFlow, state.flowPreview.plan);
   else clearCampusPlanPreview(false);
 }
 
