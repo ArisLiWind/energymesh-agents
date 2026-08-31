@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260831-bus-topology-v7" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260831-wire-anchor-v8" />
   </head>
   <body>
     <main class="app-shell">
@@ -473,10 +473,6 @@
         <div class="gateway-body connector-copy">
           <input id="energy-csv-file" type="file" accept=".csv,text/csv" hidden />
           <button id="connect-energy-source" class="full-width" type="button">接入园区系统数据</button>
-          <div class="connector-choice-row">
-            <button id="test-demo-data" class="secondary" type="button">测试历史数据连接</button>
-            <button id="test-live-data" class="secondary" type="button">测试真实园区连接</button>
-          </div>
           <div class="upload-section">
             <button id="upload-energy-data" class="secondary" type="button">选择历史 CSV</button>
             <div class="speed-toggle" id="speed-toggle">
@@ -497,10 +493,14 @@
   "output": "ExternalDataSnapshot",
   "production_write": false
 }</pre>
+          <div class="gateway-actions connector-test-actions">
+            <button id="test-demo-data" class="action" type="button">测试历史数据</button>
+            <button id="test-live-data" class="action" type="button">测试真实园区</button>
+          </div>
         </div>
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260831-bus-topology-v7"></script>
+    <script type="module" src="/static/app.js?v=20260831-wire-anchor-v8"></script>
   </body>
 </html>

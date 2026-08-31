@@ -189,6 +189,10 @@ function routePoints(path) {
   return path.map(([x, z]) => new THREE.Vector3(x, .13, z));
 }
 
+function makeRouteCurve(points) {
+  return new THREE.CatmullRomCurve3(points, false, "centripetal", .25);
+}
+
 function tapPoint(id, y = .16, modules = null) {
   const module = modules?.get?.(id);
   return new THREE.Vector3(module?.position.x ?? BUS_TAP_X[id] ?? 0, y, module?.position.z ?? BUS_TAP_Z[id] ?? 0);
@@ -246,6 +250,7 @@ function rebuildTopologyWire(wire, modules) {
 
 function makeRoute(def, dashed = false) {
   const points = routePoints(FLOW_PATHS[def.id] || [[0, 0], [.01, 0]]);
+  const curve = makeRouteCurve(points);
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = dashed
     ? new THREE.LineDashedMaterial({ color: def.color, dashSize: .18, gapSize: .13, transparent: true, opacity: .38 })
@@ -254,7 +259,7 @@ function makeRoute(def, dashed = false) {
   line.visible = false;
   if (dashed) line.computeLineDistances();
   const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, dashed ? .012 : .026, 8, false),
+    new THREE.TubeGeometry(curve, 96, dashed ? .012 : .026, 8, false),
     new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: dashed ? .14 : .34 }),
   );
 
@@ -268,41 +273,26 @@ function makeRoute(def, dashed = false) {
   const group = new THREE.Group();
   group.add(tube, line, ...particles);
   group.visible = !dashed;
-  group.userData = { def, points, line, tube, particles, power: 0, preview: dashed, progress: Math.random() };
+  group.userData = { def, points, curve, line, tube, particles, power: 0, preview: dashed, progress: Math.random() };
   return group;
 }
 
 function rebuildRouteGeometry(route, points) {
+  const curve = makeRouteCurve(points);
   route.userData.points = points;
+  route.userData.curve = curve;
   route.userData.line.geometry.dispose();
   route.userData.line.geometry = new THREE.BufferGeometry().setFromPoints(points);
   if (route.userData.line.computeLineDistances) route.userData.line.computeLineDistances();
   if (route.userData.tube) {
     route.userData.tube.geometry.dispose();
-    route.userData.tube.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 72, route.userData.preview ? .012 : .026, 8, false);
+    route.userData.tube.geometry = new THREE.TubeGeometry(curve, 96, route.userData.preview ? .012 : .026, 8, false);
   }
 }
 
 function valueNumber(raw) {
   const match = String(raw || "").match(/-?\d+(\.\d+)?/);
   return match ? Number(match[0]) : 0;
-}
-
-function pointAlong(points, t) {
-  if (points.length === 1) return points[0].clone();
-  const lengths = [];
-  let total = 0;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const len = points[i].distanceTo(points[i + 1]);
-    lengths.push(len);
-    total += len;
-  }
-  let target = ((t % 1) + 1) % 1 * total;
-  for (let i = 0; i < lengths.length; i += 1) {
-    if (target <= lengths[i]) return points[i].clone().lerp(points[i + 1], target / lengths[i]);
-    target -= lengths[i];
-  }
-  return points[points.length - 1].clone();
 }
 
 function setRoutePower(route, power, maxPower, previewActive = false, previewLine = false) {
@@ -319,8 +309,7 @@ function setRoutePower(route, power, maxPower, previewActive = false, previewLin
     route.userData.tube.visible = active;
     route.userData.tube.material.color.set(active ? route.userData.def.color : MUTED);
     route.userData.tube.material.opacity = active ? (preview ? 0 : previewLine ? .26 : previewActive ? 0 : .36) : 0;
-    const scale = 1 + Math.min(1.3, route.userData.power / Math.max(maxPower, 1) * 1.3);
-    route.userData.tube.scale.setScalar(scale);
+    route.userData.tube.scale.set(1, 1, 1);
   }
   route.userData.particles.forEach((dot) => {
     dot.material.color.set(active ? route.userData.def.color : MUTED);
@@ -430,11 +419,12 @@ export function createCampus3D(canvas, onLabels) {
     const rect = canvas.getBoundingClientRect();
     modules.forEach((module, id) => {
       const world = module.position.clone();
-      world.y = 1.38;
+      const kind = module.userData.kind;
+      world.y = kind === "storage" ? 1.58 : kind === "grid" ? 1.2 : kind === "solar" ? .46 : kind === "load" ? 1.22 : .88;
       world.project(camera);
       labels[id] = {
-        x: (world.x * .5 + .5) * rect.width + 42,
-        y: (-world.y * .5 + .5) * rect.height - 72,
+        x: (world.x * .5 + .5) * rect.width,
+        y: (-world.y * .5 + .5) * rect.height,
         visible: ["solar", "storage", "load", "grid"].includes(id),
         placement: "above",
         title: module.userData.title,
@@ -452,7 +442,7 @@ export function createCampus3D(canvas, onLabels) {
     const speed = active ? .12 + Math.min(.72, power / 24) : 0;
     route.userData.particles.forEach((dot, index) => {
       const t = route.userData.progress + elapsed * speed + index / route.userData.particles.length;
-      dot.position.copy(pointAlong(route.userData.points, t));
+      dot.position.copy(route.userData.curve.getPointAt(((t % 1) + 1) % 1));
       dot.visible = active;
     });
   }

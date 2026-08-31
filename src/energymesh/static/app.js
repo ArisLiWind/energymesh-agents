@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260831-bus-topology-v7";
+import { createCampus3D } from "/static/campus3d.js?v=20260831-wire-anchor-v8";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
