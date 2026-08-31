@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260831-gateway-chat-v5" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260831-status-first-v6" />
   </head>
   <body>
     <main class="app-shell">
@@ -473,6 +473,10 @@
         <div class="gateway-body connector-copy">
           <input id="energy-csv-file" type="file" accept=".csv,text/csv" hidden />
           <button id="connect-energy-source" class="full-width" type="button">接入园区系统数据</button>
+          <div class="connector-choice-row">
+            <button id="test-demo-data" class="secondary" type="button">测试历史数据连接</button>
+            <button id="test-live-data" class="secondary" type="button">测试真实园区连接</button>
+          </div>
           <div class="upload-section">
             <button id="upload-energy-data" class="secondary" type="button">上传历史数据测试</button>
             <div class="speed-toggle" id="speed-toggle">
@@ -497,6 +501,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260831-gateway-chat-v5"></script>
+    <script type="module" src="/static/app.js?v=20260831-status-first-v6"></script>
   </body>
 </html>

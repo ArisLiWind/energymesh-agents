@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260831-gateway-chat-v5";
+import { createCampus3D } from "/static/campus3d.js?v=20260831-status-first-v6";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -110,8 +110,8 @@ const agentProfiles = {
 
 const agentIntroMessages = {
   team_leader: {
-    en: "I am watching the sandbox with you. Tell me what feels wrong, such as too much grid import or curtailment, and I will show a new flow preview before anything is adopted.",
-    zh: "我先看右侧沙盘：现在要确认发电、储能、用电和电网之间哪里浪费最大。你可以直接说“帮我减少购电和限发”，我会先给你一版新流向预览，确认后再切换园区。",
+    en: "I can chat normally and read the current park state after the model gateway is connected. I will report whether this interval is normal first, then propose a preview only when you ask to change the park.",
+    zh: "接入模型网关后，我会像正常 AI 工程师一样和你对话。问园区时我会先汇报当前时段是否正常、发电/储能/用电/购电状态；只有你明确要调整时，才生成新流向预览。",
   },
   perception_agent: {
     en: "I am the Perception Worker. Ask me about load, PV, SOC, tariff, transformer telemetry, device state, or production constraints.",
@@ -301,7 +301,7 @@ const translations = {
     traceEmpty: "Backend events will appear here.",
     chatKicker: "Team Leader",
     chatTitle: "AI dispatch conversation",
-    chatIntro: "I am watching the sandbox with you. Tell me what feels wrong, such as too much grid import or curtailment, and I will show a new flow preview before anything is adopted.",
+    chatIntro: "After the model gateway is connected, I can chat normally and read the current park state. I report normal/abnormal operation first, then create a flow preview only when you ask to change the park.",
     chatPlaceholder: "Try: reduce grid import and curtailment, preview the new flow",
     chatSend: "Send",
     chatButton: "Chat",
@@ -392,7 +392,7 @@ const translations = {
     traceEmpty: "后端事件会显示在这里。",
     chatKicker: "Team Leader",
     chatTitle: "AI 调度对话",
-    chatIntro: "我先看右侧沙盘：现在要确认发电、储能、用电和电网之间哪里浪费最大。你可以直接说“帮我减少购电和限发”，我会先给你一版新流向预览，确认后再切换园区。",
+    chatIntro: "接入模型网关后，我会像正常 AI 工程师一样对话。问园区时先汇报当前时段是否正常、发电/储能/用电/购电状态；明确要调整时，才生成新流向预览。",
     chatPlaceholder: "例如：帮我减少购电和限发，先预览新流向",
     chatSend: "发送",
     chatButton: "对话",
@@ -956,6 +956,14 @@ function campusPromptContext() {
   const hasSnapshot = Boolean(state.energySnapshot);
   const activeFlow = state.flowPreview?.currentFlow || {};
   const previewFlow = state.flowPreview?.previewFlow || null;
+  const monitor = state.monitor || {};
+  const recentEvents = Array.isArray(monitor.events) ? monitor.events.slice(-5) : [];
+  const abnormalEvents = recentEvents.filter((event) => ["V1_INVALIDATED", "AGENTTEAMS_WOKEN", "V2_REPLANNED_AND_AUDITED"].includes(event.kind));
+  const curtailKw = Number(activeFlow.curtail || 0);
+  const gridKw = Number(activeFlow.grid_load || 0);
+  const statusConclusion = hasSnapshot
+    ? (abnormalEvents.length ? "状态变化，需要说明异常依据" : "运行正常，当前方案有效，AgentTeams 休眠")
+    : "未接入数据，不能判断园区是否正常";
   const flowText = (flow = {}) => (
     `发电到用电 ${Number(flow.solar_load || 0).toFixed(1)} kW；`
     + `发电到储能 ${Number(flow.solar_storage || 0).toFixed(1)} kW；`
@@ -973,6 +981,10 @@ function campusPromptContext() {
     `储能: ${hasSnapshot ? sim.storage || "--" : "--"}`,
     `电网购电: ${hasSnapshot ? sim.gridImport || "--" : "--"}`,
     `SOC: ${hasSnapshot && Number.isFinite(sim.socPercent) ? `${Math.round(sim.socPercent)}%` : "--"}`,
+    `状态结论: ${statusConclusion}`,
+    `当前方案: ${monitor.plan_version || "V1"} ${abnormalEvents.length ? "需要复核" : "有效"}`,
+    `AgentTeams: ${monitor.agentteams_awake ? "已唤醒" : "休眠"}`,
+    `最近时段汇报: ${recentEvents.map((event) => `${event.kind}: ${event.detail}`).join(" | ") || "暂无事件"}`,
     `累计未有效利用: ${hasSnapshot && Number.isFinite(sim.wastedKwh) ? `${sim.wastedKwh.toFixed(1)} kWh` : "--"}`,
     `累计额外购电成本: ${hasSnapshot && Number.isFinite(sim.extraCost) ? `¥${sim.extraCost.toFixed(1)}` : "--"}`,
     `当前流向: ${flowText(activeFlow)}`,
@@ -982,8 +994,10 @@ function campusPromptContext() {
   } else {
     lines.push("正在预览的新流向: 无。");
   }
-  lines.push("你可以控制右侧沙盘：需要调度时先描述问题，再要求界面显示新方案预览；用户点击采用后，虚线流向切换为真实流向。");
-  lines.push("请像和真人同事一起看图处理问题那样说话：少讲系统名词，多说你看到哪里不合理、你建议怎么改、改完数字会怎样。不要编造未出现的数据。");
+  lines.push(`判断提示: 当前购电 ${gridKw.toFixed(1)} kW，限发 ${curtailKw.toFixed(1)} kW。小功率购电或储能充电本身不代表故障；没有异常事件时先说运行正常。`);
+  lines.push("回答顺序: 先说园区电力当前会怎样运行，再说是否需要 Worker 或调度；不要把回答写成“你会在沙盘看到什么”的界面说明。");
+  lines.push("Worker 触发原则: 普通聊天不触发；询问当前状态只读状态；明确要求优化/模拟/预览/调整/采用/执行时，才建议进入调度或生成预览。");
+  lines.push("禁止: 没有数据质量、通信、预测偏差或告警证据时，不要猜测信号接错或设备故障。");
   return lines.join("\n");
 }
 
@@ -3353,6 +3367,65 @@ async function uploadEnergyCsv(file) {
   }
 }
 
+function setConnectorStatus(text, events = []) {
+  const sourceNote = $("#monitor-source-note");
+  const eventList = $("#monitor-event-list");
+  if (sourceNote) sourceNote.textContent = text;
+  if (eventList) {
+    eventList.innerHTML = events.length
+      ? events.map((event) => `<p><strong>${escapeHTML(event.kind)}</strong> · ${escapeHTML(event.detail)}</p>`).join("")
+      : `<p>${escapeHTML(text)}</p>`;
+  }
+}
+
+async function testDemoDataConnection() {
+  try {
+    const snapshot = await request("/api/data/snapshot/current");
+    state.energySnapshot = snapshot;
+    setConnectorStatus(
+      `测试数据连接成功：${snapshot.source}，${snapshot.telemetry.length} 个 15 分钟时段`,
+      [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区可按时段回放。" }],
+    );
+    applySnapshotToCampus();
+    renderDailyLedger();
+    toast("测试数据连接成功");
+  } catch {
+    setConnectorStatus(
+      "测试数据未连接：请先上传历史 CSV",
+      [{ kind: "TEST_DATA_MISSING", detail: "没有可用的历史测试数据，无法校验 96 个时段。" }],
+    );
+    toast("请先上传历史 CSV");
+  }
+}
+
+async function testLiveDataConnection() {
+  try {
+    const monitor = await request("/api/monitor/status");
+    state.monitor = monitor;
+    if (monitor.current) {
+      setConnectorStatus(
+        `真实园区连接成功：Load ${Number(monitor.current.load_kw).toFixed(2)} kW · PV ${Number(monitor.current.pv_kw).toFixed(2)} kW · SOC ${(Number(monitor.current.battery_soc) * 100).toFixed(0)}%`,
+        [{ kind: "LIVE_DATA_CONNECTED", detail: "Monitor 当前有实时/回放遥测，AI 可读取同一份园区状态。" }],
+      );
+      toast("真实园区连接成功");
+      renderMonitor();
+      applySnapshotToCampus();
+      return;
+    }
+    setConnectorStatus(
+      "真实园区未连接：当前没有 EMS/BMS/PCS 实时遥测",
+      [{ kind: "LIVE_DATA_MISSING", detail: "生产环境需要配置园区适配器；演示可先上传历史 CSV。" }],
+    );
+    toast("真实园区未连接");
+  } catch (error) {
+    setConnectorStatus(
+      "真实园区连接失败：请检查适配器或后端服务",
+      [{ kind: "LIVE_DATA_ERROR", detail: error.message || "monitor/status 请求失败。" }],
+    );
+    toast("真实园区连接失败");
+  }
+}
+
 async function approveMonitorPlan() {
   if (!state.monitor?.task_id) return;
   try {
@@ -3448,18 +3521,23 @@ function setupEvents() {
   $("#rollback-button")?.addEventListener("click", runRollback);
   $("#upload-energy-data").addEventListener("click", () => $("#energy-csv-file").click());
   $("#energy-csv-file").addEventListener("change", (event) => uploadEnergyCsv(event.target.files?.[0]));
+  $("#test-demo-data").addEventListener("click", testDemoDataConnection);
+  $("#test-live-data").addEventListener("click", testLiveDataConnection);
   $("#connect-energy-source").addEventListener("click", async () => {
-    toast("🎉 园区数据已连接！Agent Teams 开始实时监测微电网运行状态...");
-    // Simulate a connection attempt
+    setConnectorStatus("正在测试真实园区数据连接...", [{ kind: "CONNECTING", detail: "检查 Monitor 当前是否有 EMS/BMS/PCS 遥测。" }]);
     try {
       const resp = await request("/api/monitor/status");
+      state.monitor = resp;
       if (resp?.running) {
-        toast("✅ 实时数据流接入成功 — 每15秒刷新一次遥测");
+        setConnectorStatus("真实园区数据连接成功", [{ kind: "LIVE_DATA_CONNECTED", detail: "Monitor 正在读取数据流。" }]);
+        toast("真实园区数据连接成功");
       } else {
-        toast("⚠️ 园区接口返回空数据，已切换为历史回放模式");
+        setConnectorStatus("真实园区没有运行中的数据流，可先上传历史数据测试", [{ kind: "LIVE_DATA_IDLE", detail: "Monitor 当前未运行。" }]);
+        toast("真实园区未连接");
       }
     } catch {
-      toast("⚠️ 生产环境需配置 EMS/BMS/PCS 适配器；演示模式使用历史回放");
+      setConnectorStatus("真实园区连接失败：生产环境需配置 EMS/BMS/PCS 适配器", [{ kind: "LIVE_DATA_ERROR", detail: "演示模式可使用历史回放。" }]);
+      toast("真实园区连接失败");
     }
   });
   $("#speed-normal").addEventListener("click", () => {
