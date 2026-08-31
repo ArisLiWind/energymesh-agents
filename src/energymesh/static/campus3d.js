@@ -9,21 +9,20 @@ const FLOW_DEFS = [
 ];
 
 const MODULES = [
-  { id: "solar", title: "发电格", device: "屋顶光伏", metric: "-- kW", note: "限发 --", x: -3.6, z: 1.35, kind: "solar" },
-  { id: "storage", title: "储能格", device: "电池 + PCS", metric: "SOC --", note: "待机", x: -.9, z: 1.35, kind: "storage" },
-  { id: "load", title: "用电格", device: "车间 + 算力", metric: "-- kW", note: "连续负荷", x: 1.8, z: 1.35, kind: "load" },
-  { id: "grid", title: "电网格", device: "公共电网", metric: "-- kW", note: "购电/上网", x: -3.6, z: -1.35, kind: "grid" },
-  { id: "factory", title: "生产车间", device: "不可中断", metric: "运行中", note: "用电子格", x: -.9, z: -1.35, kind: "factory" },
-  { id: "charge", title: "柔性负荷", device: "充电区", metric: "可移峰", note: "Agent 可调整", x: 1.8, z: -1.35, kind: "charge" },
+  { id: "grid", title: "电网格", device: "公共电网", metric: "-- kW", note: "购电/上网", x: -4.15, z: 0, kind: "grid" },
+  { id: "solar", title: "发电格", device: "屋顶光伏", metric: "-- kW", note: "限发 --", x: -2.45, z: 1.45, kind: "solar" },
+  { id: "storage", title: "储能格", device: "电池 + PCS", metric: "SOC --", note: "待机", x: -.7, z: 1.45, kind: "storage" },
+  { id: "load", title: "用电格", device: "数据中心 + 算力", metric: "-- kW", note: "连续负荷", x: 1.35, z: 1.45, kind: "load" },
+  { id: "factory", title: "厂房", device: "不可中断负荷", metric: "运行中", note: "主线供电", x: 2.75, z: .1, kind: "factory" },
+  { id: "charge", title: "充电站", device: "柔性负荷", metric: "可移峰", note: "主线供电", x: .7, z: -1.25, kind: "charge" },
 ];
 
-const FLOW_PATHS = {
-  solar_load: [[-3.9, 1.35], [-1.55, 1.35], [-.05, .35], [2.65, -.25]],
-  solar_storage: [[-3.9, 1.35], [-2.25, .65], [-.95, .55]],
-  storage_load: [[-.95, .55], [.6, .55], [2.65, -.25]],
-  grid_load: [[-3.85, -2.05], [-1.15, -2.05], [.85, -1.1], [2.65, -.25]],
-  solar_grid: [[-3.9, 1.35], [-5.05, .15], [-3.85, -2.05]],
-};
+const BUS_Z = -.28;
+const BUS_LEFT = -4.55;
+const BUS_RIGHT = 3.35;
+const BUS_TAP_X = { grid: -4.15, solar: -2.45, storage: -.7, load: 1.35, factory: 2.75, charge: .7 };
+const BUS_TAP_Z = { grid: 0, solar: 1.45, storage: 1.45, load: 1.45, factory: .1, charge: -1.25 };
+const FLOW_PATHS = {};
 
 const MUTED = 0xcbd5df;
 const INK = 0x1f2937;
@@ -190,29 +189,63 @@ function routePoints(path) {
   return path.map(([x, z]) => new THREE.Vector3(x, .13, z));
 }
 
-function routedPoints(modules, fromId, toId, routeId = "") {
+function tapPoint(id, y = .16, modules = null) {
+  const module = modules?.get?.(id);
+  return new THREE.Vector3(module?.position.x ?? BUS_TAP_X[id] ?? 0, y, module?.position.z ?? BUS_TAP_Z[id] ?? 0);
+}
+
+function busPoint(id, y = .16, modules = null) {
+  const module = modules?.get?.(id);
+  return new THREE.Vector3(module?.position.x ?? BUS_TAP_X[id] ?? 0, y, BUS_Z);
+}
+
+function compactPath(points) {
+  return points.filter((point, index) => {
+    const previous = points[index - 1];
+    return !previous || previous.distanceTo(point) > .01;
+  });
+}
+
+function routedPoints(modules, fromId, toId) {
   const from = modules.get(fromId)?.position || new THREE.Vector3();
   const to = modules.get(toId)?.position || new THREE.Vector3();
-  const midX = (from.x + to.x) / 2;
-  const sameRow = Math.abs(from.z - to.z) < .01;
-  const laneMap = {
-    solar_load: .22,
-    solar_storage: -.18,
-    storage_load: -.18,
-    grid_load: -.28,
-    solar_grid: .34,
-  };
-  const laneOffset = sameRow ? (laneMap[routeId] || 0) : (laneMap[routeId] || (from.z < to.z ? -.34 : .34));
-  return [
+  return compactPath([
     new THREE.Vector3(from.x, .16, from.z),
-    new THREE.Vector3(midX, .16, from.z + laneOffset),
-    new THREE.Vector3(midX, .16, to.z + laneOffset),
+    busPoint(fromId, .16, modules),
+    busPoint(toId, .16, modules),
     new THREE.Vector3(to.x, .16, to.z),
+  ]);
+}
+
+function topologyWirePoints(modules) {
+  const points = [
+    new THREE.Vector3(BUS_LEFT, .105, BUS_Z),
+    new THREE.Vector3(BUS_RIGHT, .105, BUS_Z),
   ];
+  modules.forEach((module, id) => {
+    points.push(tapPoint(id, .105, modules), busPoint(id, .105, modules));
+  });
+  return points;
+}
+
+function makeTopologyWire(modules) {
+  const points = topologyWirePoints(modules);
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const wire = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({ color: 0xcbd5df, transparent: true, opacity: .62 }),
+  );
+  wire.name = "topologyWire";
+  return wire;
+}
+
+function rebuildTopologyWire(wire, modules) {
+  wire.geometry.dispose();
+  wire.geometry = new THREE.BufferGeometry().setFromPoints(topologyWirePoints(modules));
 }
 
 function makeRoute(def, dashed = false) {
-  const points = routePoints(FLOW_PATHS[def.id]);
+  const points = routePoints(FLOW_PATHS[def.id] || [[0, 0], [.01, 0]]);
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = dashed
     ? new THREE.LineDashedMaterial({ color: def.color, dashSize: .18, gapSize: .13, transparent: true, opacity: .38 })
@@ -346,6 +379,8 @@ export function createCampus3D(canvas, onLabels) {
     modules.set(def.id, module);
     scene.add(module);
   });
+  const topologyWire = makeTopologyWire(modules);
+  scene.add(topologyWire);
 
   const liveRoutes = new Map();
   const previewRoutes = new Map();
@@ -370,11 +405,11 @@ export function createCampus3D(canvas, onLabels) {
   function syncRoutesToModules() {
     liveRoutes.forEach((route) => {
       const { from, to } = route.userData.def;
-      rebuildRouteGeometry(route, routedPoints(modules, from, to, route.userData.def.id));
+      rebuildRouteGeometry(route, routedPoints(modules, from, to));
     });
     previewRoutes.forEach((route) => {
       const { from, to } = route.userData.def;
-      rebuildRouteGeometry(route, routedPoints(modules, from, to, route.userData.def.id));
+      rebuildRouteGeometry(route, routedPoints(modules, from, to));
     });
   }
 
@@ -398,10 +433,10 @@ export function createCampus3D(canvas, onLabels) {
       world.y = 1.38;
       world.project(camera);
       labels[id] = {
-        x: (world.x * .5 + .5) * rect.width + (["solar", "grid"].includes(id) ? -46 : 46),
-        y: (-world.y * .5 + .5) * rect.height,
+        x: (world.x * .5 + .5) * rect.width + 42,
+        y: (-world.y * .5 + .5) * rect.height - 72,
         visible: ["solar", "storage", "load", "grid"].includes(id),
-        placement: ["storage", "grid"].includes(id) ? "below" : "above",
+        placement: "above",
         title: module.userData.title,
         device: module.userData.device,
         metric: module.userData.metric,
@@ -451,7 +486,7 @@ export function createCampus3D(canvas, onLabels) {
   canvas.addEventListener("pointerdown", (event) => {
     const module = pick(event);
     selectedId = module?.userData.id || selectedId;
-    dragging = module || { pan: true, x: event.clientX, y: event.clientY };
+    dragging = { pan: true, x: event.clientX, y: event.clientY };
   });
   canvas.addEventListener("pointermove", (event) => {
     if (!dragging) return;
@@ -467,14 +502,6 @@ export function createCampus3D(canvas, onLabels) {
       dragging.y = event.clientY;
       return;
     }
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    raycaster.ray.intersectPlane(plane, hit);
-    dragging.position.x = hit.x;
-    dragging.position.z = hit.z;
-    syncRoutesToModules();
   });
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -576,11 +603,29 @@ export function createCampus3D(canvas, onLabels) {
 
   function addModule(type = "factory") {
     const id = `${type}-${modules.size + 1}`;
-    const def = { id, title: type === "storage" ? "新增储能" : type === "generation" ? "新增发电" : "新增用电", device: "拖动定位", metric: "待接入", note: "未进入主调度", x: 4.2, z: -2.4 + (modules.size % 3) * .7, kind: type };
+    const nextIndex = Math.max(0, modules.size - MODULES.length);
+    const slots = [
+      { x: -1.65, z: -1.25 },
+      { x: 1.85, z: -1.25 },
+      { x: 3.25, z: 1.05 },
+      { x: -3.35, z: -1.25 },
+    ];
+    const slot = slots[nextIndex % slots.length];
+    const def = {
+      id,
+      title: type === "storage" ? "储能资产" : type === "generation" ? "发电资产" : type === "factory" ? "厂房资产" : "负荷资产",
+      device: "未绑定遥测",
+      metric: "待接入",
+      note: "已接入主母线",
+      x: slot.x + Math.floor(nextIndex / slots.length) * .35,
+      z: slot.z,
+      kind: type === "datacenter" ? "load" : type,
+    };
     const module = makeModule(def);
     modules.set(id, module);
     scene.add(module);
     selectedId = id;
+    rebuildTopologyWire(topologyWire, modules);
     syncRoutesToModules();
   }
 
@@ -590,6 +635,7 @@ export function createCampus3D(canvas, onLabels) {
     scene.remove(module);
     modules.delete(selectedId);
     selectedId = "load";
+    rebuildTopologyWire(topologyWire, modules);
     syncRoutesToModules();
   }
 
@@ -598,6 +644,7 @@ export function createCampus3D(canvas, onLabels) {
       const module = modules.get(def.id);
       if (module) module.position.set(def.x, 0, def.z);
     });
+    rebuildTopologyWire(topologyWire, modules);
     cameraTarget.set(0, 0, 0);
     camera.position.set(5.8, 5.4, 6.4);
     camera.lookAt(cameraTarget);

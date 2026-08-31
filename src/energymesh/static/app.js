@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260831-status-first-v6";
+import { createCampus3D } from "/static/campus3d.js?v=20260831-bus-topology-v7";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -1815,19 +1815,7 @@ function updateAssetLabels(labels) {
   $$(".asset").forEach((element) => {
     element.dataset.hidden = "true";
   });
-  const placed = [];
-  const entries = Object.entries(labels).map(([key, position]) => {
-    const next = { ...position };
-    let guard = 0;
-    while (placed.some((item) => Math.abs(item.x - next.x) < 190 && Math.abs(item.y - next.y) < 82) && guard < 8) {
-      next.y += next.placement === "below" ? 52 : -52;
-      next.x += guard % 2 === 0 ? 28 : -28;
-      guard += 1;
-    }
-    placed.push({ x: next.x, y: next.y });
-    return [key, next];
-  });
-  entries.forEach(([key, position]) => {
+  Object.entries(labels).forEach(([key, position]) => {
     let element = $(`.asset[data-anchor="${key}"]`);
     if (!element) {
       element = document.createElement("article");
@@ -3356,12 +3344,13 @@ async function uploadEnergyCsv(file) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "CSV upload failed");
     state.energySnapshot = body;
-    $("#connector-dialog").close();
-    
     applySnapshotToCampus();
     renderDailyLedger();
-    toast(`历史回放测试：已归一化 ${body.environment_signals.raw_rows} 条测量为 96 个 Snapshot`);
-    await startParallelSimulation();
+    setConnectorStatus(
+      `历史数据已上传：${body.environment_signals.raw_rows} 条测量已归一化，等待连接测试`,
+      [{ kind: "TEST_DATA_READY", detail: "点击“测试历史数据连接”确认 96 个时段可读后，再开始全天运行。" }],
+    );
+    toast("历史数据已上传，请先测试连接");
   } catch (error) {
     toast(error.message);
   }
@@ -3384,11 +3373,13 @@ async function testDemoDataConnection() {
     state.energySnapshot = snapshot;
     setConnectorStatus(
       `测试数据连接成功：${snapshot.source}，${snapshot.telemetry.length} 个 15 分钟时段`,
-      [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区可按时段回放。" }],
+      [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区开始全天用电回放。" }],
     );
     applySnapshotToCampus();
     renderDailyLedger();
-    toast("测试数据连接成功");
+    toast("测试数据连接成功，开始全天运行");
+    $("#connector-dialog").close();
+    await startParallelSimulation();
   } catch {
     setConnectorStatus(
       "测试数据未连接：请先上传历史 CSV",

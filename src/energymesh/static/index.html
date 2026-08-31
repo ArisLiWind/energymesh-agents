@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260831-status-first-v6" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260831-bus-topology-v7" />
   </head>
   <body>
     <main class="app-shell">
@@ -101,7 +101,7 @@
                   <strong class="chat-speaker">Team Leader</strong>
                 </header>
                 <div class="chat-message-body">
-                  <p data-i18n="chatIntro">我先看右侧沙盘：现在要确认发电、储能、用电和电网之间哪里浪费最大。你可以直接说“帮我减少购电和限发”，我会先给你一版新流向预览，确认后再切换园区。</p>
+                  <p data-i18n="chatIntro">接入模型网关后，我会像正常 AI 工程师一样对话。问园区时先汇报当前时段是否正常、发电/储能/用电/购电状态；明确要调整时，才生成新流向预览。</p>
                 </div>
               </div>
             </article>
@@ -163,11 +163,11 @@
             </div>
             <div class="campus-tools" aria-label="Campus editor tools">
               <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
-              <button class="campus-add" type="button" data-campus-add="datacenter">+ 数据中心</button>
-              <button class="campus-add" type="button" data-campus-add="factory">+ 厂房</button>
-              <button class="campus-add" type="button" data-campus-add="generation">+ 发电</button>
-              <button class="campus-add" type="button" data-campus-add="storage">+ 储能</button>
-              <button id="campus-delete" type="button">删除选中</button>
+              <button class="campus-add" type="button" data-campus-add="datacenter">接入负荷资产</button>
+              <button class="campus-add" type="button" data-campus-add="factory">接入厂房资产</button>
+              <button class="campus-add" type="button" data-campus-add="generation">接入发电资产</button>
+              <button class="campus-add" type="button" data-campus-add="storage">接入储能资产</button>
+              <button id="campus-delete" type="button">移除资产</button>
             </div>
             <div class="flow-preview-card" id="flow-preview-card" hidden>
               <header>
@@ -478,7 +478,7 @@
             <button id="test-live-data" class="secondary" type="button">测试真实园区连接</button>
           </div>
           <div class="upload-section">
-            <button id="upload-energy-data" class="secondary" type="button">上传历史数据测试</button>
+            <button id="upload-energy-data" class="secondary" type="button">选择历史 CSV</button>
             <div class="speed-toggle" id="speed-toggle">
               <span>回放速度：</span>
               <button id="speed-normal" class="active" type="button">实时（15分钟/秒）</button>
@@ -501,6 +501,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260831-status-first-v6"></script>
+    <script type="module" src="/static/app.js?v=20260831-bus-topology-v7"></script>
   </body>
 </html>
