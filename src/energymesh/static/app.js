@@ -2032,6 +2032,7 @@ function updateAssetLabels(labels) {
       `;
     }
     element.dataset.placement = position.placement || "above";
+    element.dataset.selected = position.selected ? "true" : "false";
     element.style.setProperty("--x", `${position.x}px`);
     element.style.setProperty("--y", `${position.y}px`);
     element.dataset.hidden = position.visible ? "false" : "true";
@@ -3004,6 +3005,13 @@ function setupCampus() {
   renderCampusSimulation();
   $("#reset-camera").addEventListener("click", () => {
     state.campus3d?.reset?.();
+  });
+  $("#campus-edit-layout")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const active = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.textContent = active ? "完成布局" : "编辑布局";
+    state.campus3d?.setEditMode?.(active);
   });
   $$(".campus-add").forEach((button) => {
     button.addEventListener("click", () => {

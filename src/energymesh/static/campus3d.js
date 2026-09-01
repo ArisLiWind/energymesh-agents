@@ -178,10 +178,19 @@ function makeModule(def) {
   }
 
   const label = makeLabel(def);
-  label.position.set(0, 1.64, 0);
+  label.position.set(0, .02, 0);
   label.name = "label";
   label.visible = false;
   group.add(label);
+  const footprint = new THREE.Mesh(
+    new THREE.RingGeometry(.72, .82, 48),
+    new THREE.MeshBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0, side: THREE.DoubleSide }),
+  );
+  footprint.name = "selectionRing";
+  footprint.rotation.x = -Math.PI / 2;
+  footprint.position.y = .015;
+  footprint.visible = false;
+  group.add(footprint);
   return group;
 }
 
@@ -383,6 +392,7 @@ export function createCampus3D(canvas, onLabels) {
   });
   let selectedId = "load";
   let dragging = null;
+  let editMode = false;
   let previewFlow = null;
   let liveFlow = {};
   const pointer = new THREE.Vector2();
@@ -419,14 +429,14 @@ export function createCampus3D(canvas, onLabels) {
     const rect = canvas.getBoundingClientRect();
     modules.forEach((module, id) => {
       const world = module.position.clone();
-      const kind = module.userData.kind;
-      world.y = kind === "storage" ? 1.58 : kind === "grid" ? 1.2 : kind === "solar" ? .46 : kind === "load" ? 1.22 : .88;
+      world.y = .04;
       world.project(camera);
       labels[id] = {
         x: (world.x * .5 + .5) * rect.width,
         y: (-world.y * .5 + .5) * rect.height,
-        visible: ["solar", "storage", "load", "grid"].includes(id),
-        placement: "above",
+        visible: true,
+        placement: "below",
+        selected: editMode && id === selectedId,
         title: module.userData.title,
         device: module.userData.device,
         metric: module.userData.metric,
@@ -473,13 +483,59 @@ export function createCampus3D(canvas, onLabels) {
     return object || null;
   }
 
+  function pointerOnGround(event) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    return raycaster.ray.intersectPlane(plane, hit) ? hit.clone() : null;
+  }
+
+  function updateSelection() {
+    modules.forEach((module, id) => {
+      const ring = module.getObjectByName("selectionRing");
+      if (!ring) return;
+      ring.visible = editMode && id === selectedId;
+      ring.material.opacity = ring.visible ? .72 : 0;
+    });
+    canvas.dataset.editing = editMode ? "true" : "false";
+  }
+
   canvas.addEventListener("pointerdown", (event) => {
     const module = pick(event);
-    selectedId = module?.userData.id || selectedId;
+    if (editMode) {
+      if (!module) {
+        selectedId = "";
+        dragging = null;
+        updateSelection();
+        updateLabels();
+        return;
+      }
+      selectedId = module.userData.id;
+      const point = pointerOnGround(event);
+      dragging = point ? {
+        module,
+        offsetX: module.position.x - point.x,
+        offsetZ: module.position.z - point.z,
+      } : null;
+      canvas.setPointerCapture?.(event.pointerId);
+      updateSelection();
+      return;
+    }
     dragging = { pan: true, x: event.clientX, y: event.clientY };
   });
   canvas.addEventListener("pointermove", (event) => {
     if (!dragging) return;
+    if (dragging.module) {
+      const point = pointerOnGround(event);
+      if (!point) return;
+      dragging.module.position.x = THREE.MathUtils.clamp(point.x + dragging.offsetX, -4.7, 3.8);
+      dragging.module.position.z = THREE.MathUtils.clamp(point.z + dragging.offsetZ, -1.9, 2.05);
+      rebuildTopologyWire(topologyWire, modules);
+      syncRoutesToModules();
+      updateLabels();
+      return;
+    }
     if (dragging.pan) {
       const dx = (event.clientX - dragging.x) / 95 / zoom;
       const dz = (event.clientY - dragging.y) / 95 / zoom;
@@ -500,6 +556,14 @@ export function createCampus3D(canvas, onLabels) {
   }, { passive: false });
   window.addEventListener("pointerup", () => { dragging = null; });
   window.addEventListener("resize", render);
+
+  function setEditMode(next) {
+    editMode = Boolean(next);
+    if (!editMode) dragging = null;
+    if (editMode && !selectedId) selectedId = "load";
+    updateSelection();
+    updateLabels();
+  }
 
   function syncModules(state = {}) {
     if (state.noData) {
@@ -615,6 +679,7 @@ export function createCampus3D(canvas, onLabels) {
     modules.set(id, module);
     scene.add(module);
     selectedId = id;
+    updateSelection();
     rebuildTopologyWire(topologyWire, modules);
     syncRoutesToModules();
   }
@@ -651,6 +716,7 @@ export function createCampus3D(canvas, onLabels) {
 
   applyEnergyState({ load: "-- kW", generation: "-- kW", storage: "SOC --", storageFlow: "等待 CSV 接入", gridImport: "-- kW", noData: true, flows: ZERO_FLOW });
   syncRoutesToModules();
+  updateSelection();
   window.requestAnimationFrame(loop);
-  return { addModule, deleteSelected, applyEnergyState, previewEnergyState, adoptPreview, reset, resize, destroy };
+  return { addModule, deleteSelected, applyEnergyState, previewEnergyState, adoptPreview, reset, resize, destroy, setEditMode };
 }

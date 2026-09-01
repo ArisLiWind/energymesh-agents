@@ -73,22 +73,32 @@ AgentTeams Matrix / Team Room
 
 当前实现要点：
 
-- 上传真实园区数据或连接园区，之后右侧接入数据，虚拟园区和可视化园区的图表管理，随着真实时间开始呈现当天的电力调度情况。
-- 用户可以在左侧和 Team Leader进行对话，leader会与用户正常对话，并且探讨能源成本、清洁能源消纳、生产连续性、还有园区安全性的冲突的问题，联系数据Agent，调度Agent，审核Agent，安全Agent等一起协同思考，提出更好的调度方案，并且和用户讲解探讨是否要执行。
-- 当确定提出方案的时候，右侧的界面会弹出是否执行这个方案的框架，之后这个方案会下方执行，这些会沉淀为证据链。并且随着外部条件变化，真的更新上下文、废止旧方案、重新调度、触发人工审批并在偏差超限时回退。
-- 具备可核验源码，完成 AgentTeams、Skill、调度工具和外部系统接口的工程代码落地。
-- 具备可观测数据模型、MCP 鉴权、工具失败处理、
-- 具备Agent/Skill 版本管理、评测发布、运行告警、SLO、容量和灾备运维方案。
-- 追踪保存每一版预测和电价。
-- 旧有方案的失效必须提出充足理由。
-- 实际设备运行是否真的达到预期效果必须追踪。
-- Agent协同之下产生利于整个园区进行工作的调度方案。
-- 在每个滚动窗口，EnergyMesh 可以重新计算并比较新旧方案，自动识别已经失效的计划，再用新遥测判断储能、负荷和成本是否按预期变化。
-- 利用 PolarDB RAG 引擎保存已经确认的预测偏差、约束触发、人工调整及最终运行结果，为调度员解释本次策略变化并提示相似条件下的历史风险，减少 Agent 编造原因或误用旧经验。
-- 负荷预测、成本估算和功率设定仍由结构化运行数据、预测模型、优化器及现场安全规则重新计算；真实账单和设备遥测用于校准这些模型，不由 RAG 直接决定调度方案
-- EnergyMesh 可以据此形成跨日滚动决策、执行后闭环验证和跨园区经验复用。
-- 选择一个电价或预测突变场景（例如天气），报告计划刷新时间、失效计划误执行数、约束违规数、执行结果回读率和相对基线节省金额；同时验证跨园区策略是否会按设备能力和生产约束重新筛选，并比较采用历史经验前后的预测偏差、人工干预次数与策略收益。
-
+- 上传真实园区 CSV 或连接园区数据源后，右侧白色 UI 接入当天 96 点负荷、光伏、储能、电价和生产约束；
+  虚拟园区、3D 电流、折线图和运行账本随真实时间/回放游标呈现当天电力调度情况。
+- 用户在 EnergyMesh 左侧和 Team Leader 对话。Leader 负责正常解释和讨论能源成本、清洁能源消纳、
+  生产连续性和园区安全性的冲突；普通聊天只走真实 Team Leader 模型直答，不触发 Worker。
+- 用户明确要求“调度 / 优化 / 模拟 / 预览 / 采用 / 执行”时，`/api/runtime/chat/stream`
+  才进入真实 AgentTeams，由 Leader 联系数据/感知、调度、审核、安全/执行等 Agent 协同思考。
+- 上传 CSV 后，右侧园区状态会组成 `world_state`，随消息写入 AgentTeams Team Room，成为 Worker
+  生成方案的真实输入。
+- 后端将 AgentTeams 事件标准化为 `task_created`、`worker_joined`、`tool_call`、`dispatch_plan`、`audit_verdict`、`awaiting_approval`、`execution_receipt`、`completed`、`failed`。
+- 白色 UI 的“AgentTeams 当前任务”区域展示真实 `project_id`、`task_id`、`team_room_id`、`task_room_id`、`worker_id` 和时间线。
+- `dispatch_plan` 到达时才驱动 Three.js 预览，并展示购电成本下降、能源浪费下降、人工调度成本下降；
+  `execution_receipt` 或完成事件到达后才正式采用预览。
+- 右侧弹出的“采用方案/拒绝采用”是人工审批入口；采用、执行、回读、偏差、回退都会沉淀为同一条证据链。
+- Agent 协同必须产生利于整个园区运行的调度方案，而不是只输出静态报告。
+- 外部条件变化时，系统更新 `context_hash`，标记旧方案失效并说明理由，重新调度、重新审核；
+  涉及生产负荷或安全约束时重新进入 Human Approval，执行偏差超限时进入 rollback。
+- 每一版预测、电价、调度版本、下发结果和后续观测都保存为可追踪记录；事件会保存为
+  `runtime_artifacts`，刷新页面后可通过 `task_id` 恢复，不只依赖浏览器 SSE。
+- 负荷预测、成本估算和功率设定由结构化遥测、预测模型、优化器和现场安全规则重新计算；
+  RAG 只用于解释已确认的历史偏差、约束触发、人工调整和最终结果，不直接决定调度功率。
+- PolarDB 目标架构承载园区持续产生的遥测质量、负荷/光伏预测、电价、储能状态、生产约束、
+  调度版本、下发结果和后续观测，并按同一决策时点形成完整快照。
+- MCP 鉴权、工具失败处理、Agent/Skill 版本管理、评测发布、运行告警、SLO、容量和灾备方案
+  是工程化验收项；当前仓库提供可核验源码、AgentTeams/Skill 资源、调度工具和外部接口契约。
+- EnergyMesh 可以据此形成跨日滚动决策、执行后闭环验证和跨园区经验复用；跨园区策略必须按设备能力、
+  生产约束和安全边界重新筛选，不能直接复用旧园区结论。
 
 Element 和 EnergyMesh 的关系：
 
@@ -100,6 +110,10 @@ Element 和 EnergyMesh 的关系：
 评委质疑“这是不是前端动画”时，用同一个 `project_id / task_id / room_id / worker_id` 在 Element 和 EnergyMesh 里对上即可。
 
 本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误。
+
+DeepSeek 或其他 OpenAI-compatible 模型配置在 AgentTeams Manager/Worker runtime 和 EnergyMesh
+Team Leader 网关中，不配置在 Element。Element 是 AgentTeams 的 Matrix 聊天客户端，只显示房间、消息和
+Worker 协作记录；真正调用模型的是 AgentTeams manager/worker 容器。
 
 真实运行必须准备：
 
@@ -322,6 +336,22 @@ EnergyMesh 在这个流程中承担的是“协作调度与治理层”角色：
 
 公开实测数据只覆盖光伏/储能测量；电价、受保护负荷和生产约束是 EnergyMesh 配置，不代表该校园真实账单或
 工业 MES 数据。
+
+复赛主验证场景固定为“电价或预测突变”，例如天气突变导致 PV 预测下调、同时高峰电价上调：
+
+| 验收指标 | 必须展示 |
+| --- | --- |
+| plan refresh latency | 从 `context_hash` 改变到新 `dispatch_plan` 出现的耗时 |
+| stale plan executed | 旧方案被标记 `superseded` 后误执行次数，目标为 0 |
+| constraint violations | 审核后的生产、安全、SOC、PCS、变压器约束违规数，目标为 0 |
+| readback rate | 执行后 96 个 15 分钟 interval 的回读完成率，目标为 96/96 |
+| saving vs baseline | 相对原 EMS 基线的购电成本节省金额和比例 |
+| waste reduction | 光伏限发/未有效利用电量下降 |
+| manual dispatch reduction | 人工重算、人工判断和重复审批次数下降 |
+
+跨园区验证时，历史经验只能作为 RAG 解释和风险提示；候选策略必须按目标园区的设备能力、生产约束、
+电价和安全规则重新筛选。报告应比较采用历史经验前后的预测偏差、人工干预次数与策略收益，不能把相似案例
+直接当作调度结果复用。
 
 复赛推荐数据路线：
 
