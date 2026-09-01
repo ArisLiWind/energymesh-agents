@@ -102,10 +102,10 @@ AgentTeams Matrix / Team Room
 
 Element 和 EnergyMesh 的关系：
 
-| 入口 | 作用 | 是否必须给评委操作 |
-| --- | --- | --- |
-| AgentTeams Element | 原生 Matrix/Team Room，证明 Worker、任务房间、提交、验收真实存在 | 可作为证据后台打开 |
-| EnergyMesh 白色 UI | 园区电力调度主界面，展示电流流动、成本、浪费、审批和执行 | 推荐作为主要演示入口 |
+| 入口 | 作用 | 
+| --- | --- | 
+| AgentTeams Element | 原生 Matrix/Team Room，证明 Worker、任务房间、提交、验收真实存在 | 
+| EnergyMesh 白色 UI | 园区电力调度主界面，展示电流流动、成本、浪费、审批和执行 | 
 
 评委质疑“这是不是前端动画”时，用同一个 `project_id / task_id / room_id / worker_id` 在 Element 和 EnergyMesh 里对上即可。
 
