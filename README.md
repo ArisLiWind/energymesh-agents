@@ -53,9 +53,9 @@ AgentTeams 在系统中承担任务组织和责任分离：
 
 ## Live AgentTeams 深度接入
 
-EnergyMesh 现在把 **AgentTeams 当成真实运行引擎和事件源**，把 **EnergyMesh 白色界面当成业务可视化客户端**。
+EnergyMesh 现在把 **AgentTeams 当成真实运行引擎和事件源**，把 **EnergyMesh 界面当成业务可视化客户端**。
 
-也就是说，AgentTeams Element 不是最终产品 UI，它是原生协作/证据界面；EnergyMesh 白色 UI 才是面向园区能源运营的主界面。两者必须看到同一条真实任务链：
+也就是说，AgentTeams Element 不是最终产品 UI，它是原生协作/证据界面；EnergyMesh  UI 才是面向园区能源运营的主界面。两者必须看到同一条真实任务链：
 
 ```text
 AgentTeams Matrix / Team Room
@@ -73,13 +73,22 @@ AgentTeams Matrix / Team Room
 
 当前实现要点：
 
-- 普通聊天只走真实 Team Leader 模型直答，不触发 Worker。
-- 用户明确要求“调度 / 优化 / 模拟 / 预览 / 采用 / 执行”时，`/api/runtime/chat/stream` 才进入真实 AgentTeams。
-- 上传 CSV 后，右侧园区状态会组成 `world_state`，随消息写入 AgentTeams Team Room。
-- 后端将 AgentTeams 事件标准化为 `task_created`、`worker_joined`、`tool_call`、`dispatch_plan`、`audit_verdict`、`awaiting_approval`、`execution_receipt`、`completed`、`failed`。
-- 白色 UI 的“AgentTeams 当前任务”区域展示真实 `project_id`、`task_id`、`team_room_id`、`task_room_id`、`worker_id` 和时间线。
-- `dispatch_plan` 到达时才驱动 Three.js 预览；`execution_receipt` 或完成事件到达后才正式采用预览。
-- 事件会保存为 `runtime_artifacts`，刷新页面后可通过 `task_id` 恢复，不只依赖浏览器 SSE。
+- 上传真实园区数据或连接园区，之后右侧接入数据，虚拟园区和可视化园区的图表管理，随着真实时间开始呈现当天的电力调度情况。
+- 用户可以在左侧和 Team Leader进行对话，leader会与用户正常对话，并且探讨能源成本、清洁能源消纳、生产连续性、还有园区安全性的冲突的问题，联系数据Agent，调度Agent，审核Agent，安全Agent等一起协同思考，提出更好的调度方案，并且和用户讲解探讨是否要执行。
+- 当确定提出方案的时候，右侧的界面会弹出是否执行这个方案的框架，之后这个方案会下方执行，这些会沉淀为证据链。并且随着外部条件变化，真的更新上下文、废止旧方案、重新调度、触发人工审批并在偏差超限时回退。
+- 具备可核验源码，完成 AgentTeams、Skill、调度工具和外部系统接口的工程代码落地。
+- 具备可观测数据模型、MCP 鉴权、工具失败处理、
+- 具备Agent/Skill 版本管理、评测发布、运行告警、SLO、容量和灾备运维方案。
+- 追踪保存每一版预测和电价。
+- 旧有方案的失效必须提出充足理由。
+- 实际设备运行是否真的达到预期效果必须追踪。
+- 使用 PolarDB 承载园区持续产生的遥测质量、负荷与光伏预测、电价、储能状态、生产约束、调度版本、下发结果和后续观测，并按同一决策时点形成完整快照。
+- 在每个滚动窗口，EnergyMesh 可以重新计算并比较新旧方案，自动识别已经失效的计划，再用新遥测判断储能、负荷和成本是否按预期变化，避免计划停留为一条静态曲线。
+- 利用 PolarDB RAG 引擎保存已经确认的预测偏差、约束触发、人工调整及最终运行结果，为调度员解释本次策略变化并提示相似条件下的历史风险，减少 Agent 编造原因或误用旧经验。
+- 负荷预测、成本估算和功率设定仍由结构化运行数据、预测模型、优化器及现场安全规则重新计算；真实账单和设备遥测用于校准这些模型，不由 RAG 直接决定调度方案
+- EnergyMesh 可以据此形成跨日滚动决策、执行后闭环验证和跨园区经验复用。
+- 选择一个电价或预测突变场景（）例如天气，报告计划刷新时间、失效计划误执行数、约束违规数、执行结果回读率和相对基线节省金额；同时验证跨园区策略是否会按设备能力和生产约束重新筛选，并比较采用历史经验前后的预测偏差、人工干预次数与策略收益。
+
 
 Element 和 EnergyMesh 的关系：
 
