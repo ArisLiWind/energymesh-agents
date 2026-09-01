@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.env.agentteams.local
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
