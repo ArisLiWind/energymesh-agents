@@ -4,7 +4,7 @@
 > 
 > 面向工业园区、算力中心、微电网与储能场站的 多Agent 电力调度持系统。
 
-> 项目以官方 `agentscope-ai/AgentTeams` 为协同底座，目的是使用 多Agent 调度更有效地使用能源，持续降低能源成本。
+> 项目以官方 `agentscope-ai/AgentTeams` 为协同底座，目的是使用 多Agent 调度更有效地使用能源，持续降低能源成本和调度工作中的人工成本。
 
 
 [超境创新官网](https://transrealm.ltd/energymesh-official?view=solutions) ·
