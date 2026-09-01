@@ -2,15 +2,62 @@
 
 > GOAI Agent Infra
 > 
-> 面向工业园区、算力中心、微电网与储能场站的多 Agent 电力能源自主调度系统。
+> 面向工业园区、算力中心、微电网与储能场站的 AI 电力能源持续降本系统。
 
-> 项目以官方 agentscope-ai/AgentTeams` 为协同底座，目的是提高现有园区微电网能源调度效率。
+> 项目以官方 `agentscope-ai/AgentTeams` 为协同底座，目的是证明 AI 可以比传统人工调度更有效地使用能源，从而持续降低能源成本。
 
-> 新智基座 集合能源态势感知、滚动调度、独立审核、人工审批、模拟执行、偏差回退、证据审计和经验沉淀为优化现有能源管理的Agent智能系统。
+> 新智基座集合能源态势感知、滚动调度、独立审核、人工审批、模拟执行、偏差回退、证据审计和经验沉淀；Agent、多智能体和自主重规划只是实现手段，最终价值必须由成本、清洁能源消纳、约束安全和可审计证据证明。
 
 [超境创新官网](https://transrealm.ltd/energymesh-official?view=solutions) ·
 [AgentTeams 资源](agentteams/) · [架构](ARCHITECTURE.md) · [当前状态](STATUS.md) ·
 [安全边界](SECURITY.md)
+
+## 核心价值主张
+
+EnergyMesh Demo 不应该证明“界面里有很多 Agent”，而应该反复证明一件事：
+
+**AI 可以比传统人工调度更有效地使用能源，从而持续降低能源成本。**
+
+因此产品展示、3D 沙盘、聊天、Worker 分工和证据板都必须服务于同一个闭环：
+
+1. 接入真实或可复现的园区时序数据，形成一天 96 个 15 分钟时段的运行账本。
+2. 先展示原方案如何发电、存电、用电、购电，以及浪费和额外成本如何产生。
+3. 用户和 Team Leader 正常对话；只有明确要优化、预览、采用或执行时，才进入 AgentTeams 调度任务。
+4. AgentTeams 的 Perception、Dispatch、Audit、Execution Worker 在真实 Team Room 中协作，并把产物写入共享任务/证据。
+5. UI 只展示由真实运行时产生的思考、拆解、Worker 加入、方案预览、人工审批和执行回读事件。
+6. 最终用成本降低、弃电下降、购电峰值下降、SOC 安全、执行回读和 SHA-256 evidence 证明改善。
+
+## Live AgentTeams 是硬要求
+
+本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，FastAPI 聊天入口不会再把本地 Python 顺序流水线包装成“多 Agent”。如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误，而不是继续假装 Worker 已经协作。
+
+真实运行必须准备：
+
+```bash
+# 1. 安装并启动 Docker Desktop
+docker ps
+
+# 2. 安装官方 AgentTeams
+git clone https://github.com/agentscope-ai/AgentTeams.git
+cd AgentTeams
+AGENTTEAMS_LLM_API_KEY=<your-model-key> make install
+
+# 3. 回到 EnergyMesh 仓库，创建真实 Worker/Human/Team
+scripts/setup_live_agentteams.sh
+
+# 4. 配置 FastAPI 到 AgentTeams Team Room / event stream 的桥接
+export AGENTTEAMS_LIVE_REQUIRED=true
+export AGENTTEAMS_TEAM_ROOM_ID=<matrix-room-id-created-by-agentteams>
+export AGENTTEAMS_MATRIX_BASE_URL=<matrix-client-base-url>
+export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token-for-fastapi-bridge>
+export AGENTTEAMS_EVENT_STREAM_URL=<agentteams-manager-or-bridge-sse-url>
+
+# 5. 验证 EnergyMesh 只认真实 runtime
+scripts/agentteams_runtime_check.sh
+curl http://127.0.0.1:8000/api/agentteams/runtime
+```
+
+`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 event stream bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有事件流就不展示这些状态。
 
 ## 我们想解决什么问题
 

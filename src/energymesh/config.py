@@ -17,6 +17,7 @@ class Settings:
     simulation_mode: bool
     allow_production_write: bool
     agentteams_enabled: bool
+    agentteams_live_required: bool
     agentteams_team_name: str
     agentteams_instance_id: str | None
     db_path: Path
@@ -30,6 +31,7 @@ class Settings:
             simulation_mode=_bool_env("SIMULATION_MODE", True),
             allow_production_write=_bool_env("ALLOW_PRODUCTION_WRITE", False),
             agentteams_enabled=_bool_env("AGENTTEAMS_ENABLED", True),
+            agentteams_live_required=_bool_env("AGENTTEAMS_LIVE_REQUIRED", True),
             agentteams_team_name=os.getenv(
                 "AGENTTEAMS_TEAM_NAME", "energymesh-park-control"
             ),

@@ -20,6 +20,7 @@ def settings(tmp_path: Path) -> Settings:
         simulation_mode=True,
         allow_production_write=False,
         agentteams_enabled=True,
+        agentteams_live_required=False,
         agentteams_team_name="energymesh-test-team",
         agentteams_instance_id=None,
         db_path=tmp_path / "energymesh.db",

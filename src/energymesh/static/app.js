@@ -913,10 +913,16 @@ async function chatWithRuntimeStream(message, handlers = {}) {
         state.runtimeSessionId = event.session_id;
         window.localStorage.setItem("energymesh.runtimeSessionId", event.session_id);
         handlers.onStart?.(event);
+      } else if (event.type === "agentteams_runtime_check") {
+        handlers.onRuntimeCheck?.(event);
       } else if (event.type === "route_decided") {
         handlers.onRoute?.(event);
       } else if (event.type === "stage_start") {
         handlers.onStage?.(event);
+      } else if (event.type === "worker_joined") {
+        handlers.onWorkerJoined?.(event);
+      } else if (event.type === "team_room_message") {
+        handlers.onTeamRoomMessage?.(event);
       } else if (event.type === "agent_step") {
         handlers.onStep?.(event);
       } else if (event.type === "runtime_completed") {
@@ -949,6 +955,13 @@ async function chatWithSelectedAgent(agentId, message, history = []) {
     throw new Error(body.detail || "agent chat request failed");
   }
   return body;
+}
+
+function agentTeamsRuntimeProblemMessage(error) {
+  const detail = error?.message || "Live AgentTeams runtime is not ready.";
+  return state.language === "zh"
+    ? `真实 AgentTeams 还没有接管这次对话。\n\n${detail}\n\n必须先完成 Docker、官方 AgentTeams、agt apply 和 Team Room bridge 配置；在这些证据都成立前，界面不会再把本地流水线伪装成多 Agent。`
+    : `Live AgentTeams has not taken over this turn.\n\n${detail}\n\nDocker, official AgentTeams, agt apply, and Team Room bridge configuration must be ready before the UI can claim multi-agent work.`;
 }
 
 function campusPromptContext() {
@@ -1543,23 +1556,47 @@ async function sendChatMessage(event) {
   try {
     runtimeStatus.hidden = false;
     runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
-    const reply = await chatWithSelectedAgent(agentId, routedMessage, history);
-    addChatMessage("agent", reply.response, agentId, {
-      meta: { model: reply.model },
-    });
+    let reply = null;
+    if (agentId === "team_leader") {
+      appendRuntimeStatusMessage("team_leader", state.language === "zh" ? "正在连接真实 AgentTeams Team Room..." : "Connecting to the live AgentTeams Team Room...");
+      await chatWithRuntimeStream(routedMessage, {
+        onRuntimeCheck: (event) => {
+          const ready = event.status?.ready;
+          appendRuntimeStatusMessage(
+            "team_leader",
+            ready
+              ? (state.language === "zh" ? "AgentTeams runtime 已就绪，消息已进入真实 Team Room。" : "AgentTeams runtime is ready; the message is entering the real Team Room.")
+              : (state.language === "zh" ? "AgentTeams runtime 未就绪，停止本地伪多 Agent 流程。" : "AgentTeams runtime is not ready; local fake multi-agent flow is stopped."),
+          );
+        },
+        onStage: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || event.stage || "AgentTeams stage started"),
+        onWorkerJoined: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || "Worker joined"),
+        onStep: (event) => {
+          const step = event.step || {};
+          if (step.response) addChatMessage("agent", step.response, step.agent_id || "team_leader", { meta: { model: step.model || "AgentTeams" } });
+        },
+      });
+    } else {
+      reply = await chatWithSelectedAgent(agentId, routedMessage, history);
+      addChatMessage("agent", reply.response, agentId, {
+        meta: { model: reply.model },
+      });
+    }
     if (agentId === "team_leader" && isFlowTuningRequest(message) && state.energySnapshot) {
       const flowPreview = previewFlowFromLatestSnapshot();
       if (flowPreview) {
-        const plan = planNarrativeFromFlow(`${message}\n${reply.response || ""}`, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
+        const plan = planNarrativeFromFlow(`${message}\n${reply?.response || ""}`, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
         showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, plan);
       }
     }
   } catch (error) {
     const missingGateway = isGatewayMissingError(error);
-    addChatMessage("agent", gatewayFailureMessage(agentId, error), agentId);
+    addChatMessage("agent", agentId === "team_leader" && /AgentTeams|agt|Docker|Team Room|Matrix|runtime/i.test(error?.message || "")
+      ? agentTeamsRuntimeProblemMessage(error)
+      : gatewayFailureMessage(agentId, error), agentId);
     toast(missingGateway
       ? (state.language === "zh" ? "请先配置真实模型网关" : "Configure the real model gateway first")
-      : (state.language === "zh" ? "模型网关调用失败" : "Model gateway call failed"));
+      : (state.language === "zh" ? "真实 AgentTeams 未就绪" : "Live AgentTeams is not ready"));
     if (missingGateway) window.setTimeout(() => openGateway(agentId), 180);
   } finally {
     runtimeStatus.hidden = true;

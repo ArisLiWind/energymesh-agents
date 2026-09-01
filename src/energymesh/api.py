@@ -9,7 +9,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
-from energymesh.agentteams_runtime import probe_agentteams_runtime
+from energymesh.agentteams_runtime import (
+    LiveAgentTeamsRuntime,
+    LiveAgentTeamsRuntimeError,
+    probe_agentteams_runtime,
+)
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.compound_demo import CompoundChangeDemo, DemoWorkflowError
 from energymesh.config import Settings
@@ -140,6 +144,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.monitor = monitor
     app.state.uploaded_snapshot = None
     app.state.parallel_sim = ParallelSimulator(orchestrator, store)
+    app.state.live_agentteams_runtime = LiveAgentTeamsRuntime(
+        store, active_settings.agentteams_team_name
+    )
 
     def get_orchestrator(request: Request) -> EnergyMeshOrchestrator:
         return cast(EnergyMeshOrchestrator, request.app.state.orchestrator)
@@ -149,6 +156,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_agent_runtime(request: Request) -> PersistentAgentRuntime:
         return cast(PersistentAgentRuntime, request.app.state.agent_runtime)
+
+    def get_live_agentteams_runtime(request: Request) -> LiveAgentTeamsRuntime:
+        return cast(LiveAgentTeamsRuntime, request.app.state.live_agentteams_runtime)
 
     def get_compound_demo(request: Request) -> CompoundChangeDemo:
         return cast(CompoundChangeDemo, request.app.state.compound_demo)
@@ -173,6 +183,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "allow_production_write": runtime.allow_production_write,
             "agent_framework": "agentscope-ai/AgentTeams",
             "agentteams_enabled": runtime.agentteams_enabled,
+            "agentteams_live_required": runtime.agentteams_live_required,
             "agentteams_team_name": runtime.agentteams_team_name,
             "agentteams_runtime": agentteams_runtime,
         }
@@ -258,10 +269,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/runtime/chat", response_model=AgentRuntimeChatResponse)
     def chat_with_runtime(
         body: AgentRuntimeChatRequest,
+        request: Request,
         runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+        live_runtime: Annotated[
+            LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
+        ],
     ) -> AgentRuntimeChatResponse:
         try:
+            settings: Settings = request.app.state.settings
+            if settings.agentteams_enabled and settings.agentteams_live_required:
+                return live_runtime.chat(body.message, body.session_id, body.task_id)
             return runtime.chat(body.message, body.session_id, body.task_id)
+        except LiveAgentTeamsRuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except AgentRuntimeError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409
@@ -272,7 +292,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/runtime/chat/stream")
     def stream_chat_with_runtime(
         body: AgentRuntimeChatRequest,
+        request: Request,
         runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+        live_runtime: Annotated[
+            LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
+        ],
     ) -> StreamingResponse:
         def sse_event(event: dict[str, object]) -> Iterator[str]:
             yield f"event: {event['type']}\n"
@@ -280,10 +304,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         def events() -> Iterator[str]:
             try:
-                for event in runtime.stream_chat(
-                    body.message, body.session_id, body.task_id
-                ):
+                settings: Settings = request.app.state.settings
+                event_source = (
+                    live_runtime.stream_chat(body.message, body.session_id, body.task_id)
+                    if settings.agentteams_enabled
+                    and settings.agentteams_live_required
+                    else runtime.stream_chat(body.message, body.session_id, body.task_id)
+                )
+                for event in event_source:
                     yield from sse_event(event)
+            except LiveAgentTeamsRuntimeError as error:
+                yield from sse_event({"type": "runtime_error", "detail": str(error)})
             except AgentRuntimeError as error:
                 yield from sse_event({"type": "runtime_error", "detail": str(error)})
             except Exception as error:
