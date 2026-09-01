@@ -235,6 +235,30 @@ SIMULATION_MODE=true ALLOW_PRODUCTION_WRITE=false \
 http://127.0.0.1:8000
 ```
 
+### 正常进入 EnergyMesh Agents 的操作
+
+AgentTeams 自带的 Element 页面是证据/协作聊天室，不是 EnergyMesh 的业务主界面。正常演示请同时开两个入口：
+
+| 入口 | 地址 | 用途 |
+| --- | --- | --- |
+| EnergyMesh 白色 UI | `http://127.0.0.1:8000` | 主要操作入口：上传 CSV、看 3D 电流、发起调度、预览/采用方案 |
+| AgentTeams Element | `http://127.0.0.1:18088/#/login` | 原生证据入口：查看同一 Team Room/Task Room 的 Worker 协同记录 |
+
+Element 登录时 Homeserver 填：
+
+```text
+http://127.0.0.1:18080
+```
+
+用户名/密码使用当前 AgentTeams Codespace 创建时的账号。登录后进入
+`#agentteams-team-energymesh-demo:matrix-local.agentteams.io:18080`。白色 UI 的
+“AgentTeams 当前任务”面板会显示同一组 `project_id`、`task_id`、`team_room_id`、`task_room_id`
+和 `worker_id`，用于和 Element 对账。
+
+下次在另一个 Codespace 或机器重新打开仓库时，需要重新启动官方 AgentTeams、端口转发和
+EnergyMesh FastAPI；Matrix 房间和 token 属于那次 AgentTeams runtime，不会只靠 GitHub clone 自动存在。
+仓库保存的是接入代码、Worker/Team 资源和证据文档，不保存你的私密 access token。
+
 推荐演示动作：
 
 1. 先上传 CSV 或加载演示数据，让右侧园区出现真实 `world_state`。

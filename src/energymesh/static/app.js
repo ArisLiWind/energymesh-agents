@@ -666,6 +666,8 @@ function normalizeAgentTeamsEvent(event = {}) {
     agentId: standard.agent_id || event.agent_id || "agentteams_manager",
     message: standard.message || event.message || event.stage || event.type || "",
     worldStateLoaded: Boolean(standard.world_state || event.world_state || event.world_state_loaded),
+    dispatchPlan: standard.dispatch_plan || event.dispatch_plan || standard.payload?.dispatch_plan || null,
+    impact: standard.impact || event.impact || standard.payload?.impact || null,
     payload: standard.payload || event,
     at: standard.observed_at || new Date().toISOString(),
   };
@@ -724,14 +726,45 @@ function applyAgentTeamsEvent(event) {
       showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, {
         title: "AgentTeams 真实调度方案",
         source: "agentteams",
-        reason: normalized.message || "Dispatch Worker 已生成方案。",
+        reason: agentTeamsPlanReason(normalized) || normalized.message || "Dispatch Worker 已生成方案。",
+        impact: normalized.impact,
+        dispatchPlan: normalized.dispatchPlan,
       });
     }
   }
+  if (normalized.type === "dispatch_plan" && normalized.impact) renderAgentTeamsImpact(normalized.impact);
   if (["execution_receipt", "completed"].includes(normalized.type) && state.flowPreview) {
     clearCampusPlanPreview(true);
   }
   renderAgentTeamsTaskPanel();
+}
+
+function agentTeamsPlanReason(event = {}) {
+  const impact = event.impact || {};
+  const parts = [];
+  const saving = Number(impact.purchase_cost_savings_yuan);
+  const savingPct = Number(impact.purchase_cost_savings_percent);
+  const wasteDrop = Number(impact.energy_waste_reduction_kwh);
+  const laborDrop = Number(impact.manual_dispatch_cost_reduction_yuan);
+  if (Number.isFinite(saving) && saving > 0) {
+    parts.push(`购电成本预计下降 ¥${saving.toFixed(2)}${Number.isFinite(savingPct) && savingPct > 0 ? `（${savingPct.toFixed(1)}%）` : ""}`);
+  }
+  if (Number.isFinite(wasteDrop) && wasteDrop > 0) parts.push(`能源浪费下降 ${wasteDrop.toFixed(1)} kWh`);
+  if (Number.isFinite(laborDrop) && laborDrop > 0) parts.push(`人工调度成本下降 ¥${laborDrop.toFixed(2)}`);
+  return parts.length ? `Dispatch Worker 基于真实 world_state 生成：${parts.join("，")}。` : "";
+}
+
+function renderAgentTeamsImpact(impact = {}) {
+  const baseline = Number(state.parallel?.baseline_cost_yuan || state.campusSimulation?.todayCost || 0);
+  const savings = Number(impact.purchase_cost_savings_yuan || 0);
+  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(savings) || savings <= 0) return;
+  const optimized = Math.max(0, baseline - savings);
+  const pct = Number(impact.purchase_cost_savings_percent || (savings / baseline * 100));
+  $("#cost-baseline").textContent = `¥${baseline.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-optimized").textContent = `¥${optimized.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-savings").textContent = `¥${savings.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#savings-percent").textContent = `节省 ${pct.toFixed(2)}%`;
+  $("#parallel-status").textContent = "AgentTeams dispatch_plan 已驱动";
 }
 
 async function restoreAgentTeamsTaskMirror() {
@@ -2117,7 +2150,7 @@ function renderFlowPreviewCard(currentFlow, previewFlow, plan = {}) {
   card.hidden = !visible;
   if (!visible) return;
   card.querySelector("header strong").textContent = plan.title || "动态调度预览";
-  card.querySelector("header span").textContent = plan.source === "llm" ? "LLM 新方案预览" : "等待真实模型方案";
+  card.querySelector("header span").textContent = plan.source === "agentteams" ? "AgentTeams Worker 真实方案" : plan.source === "llm" ? "LLM 新方案预览" : "等待真实模型方案";
   $("#delta-grid").textContent = formatDelta(currentFlow.grid_load, previewFlow.grid_load);
   $("#delta-storage").textContent = formatDelta(currentFlow.storage_load, previewFlow.storage_load);
   $("#delta-curtail").textContent = formatDelta(currentFlow.curtail, previewFlow.curtail);

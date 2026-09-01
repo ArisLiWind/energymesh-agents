@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from collections.abc import Callable
 from typing import Any
-from uuid import uuid4
 from urllib import request as urlrequest
 from urllib.error import URLError
+from uuid import uuid4
 
 from energymesh.models import (
     AgentMessage,
@@ -207,6 +208,7 @@ class LiveAgentTeamsRuntime:
         self.matrix_base_url = os.getenv("AGENTTEAMS_MATRIX_BASE_URL", "").rstrip("/")
         self.matrix_access_token = os.getenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN", "")
         self.team_room_id = os.getenv("AGENTTEAMS_TEAM_ROOM_ID", "")
+        self.project_id = os.getenv("AGENTTEAMS_PROJECT_ID", "")
         self.event_stream_url = os.getenv("AGENTTEAMS_EVENT_STREAM_URL", "")
 
     def assert_ready(self) -> AgentTeamsRuntimeStatus:
@@ -292,6 +294,7 @@ class LiveAgentTeamsRuntime:
                 "type": "task_created",
                 "agent_id": "agentteams_manager",
                 "message": "EnergyMesh 请求已进入真实 AgentTeams runtime。",
+                "project_id": self.project_id or None,
                 "team_room_id": self.team_room_id,
                 "world_state_loaded": world_state is not None,
             },
@@ -342,6 +345,7 @@ class LiveAgentTeamsRuntime:
                     "artifact_id": artifact.artifact_id,
                     "artifact_type": "world_state",
                     "message": "右侧 CSV/沙盘状态已作为真实 world_state 输入 AgentTeams。",
+                    "project_id": self.project_id or None,
                     "world_state": world_state,
                 },
             )
@@ -352,6 +356,8 @@ class LiveAgentTeamsRuntime:
             "session_id": active_session_id,
             "task_id": active_task_id,
             "agent_id": "operator",
+            "project_id": self.project_id or None,
+            "team_room_id": self.team_room_id,
             "message": message,
         }
 
@@ -386,6 +392,7 @@ class LiveAgentTeamsRuntime:
                 "type": "completed",
                 "agent_id": "agentteams_manager",
                 "message": "真实 AgentTeams 事件流已完成本次 EnergyMesh 任务同步。",
+                "project_id": self.project_id or None,
                 "team_room_id": self.team_room_id,
                 "routed_agents": [step["agent_id"] for step in steps],
             },
@@ -424,6 +431,7 @@ class LiveAgentTeamsRuntime:
             "energymesh": {
                 "session_id": session_id,
                 "task_id": task_id,
+                "project_id": self.project_id or None,
                 "team_name": self.team_name,
                 "source": "fastapi_runtime_chat",
                 "intent": "dispatch_or_execution",
@@ -526,6 +534,7 @@ class LiveAgentTeamsRuntime:
                     "worker": sender,
                     "body": body,
                     "event_id": event_id,
+                    "project_id": self.project_id or None,
                     "team_room_id": self.team_room_id,
                     "source": "matrix_team_room_poll",
                 }
@@ -537,6 +546,7 @@ class LiveAgentTeamsRuntime:
                 "type": "step_started",
                 "agent_id": "agentteams_manager",
                 "message": "已提交到真实 AgentTeams Team Room；Matrix 轮询暂未看到 Worker 回复。",
+                "project_id": self.project_id or None,
                 "team_room_id": self.team_room_id,
                 "source": "matrix_team_room_poll",
             }
@@ -551,8 +561,16 @@ class LiveAgentTeamsRuntime:
     ) -> dict[str, Any]:
         raw_type = str(event.get("type") or "")
         lowered = message_text.lower()
+        embedded = self._extract_embedded_payload(message_text)
         event_type = "step_started"
-        if raw_type in {"worker_joined", "handoff", "agent_joined"}:
+        if str(embedded.get("type") or embedded.get("event") or "") in {
+            "dispatch_plan",
+            "audit_verdict",
+            "awaiting_approval",
+            "execution_receipt",
+        }:
+            event_type = str(embedded.get("type") or embedded.get("event"))
+        elif raw_type in {"worker_joined", "handoff", "agent_joined"}:
             event_type = "worker_joined"
         elif raw_type in {"tool_call", "tool_started"} or "execute_" in lowered or "teamharness__" in lowered:
             event_type = "tool_call"
@@ -566,17 +584,85 @@ class LiveAgentTeamsRuntime:
             event_type = "execution_receipt"
         elif raw_type in {"runtime_error", "failed"}:
             event_type = "failed"
+        plan_payload = self._extract_dispatch_payload(event, embedded, message_text)
         return {
             "type": event_type,
             "raw_type": raw_type,
             "agent_id": agent_id,
             "worker_id": event.get("worker") or agent_id,
             "message": message_text or str(event.get("message") or event.get("stage") or raw_type),
-            "project_id": event.get("project_id"),
-            "task_room_id": event.get("task_room_id") or event.get("room_id"),
+            "project_id": (
+                event.get("project_id") or embedded.get("project_id") or self.project_id or None
+            ),
+            "task_room_id": (
+                event.get("task_room_id") or embedded.get("task_room_id") or event.get("room_id")
+            ),
             "team_room_id": self.team_room_id,
+            **plan_payload,
             "payload": event,
         }
+
+    def _extract_embedded_payload(self, message_text: str) -> dict[str, Any]:
+        candidates = [message_text]
+        candidates.extend(
+            re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", message_text, flags=re.DOTALL)
+        )
+        candidates.extend(
+            re.findall(r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})", message_text, flags=re.DOTALL)
+        )
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return {}
+
+    def _extract_dispatch_payload(
+        self, event: dict[str, Any], embedded: dict[str, Any], message_text: str
+    ) -> dict[str, Any]:
+        source = embedded or event
+        plan = source.get("dispatch_plan") or source.get("plan") or source.get("candidate_plan")
+        if not isinstance(plan, dict):
+            plan = {}
+        metrics = source.get("metrics") or plan.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+        lowered = message_text.lower()
+        def number_from(*keys: str) -> float | None:
+            for key in keys:
+                value = metrics.get(key) or plan.get(key) or source.get(key)
+                if isinstance(value, int | float):
+                    return float(value)
+            return None
+        savings_yuan = number_from(
+            "savings_yuan", "cost_savings_yuan", "purchase_cost_savings_yuan"
+        )
+        savings_percent = number_from("savings_percent", "cost_savings_percent")
+        waste_drop = number_from(
+            "waste_reduction_kwh", "curtailment_reduction_kwh", "pv_waste_reduction_kwh"
+        )
+        manual_drop = number_from(
+            "manual_dispatch_cost_reduction_yuan", "labor_cost_savings_yuan"
+        )
+        if savings_yuan is None:
+            match = re.search(
+                r"(?:节省|saving[s]?)[^\d]{0,12}(\d+(?:\.\d+)?)\s*(?:元|yuan|rmb|¥)?",
+                lowered,
+            )
+            if match:
+                savings_yuan = float(match.group(1))
+        value = {
+            "dispatch_plan": plan or None,
+            "impact": {
+                "purchase_cost_savings_yuan": savings_yuan,
+                "purchase_cost_savings_percent": savings_percent,
+                "energy_waste_reduction_kwh": waste_drop,
+                "manual_dispatch_cost_reduction_yuan": manual_drop,
+            },
+        }
+        return value
 
     def _mirror_event(
         self, session_id: str, task_id: str, event: dict[str, Any]

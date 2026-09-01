@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-08-29
+Updated: 2026-09-01
 
 ## Implemented
 
@@ -53,11 +53,23 @@ Updated: 2026-08-29
 - Human-handoff tasks for unresolved sensor conflict and safe-fallback tasks for execution
   deviations above 5%.
 - Unit and API integration tests plus Docker and Compose definitions.
+- GitHub Codespaces minimal official AgentTeams v1.2.3 proof captured: controller, manager,
+  qwenpaw Worker, Team Room, Task Room and `energymesh-demo` Team reached a real
+  delegate/ack/submit/accept/complete path. Evidence is recorded in
+  `evidence/agentteams-codespaces-proof.md`.
+- EnergyMesh FastAPI now treats AgentTeams as the required Worker runtime for dispatch/execution
+  intents. It sends the current white-UI `world_state` into the configured Matrix Team Room,
+  mirrors AgentTeams events into runtime artifacts, and streams standardized task events back to
+  the EnergyMesh UI.
+- The white EnergyMesh UI restores and displays the live AgentTeams task mirror with the same
+  session/task/project/room IDs, Worker timeline, `dispatch_plan`, audit, approval, execution and
+  completion stages.
 
 ## Next
 
-- Apply the v1beta1 Worker/Human/Team resources to a live official AgentTeams runtime and capture
-  Matrix, shared-task, Worker status, Human event and terminal-state evidence for one decision.
+- Capture one polished finals evidence run where the same `project_id`, EnergyMesh `task_id`,
+  Team Room and Task Room are visible in both AgentTeams Element and the white EnergyMesh UI while
+  `dispatch_plan` changes the 3D campus preview and execution receipt adopts it.
 - Implement and register the `energymesh-readonly`, `energymesh-planning`, `energymesh-audit` and
   `energymesh-control` MCP servers behind Higress with per-Worker consumer authorization.
 - Add authenticated users and signed approval records.
@@ -71,10 +83,10 @@ Updated: 2026-08-29
 
 ## Known limitations
 
-- The `agentscope-ai/AgentTeams` runtime is represented by current v1beta1 declarative resources,
-  Worker packages and dynamic coordination contracts, but this host has not completed a live
-  AgentTeams install/apply cycle. Local Python orchestration is domain simulation evidence only,
-  not AgentTeams collaboration evidence.
+- This local Mac host should not be treated as the AgentTeams runtime target; the verified path is
+  GitHub Codespaces or another Docker Linux host. Local Python orchestration is still domain
+  simulation evidence only, but dispatch/execution chat paths no longer fall back to a fake local
+  multi-Agent Worker pipeline when AgentTeams is unavailable.
 - The four named EnergyMesh MCP servers in Worker specs are planned authorization boundaries; the
   repository still exposes FastAPI/OpenAPI domain contracts rather than live discoverable MCP
   servers routed through Higress.
@@ -82,7 +94,8 @@ Updated: 2026-08-29
 - Alibaba Cloud Skills/Nacos/Higress/PolarDB/RocketMQ/AgentLoop are documented as integration
   contracts and migration targets, not active cloud resources in the local MVP.
 - The model is park-level economic dispatch, not network power flow or real-time control.
-- Docker validation depends on a host with Docker; absence must be reported in verification notes.
+- Docker validation depends on Codespaces or a Docker Linux host; absence on the Mac must be
+  reported in verification notes.
 - Demo approval is suitable only for a local presentation because authentication is not yet present.
 - Agent chat can use per-Agent OpenAI-compatible model settings when configured, but the local MVP
   remains safe without model keys; model API keys are stored server-side and masked in public output.
@@ -91,8 +104,8 @@ Updated: 2026-08-29
 
 - Ruff format and lint: passed.
 - mypy strict type check: passed for 14 source modules.
-- pytest unit and API integration tests: 16 passed, including external-data dispatch, model
-  settings, approval, and workflow coverage.
+- pytest unit and API integration tests: last full local run passed before the AgentTeams live
+  mirror update; rerun required after final Codespaces proof capture.
 - Browser workflow: operator page served locally; 96-point trend chart, single-Agent selection,
   and multi-Agent collaboration remain available at the desktop app width.
 - Responsive CSS includes 760 px and 470 px breakpoints, but the final mobile visual pass was not
