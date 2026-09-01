@@ -143,6 +143,35 @@
           <span id="task-state">IDLE</span>
         </div>
 
+        <section id="agentteams-task-panel" class="agentteams-task-panel" aria-label="Live AgentTeams task mirror">
+          <header>
+            <div>
+              <span>AgentTeams 当前任务</span>
+              <strong id="agentteams-task-title">等待调度请求</strong>
+            </div>
+            <small id="agentteams-task-mode">同一 Team Room 的真实事件</small>
+          </header>
+          <div class="agentteams-task-grid">
+            <div><span>Project</span><strong id="agentteams-project-id">--</strong></div>
+            <div><span>Task</span><strong id="agentteams-runtime-task-id">--</strong></div>
+            <div><span>Team Room</span><strong id="agentteams-team-room-id">--</strong></div>
+            <div><span>Worker</span><strong id="agentteams-worker-id">--</strong></div>
+            <div><span>World State</span><strong id="agentteams-world-state">等待</strong></div>
+            <div><span>Status</span><strong id="agentteams-task-status">IDLE</strong></div>
+          </div>
+          <div id="agentteams-stage-list" class="agentteams-stage-list">
+            <article data-stage="task_created"><i></i><span>Team Leader 接收任务</span></article>
+            <article data-stage="worker_joined"><i></i><span>Worker 加入/接单</span></article>
+            <article data-stage="tool_call"><i></i><span>调用工具与读写共享任务</span></article>
+            <article data-stage="dispatch_plan"><i></i><span>生成调度方案</span></article>
+            <article data-stage="audit_verdict"><i></i><span>审核结果</span></article>
+            <article data-stage="awaiting_approval"><i></i><span>等待人工采用</span></article>
+            <article data-stage="execution_receipt"><i></i><span>执行回执</span></article>
+            <article data-stage="completed"><i></i><span>完成</span></article>
+          </div>
+          <div id="agentteams-timeline" class="agentteams-timeline"></div>
+        </section>
+
         <div class="energy-status">
           <article class="status-balance"><span data-i18n="statusBalance">账户余额</span><strong id="campus-balance">等待 CSV</strong><small data-i18n="statusBalanceNote">上传数据后计算</small></article>
           <article class="status-load"><span data-i18n="statusLoad">当前用电</span><strong id="campus-load">-- kW</strong><small data-i18n="statusLoadNote">此刻园区所有设备正在消耗的总功率</small></article>

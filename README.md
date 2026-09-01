@@ -51,7 +51,44 @@ AgentTeams 在系统中承担任务组织和责任分离：
 | AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 正式高分证据必须来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
 | 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，但不能替代 AgentTeams 协作证据 |
 
-## Live AgentTeams 
+## Live AgentTeams 深度接入
+
+EnergyMesh 现在把 **AgentTeams 当成真实运行引擎和事件源**，把 **EnergyMesh 白色界面当成业务可视化客户端**。
+
+也就是说，AgentTeams Element 不是最终产品 UI，它是原生协作/证据界面；EnergyMesh 白色 UI 才是面向园区能源运营的主界面。两者必须看到同一条真实任务链：
+
+```text
+AgentTeams Matrix / Team Room
+        ├── AgentTeams Element：原生聊天室、Worker 记录、任务房间证据
+        └── EnergyMesh FastAPI：业务客户端，发送 world_state，镜像 AgentTeams 事件
+                 ↓
+            EnergyMesh 白色 UI
+                 ├── AI 对话
+                 ├── 当前 AgentTeams 任务
+                 ├── Worker 状态和时间线
+                 ├── 调度方案预览
+                 ├── 人工采用/执行
+                 └── Three.js 园区电力流动
+```
+
+当前实现要点：
+
+- 普通聊天只走真实 Team Leader 模型直答，不触发 Worker。
+- 用户明确要求“调度 / 优化 / 模拟 / 预览 / 采用 / 执行”时，`/api/runtime/chat/stream` 才进入真实 AgentTeams。
+- 上传 CSV 后，右侧园区状态会组成 `world_state`，随消息写入 AgentTeams Team Room。
+- 后端将 AgentTeams 事件标准化为 `task_created`、`worker_joined`、`tool_call`、`dispatch_plan`、`audit_verdict`、`awaiting_approval`、`execution_receipt`、`completed`、`failed`。
+- 白色 UI 的“AgentTeams 当前任务”区域展示真实 `project_id`、`task_id`、`team_room_id`、`task_room_id`、`worker_id` 和时间线。
+- `dispatch_plan` 到达时才驱动 Three.js 预览；`execution_receipt` 或完成事件到达后才正式采用预览。
+- 事件会保存为 `runtime_artifacts`，刷新页面后可通过 `task_id` 恢复，不只依赖浏览器 SSE。
+
+Element 和 EnergyMesh 的关系：
+
+| 入口 | 作用 | 是否必须给评委操作 |
+| --- | --- | --- |
+| AgentTeams Element | 原生 Matrix/Team Room，证明 Worker、任务房间、提交、验收真实存在 | 可作为证据后台打开 |
+| EnergyMesh 白色 UI | 园区电力调度主界面，展示电流流动、成本、浪费、审批和执行 | 推荐作为主要演示入口 |
+
+评委质疑“这是不是前端动画”时，用同一个 `project_id / task_id / room_id / worker_id` 在 Element 和 EnergyMesh 里对上即可。
 
 本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误。
 
@@ -69,12 +106,13 @@ AGENTTEAMS_LLM_API_KEY=<your-model-key> make install
 # 3. 回到 EnergyMesh 仓库，创建真实 Worker/Human/Team
 scripts/setup_live_agentteams.sh
 
-# 4. 配置 FastAPI 到 AgentTeams Team Room / event stream 的桥接
+# 4. 配置 FastAPI 到 AgentTeams Team Room
 export AGENTTEAMS_LIVE_REQUIRED=true
 export AGENTTEAMS_TEAM_ROOM_ID=<matrix-room-id-created-by-agentteams>
 export AGENTTEAMS_MATRIX_BASE_URL=<matrix-client-base-url>
 export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token-for-fastapi-bridge>
-export AGENTTEAMS_EVENT_STREAM_URL=<agentteams-manager-or-bridge-sse-url>
+# 可选：如果没有专用 SSE bridge，EnergyMesh 会直接轮询 Matrix Team Room
+export AGENTTEAMS_EVENT_STREAM_URL=<optional-agentteams-event-sse-url>
 
 # 5. 验证 EnergyMesh 只认真实 runtime
 scripts/agentteams_runtime_check.sh
@@ -83,7 +121,127 @@ curl http://127.0.0.1:8000/api/agentteams/runtime
 
 如果不希望在本机安装 Docker，推荐把 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
 
-`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 event stream bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有事件流就不展示这些状态。
+`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 Matrix bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有真实事件就不展示这些状态。
+
+### Codespaces 最小演示环境
+
+本项目已经在 GitHub Codespaces 跑通过一次真实 AgentTeams 最小环境。证据见 [`evidence/agentteams-codespaces-proof.md`](evidence/agentteams-codespaces-proof.md)。
+
+已验证的最小结构：
+
+```text
+AgentTeams official runtime v1.2.3
+controller: agentteams-embedded
+manager: agentteams-manager-qwenpaw
+worker: agentteams-qwenpaw-worker
+team: energymesh-demo
+model: deepseek-chat via openai-compatible gateway
+```
+
+从零准备 Codespaces：
+
+```bash
+gh auth refresh -h github.com -s codespace
+gh codespace create -R ArisLiWind/energymesh-agents -b main -m basicLinux32gb \
+  --display-name energymesh-agentteams-min --idle-timeout 30m --retention-period 24h
+```
+
+在 Codespace 内安装最小 AgentTeams：
+
+```bash
+cd /workspaces
+git clone --depth 1 https://github.com/agentscope-ai/AgentTeams.git AgentTeams
+cd /workspaces/AgentTeams
+
+set -a
+. /workspaces/energymesh-agents/.env.agentteams.local
+set +a
+
+IMG=higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agentteams-qwenpaw-worker:v1.2.3
+AGENTTEAMS_NON_INTERACTIVE=1 \
+AGENTTEAMS_UPGRADE_KEEP_ALL=1 \
+AGENTTEAMS_DASHBOARD=0 \
+AGENTTEAMS_MATRIX_E2EE=0 \
+AGENTTEAMS_MOUNT_SOCKET=1 \
+AGENTTEAMS_INSTALL_WORKER_IMAGE=$IMG \
+AGENTTEAMS_INSTALL_COPAW_WORKER_IMAGE=$IMG \
+AGENTTEAMS_INSTALL_QWENPAW_WORKER_IMAGE=$IMG \
+AGENTTEAMS_INSTALL_HERMES_WORKER_IMAGE=$IMG \
+bash ./install/agentteams-install.sh
+```
+
+创建最小 EnergyMesh Team/Worker：
+
+```bash
+docker exec agentteams-controller agt create worker \
+  --name energy-dispatcher \
+  --runtime qwenpaw \
+  --model deepseek-chat \
+  --soul 'You are EnergyMesh Dispatch Worker. Produce verifiable campus energy dispatch plans from world_state JSON. Optimize purchased electricity cost, curtailment/waste, and manual dispatch labor. Return concise actions with expected savings.' \
+  --wait-timeout 5m
+
+docker exec agentteams-controller agt create team \
+  --name energymesh-demo \
+  --leader-name energy-dispatcher \
+  --description 'EnergyMesh campus dispatch demo team using DeepSeek-backed AgentTeams and one qwenpaw Worker.'
+
+docker exec agentteams-controller agt get teams
+docker exec agentteams-controller agt get workers
+```
+
+本机打开 AgentTeams Element 证据界面：
+
+```bash
+gh codespace ports forward 18088:18088 18080:18080 -c <codespace-name>
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:18088/#/login
+```
+
+Homeserver:
+
+```text
+http://127.0.0.1:18080
+```
+
+### 启动 EnergyMesh 白色 UI 并接 AgentTeams
+
+EnergyMesh 白色界面运行在本机或 Codespace 都可以。它不是替代 AgentTeams，而是作为另一个 Matrix/AgentTeams 业务客户端。
+
+需要配置：
+
+```bash
+export AGENTTEAMS_ENABLED=true
+export AGENTTEAMS_LIVE_REQUIRED=true
+export AGENTTEAMS_TEAM_NAME=energymesh-demo
+export AGENTTEAMS_TEAM_ROOM_ID='!Gw8awHaQ0bFSxke5b5:matrix-local.agentteams.io:18080'
+export AGENTTEAMS_MATRIX_BASE_URL=http://127.0.0.1:18080
+export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token>
+```
+
+启动：
+
+```bash
+SIMULATION_MODE=true ALLOW_PRODUCTION_WRITE=false \
+.venv/bin/uvicorn energymesh.api:app --app-dir src --host 127.0.0.1 --port 8000
+```
+
+打开白色 UI：
+
+```text
+http://127.0.0.1:8000
+```
+
+推荐演示动作：
+
+1. 先上传 CSV 或加载演示数据，让右侧园区出现真实 `world_state`。
+2. 左侧对 Team Leader 说：“帮我减少当前购电和限发，先预览调度方案。”
+3. 白色 UI 应显示 AgentTeams 当前任务、Worker 时间线、world_state 已载入。
+4. 真实 `dispatch_plan` 到达后，Three.js 进入预览。
+5. 用户点击“采用方案”后，执行回执到达才正式更新园区电流和指标。
 
 ## 场景价值与完成条件
 

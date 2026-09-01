@@ -149,7 +149,6 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
         os.getenv("AGENTTEAMS_MATRIX_BASE_URL")
         and os.getenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN")
     )
-    event_stream_configured = bool(os.getenv("AGENTTEAMS_EVENT_STREAM_URL"))
 
     problems: list[str] = []
     if not docker_available:
@@ -168,8 +167,6 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
         problems.append("AGENTTEAMS_TEAM_ROOM_ID is not configured for the live Team Room bridge.")
     if not matrix_bridge_configured:
         problems.append("AGENTTEAMS_MATRIX_BASE_URL and AGENTTEAMS_MATRIX_ACCESS_TOKEN are required for the live Team Room bridge.")
-    if not event_stream_configured:
-        problems.append("AGENTTEAMS_EVENT_STREAM_URL is required so UI events come from the real AgentTeams runtime.")
 
     ready = not problems
     next_steps = [
@@ -178,7 +175,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
         "Apply EnergyMesh resources: agt apply -f agentteams/agentteams-resources.yaml.",
         "Verify: docker ps | grep agentteams; agt get workers; agt get teams.",
         "Export Team Room bridge env: AGENTTEAMS_TEAM_ROOM_ID, AGENTTEAMS_MATRIX_BASE_URL, AGENTTEAMS_MATRIX_ACCESS_TOKEN.",
-        "Export AGENTTEAMS_EVENT_STREAM_URL so FastAPI can proxy real Worker and Team Room events.",
+        "Optional: export AGENTTEAMS_EVENT_STREAM_URL; otherwise FastAPI polls Matrix Team Room messages directly.",
     ]
     return AgentTeamsRuntimeStatus(
         ready=ready,
@@ -288,6 +285,17 @@ class LiveAgentTeamsRuntime:
             "routed_agents": ["agentteams_manager"],
             "world_state_loaded": world_state is not None,
         }
+        self._mirror_event(
+            active_session_id,
+            active_task_id,
+            {
+                "type": "task_created",
+                "agent_id": "agentteams_manager",
+                "message": "EnergyMesh 请求已进入真实 AgentTeams runtime。",
+                "team_room_id": self.team_room_id,
+                "world_state_loaded": world_state is not None,
+            },
+        )
         yield {
             "type": "agentteams_runtime_check",
             "session_id": active_session_id,
@@ -325,6 +333,18 @@ class LiveAgentTeamsRuntime:
                 "message": "右侧 CSV/沙盘状态已作为 AgentTeams world_state 输入。",
                 "world_state": world_state,
             }
+            self._mirror_event(
+                active_session_id,
+                active_task_id,
+                {
+                    "type": "artifact_created",
+                    "agent_id": "agentteams_manager",
+                    "artifact_id": artifact.artifact_id,
+                    "artifact_type": "world_state",
+                    "message": "右侧 CSV/沙盘状态已作为真实 world_state 输入 AgentTeams。",
+                    "world_state": world_state,
+                },
+            )
 
         self._send_matrix_message(active_session_id, active_task_id, message, world_state)
         yield {
@@ -342,6 +362,7 @@ class LiveAgentTeamsRuntime:
             if event.get("type") in {"worker_joined", "handoff", "agent_joined"}:
                 event["type"] = "worker_joined"
                 event.setdefault("message", f"{agent_id} 加入真实 AgentTeams Team Room。")
+            normalized_event = self._standardize_event(event, agent_id, message_text)
             if event.get("type") == "agent_step" and message_text:
                 step = self._record_step(active_session_id, active_task_id, agent_id, message_text)
                 steps.append(step)
@@ -354,8 +375,21 @@ class LiveAgentTeamsRuntime:
                 }
             event.setdefault("session_id", active_session_id)
             event.setdefault("task_id", active_task_id)
+            event["standard_event"] = normalized_event
+            self._mirror_event(active_session_id, active_task_id, normalized_event)
             yield event
 
+        completed_event = self._mirror_event(
+            active_session_id,
+            active_task_id,
+            {
+                "type": "completed",
+                "agent_id": "agentteams_manager",
+                "message": "真实 AgentTeams 事件流已完成本次 EnergyMesh 任务同步。",
+                "team_room_id": self.team_room_id,
+                "routed_agents": [step["agent_id"] for step in steps],
+            },
+        )
         yield {
             "type": "runtime_completed",
             "runtime": "live_agentteams",
@@ -363,6 +397,7 @@ class LiveAgentTeamsRuntime:
             "task_id": active_task_id,
             "routed_agents": [step["agent_id"] for step in steps],
             "steps": steps,
+            "standard_event": completed_event,
             "artifacts": [
                 artifact.model_dump(mode="json")
                 for artifact in self.store.list_runtime_artifacts(active_task_id)
@@ -429,6 +464,9 @@ class LiveAgentTeamsRuntime:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
 
     def _stream_agentteams_events(self, session_id: str, task_id: str):
+        if not self.event_stream_url:
+            yield from self._poll_matrix_team_room(session_id, task_id)
+            return
         url = (
             f"{self.event_stream_url}"
             f"{'&' if '?' in self.event_stream_url else '?'}"
@@ -448,10 +486,122 @@ class LiveAgentTeamsRuntime:
                 f"AgentTeams event stream failed; cannot prove Worker handoff: {error}"
             ) from error
 
+    def _poll_matrix_team_room(self, session_id: str, task_id: str):
+        import time
+
+        seen: set[str] = set()
+        deadline = time.time() + int(os.getenv("AGENTTEAMS_MATRIX_POLL_TIMEOUT", "90"))
+        yielded = 0
+        while time.time() < deadline:
+            url = (
+                f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
+                f"{self.team_room_id}/messages?dir=b&limit=30"
+                f"&access_token={self.matrix_access_token}"
+            )
+            try:
+                with urlrequest.urlopen(url, timeout=10) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                time.sleep(2)
+                continue
+            messages = list(reversed(payload.get("chunk", [])))
+            for item in messages:
+                event_id = str(item.get("event_id") or "")
+                if not event_id or event_id in seen:
+                    continue
+                seen.add(event_id)
+                if item.get("type") != "m.room.message":
+                    continue
+                content = item.get("content") or {}
+                body = str(content.get("body") or "")
+                sender = str(item.get("sender") or "")
+                if not body or sender.startswith("@admin:"):
+                    continue
+                if session_id not in body and task_id not in body and "EnergyMesh" not in body and "dispatch" not in body.lower() and "调度" not in body:
+                    continue
+                yielded += 1
+                yield {
+                    "type": "agent_step",
+                    "agent_id": sender.split(":", 1)[0].removeprefix("@") or "agentteams_worker",
+                    "worker": sender,
+                    "body": body,
+                    "event_id": event_id,
+                    "team_room_id": self.team_room_id,
+                    "source": "matrix_team_room_poll",
+                }
+                if any(token in body for token in ("TASK_COMPLETED", "项目状态报告", "Project Status Report")):
+                    return
+            time.sleep(2)
+        if yielded == 0:
+            yield {
+                "type": "step_started",
+                "agent_id": "agentteams_manager",
+                "message": "已提交到真实 AgentTeams Team Room；Matrix 轮询暂未看到 Worker 回复。",
+                "team_room_id": self.team_room_id,
+                "source": "matrix_team_room_poll",
+            }
+
     def _world_state(self) -> dict[str, Any] | None:
         if not self.world_state_provider:
             return None
         return self.world_state_provider()
+
+    def _standardize_event(
+        self, event: dict[str, Any], agent_id: str, message_text: str
+    ) -> dict[str, Any]:
+        raw_type = str(event.get("type") or "")
+        lowered = message_text.lower()
+        event_type = "step_started"
+        if raw_type in {"worker_joined", "handoff", "agent_joined"}:
+            event_type = "worker_joined"
+        elif raw_type in {"tool_call", "tool_started"} or "execute_" in lowered or "teamharness__" in lowered:
+            event_type = "tool_call"
+        elif "dispatch_plan" in lowered or "调度方案" in message_text or "dispatch plan" in lowered:
+            event_type = "dispatch_plan"
+        elif "audit" in lowered or "审核" in message_text or "pass" in lowered:
+            event_type = "audit_verdict"
+        elif "awaiting approval" in lowered or "等待人工" in message_text or "采用方案" in message_text:
+            event_type = "awaiting_approval"
+        elif "execution_receipt" in lowered or "执行完成" in message_text:
+            event_type = "execution_receipt"
+        elif raw_type in {"runtime_error", "failed"}:
+            event_type = "failed"
+        return {
+            "type": event_type,
+            "raw_type": raw_type,
+            "agent_id": agent_id,
+            "worker_id": event.get("worker") or agent_id,
+            "message": message_text or str(event.get("message") or event.get("stage") or raw_type),
+            "project_id": event.get("project_id"),
+            "task_room_id": event.get("task_room_id") or event.get("room_id"),
+            "team_room_id": self.team_room_id,
+            "payload": event,
+        }
+
+    def _mirror_event(
+        self, session_id: str, task_id: str, event: dict[str, Any]
+    ) -> dict[str, Any]:
+        payload = {
+            **event,
+            "runtime": "live_agentteams",
+            "team_name": self.team_name,
+            "task_id": task_id,
+            "session_id": session_id,
+            "observed_at": datetime.now(UTC).isoformat(),
+        }
+        artifact = self.store.save_runtime_artifact(
+            RuntimeArtifact(
+                artifact_id=f"artifact_{uuid4().hex[:12]}",
+                session_id=session_id,
+                task_id=task_id,
+                agent_id=str(payload.get("agent_id") or "agentteams_manager"),
+                artifact_type="agentteams_task_event",
+                name=f"{payload['type']}.agentteams-task-event.json",
+                payload=payload,
+                created_at=datetime.now(UTC),
+            )
+        )
+        return {**payload, "artifact_id": artifact.artifact_id}
 
     def _record_step(self, session_id: str, task_id: str, agent_id: str, response: str) -> dict[str, str]:
         artifact = self.store.save_runtime_artifact(

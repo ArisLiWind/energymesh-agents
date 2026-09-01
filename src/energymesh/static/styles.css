@@ -684,6 +684,136 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   animation: spin .8s linear infinite;
 }
 
+.agentteams-task-panel {
+  margin: 0 22px 12px;
+  padding: 12px;
+  border: 1px solid #d9dee8;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #1d2430;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .06);
+}
+
+.agentteams-task-panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.agentteams-task-panel header span,
+.agentteams-task-grid span {
+  display: block;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.agentteams-task-panel header strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 15px;
+  color: #111827;
+}
+
+.agentteams-task-panel header small {
+  color: #2563eb;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.agentteams-task-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.agentteams-task-grid div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e4e7ec;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.agentteams-task-grid strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #101828;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentteams-stage-list {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.agentteams-stage-list article {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #e4e7ec;
+  border-radius: 5px;
+  background: #fff;
+  color: #667085;
+  font-size: 10px;
+}
+
+.agentteams-stage-list article i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d0d5dd;
+}
+
+.agentteams-stage-list article.active {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.agentteams-stage-list article.active i {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+
+.agentteams-stage-list article.done {
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.agentteams-stage-list article.done i {
+  background: #10b981;
+}
+
+.agentteams-timeline {
+  max-height: 110px;
+  overflow: auto;
+  border-left: 2px solid #c7d7fe;
+  padding-left: 9px;
+}
+
+.agentteams-timeline p {
+  margin: 0 0 6px;
+  color: #344054;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agentteams-timeline strong {
+  color: #111827;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

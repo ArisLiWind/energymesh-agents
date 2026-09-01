@@ -47,6 +47,18 @@ const state = {
   flowPreview: null,
   lastCampusFlow: null,
   planLedger: [],
+  agentTeamsTask: {
+    taskId: window.localStorage.getItem("energymesh.agentteamsTaskId") || null,
+    projectId: null,
+    teamRoomId: null,
+    taskRoomId: null,
+    workerId: null,
+    status: "IDLE",
+    worldStateLoaded: false,
+    events: [],
+    completedStages: new Set(),
+    activeStage: null,
+  },
 };
 
 try {
@@ -622,6 +634,120 @@ function toast(message) {
   window.setTimeout(() => $("#toast").classList.remove("visible"), 2400);
 }
 
+const agentTeamsStageOrder = [
+  "task_created",
+  "worker_joined",
+  "tool_call",
+  "dispatch_plan",
+  "audit_verdict",
+  "awaiting_approval",
+  "execution_receipt",
+  "completed",
+];
+
+function compactId(value) {
+  if (!value) return "--";
+  const text = String(value);
+  if (text.length <= 22) return text;
+  return `${text.slice(0, 10)}...${text.slice(-8)}`;
+}
+
+function normalizeAgentTeamsEvent(event = {}) {
+  const standard = event.standard_event || event;
+  return {
+    type: standard.type || event.type || "step_started",
+    rawType: standard.raw_type || event.type || "",
+    sessionId: standard.session_id || event.session_id || state.runtimeSessionId,
+    taskId: standard.task_id || event.task_id || null,
+    projectId: standard.project_id || event.project_id || null,
+    teamRoomId: standard.team_room_id || event.team_room_id || null,
+    taskRoomId: standard.task_room_id || event.task_room_id || null,
+    workerId: standard.worker_id || standard.agent_id || event.agent_id || null,
+    agentId: standard.agent_id || event.agent_id || "agentteams_manager",
+    message: standard.message || event.message || event.stage || event.type || "",
+    worldStateLoaded: Boolean(standard.world_state || event.world_state || event.world_state_loaded),
+    payload: standard.payload || event,
+    at: standard.observed_at || new Date().toISOString(),
+  };
+}
+
+function renderAgentTeamsTaskPanel() {
+  const panel = $("#agentteams-task-panel");
+  if (!panel) return;
+  const task = state.agentTeamsTask;
+  $("#agentteams-task-title").textContent = task.status === "IDLE" ? "等待调度请求" : "真实 AgentTeams 工作流进行中";
+  $("#agentteams-project-id").textContent = compactId(task.projectId);
+  $("#agentteams-runtime-task-id").textContent = compactId(task.taskId);
+  $("#agentteams-team-room-id").textContent = compactId(task.teamRoomId);
+  $("#agentteams-worker-id").textContent = compactId(task.workerId);
+  $("#agentteams-world-state").textContent = task.worldStateLoaded ? "已载入" : "等待";
+  $("#agentteams-task-status").textContent = task.status;
+  $$("#agentteams-stage-list article").forEach((item) => {
+    const stage = item.dataset.stage;
+    item.classList.toggle("done", task.completedStages.has(stage));
+    item.classList.toggle("active", task.activeStage === stage && !task.completedStages.has(stage));
+  });
+  const timeline = $("#agentteams-timeline");
+  timeline.innerHTML = "";
+  task.events.slice(-12).forEach((item) => {
+    const row = document.createElement("p");
+    const time = new Date(item.at).toLocaleTimeString("zh-CN", { hour12: false });
+    row.innerHTML = `<strong>${escapeHTML(time)} ${escapeHTML(item.agentId || item.workerId || "AgentTeams")}</strong> ${escapeHTML(item.message).slice(0, 220)}`;
+    timeline.append(row);
+  });
+}
+
+function applyAgentTeamsEvent(event) {
+  const normalized = normalizeAgentTeamsEvent(event);
+  const task = state.agentTeamsTask;
+  if (normalized.taskId) {
+    task.taskId = normalized.taskId;
+    window.localStorage.setItem("energymesh.agentteamsTaskId", normalized.taskId);
+  }
+  if (normalized.projectId) task.projectId = normalized.projectId;
+  if (normalized.teamRoomId) task.teamRoomId = normalized.teamRoomId;
+  if (normalized.taskRoomId) task.taskRoomId = normalized.taskRoomId;
+  if (normalized.workerId) task.workerId = normalized.workerId;
+  if (normalized.worldStateLoaded) task.worldStateLoaded = true;
+  task.status = normalized.type === "failed" ? "FAILED" : normalized.type === "completed" ? "COMPLETED" : "RUNNING";
+  task.activeStage = normalized.type;
+  const stageIndex = agentTeamsStageOrder.indexOf(normalized.type);
+  if (stageIndex >= 0) {
+    agentTeamsStageOrder.slice(0, stageIndex).forEach((stage) => task.completedStages.add(stage));
+    if (["completed", "execution_receipt"].includes(normalized.type)) task.completedStages.add(normalized.type);
+  }
+  task.events.push(normalized);
+  if (task.events.length > 80) task.events = task.events.slice(-80);
+  if (normalized.type === "dispatch_plan" && state.energySnapshot && !state.flowPreview) {
+    const flowPreview = previewFlowFromLatestSnapshot();
+    if (flowPreview) {
+      showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, {
+        title: "AgentTeams 真实调度方案",
+        source: "agentteams",
+        reason: normalized.message || "Dispatch Worker 已生成方案。",
+      });
+    }
+  }
+  if (["execution_receipt", "completed"].includes(normalized.type) && state.flowPreview) {
+    clearCampusPlanPreview(true);
+  }
+  renderAgentTeamsTaskPanel();
+}
+
+async function restoreAgentTeamsTaskMirror() {
+  renderAgentTeamsTaskPanel();
+  const taskId = state.agentTeamsTask.taskId;
+  if (!taskId) return;
+  try {
+    const artifacts = await request(`/api/runtime/tasks/${encodeURIComponent(taskId)}/artifacts`);
+    artifacts
+      .filter((artifact) => artifact.artifact_type === "agentteams_task_event")
+      .forEach((artifact) => applyAgentTeamsEvent(artifact.payload));
+  } catch {
+    renderAgentTeamsTaskPanel();
+  }
+}
+
 function applyLanguage(language) {
   state.language = language;
   const dictionary = translations[language];
@@ -909,12 +1035,15 @@ async function chatWithRuntimeStream(message, handlers = {}) {
       const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
       if (!dataLine) continue;
       const event = JSON.parse(dataLine.slice(6));
+      applyAgentTeamsEvent(event);
       if (event.type === "runtime_started") {
         state.runtimeSessionId = event.session_id;
         window.localStorage.setItem("energymesh.runtimeSessionId", event.session_id);
         handlers.onStart?.(event);
       } else if (event.type === "agentteams_runtime_check") {
         handlers.onRuntimeCheck?.(event);
+      } else if (event.type === "world_state_loaded") {
+        handlers.onWorldState?.(event);
       } else if (event.type === "route_decided") {
         handlers.onRoute?.(event);
       } else if (event.type === "stage_start") {
@@ -1569,6 +1698,7 @@ async function sendChatMessage(event) {
               : (state.language === "zh" ? "AgentTeams runtime 未就绪；不会使用本地替代 Worker 流程。" : "AgentTeams runtime is not ready; no local Worker substitute will run."),
           );
         },
+        onWorldState: (event) => appendRuntimeStatusMessage("team_leader", event.message || "world_state loaded"),
         onStage: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || event.stage || "AgentTeams stage started"),
         onWorkerJoined: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || "Worker joined"),
         onStep: (event) => {
@@ -3678,6 +3808,7 @@ if (savedParallel && state.energySnapshot) {
   localStorage.removeItem("energymesh.parallelState");
 }
 renderPlanLedger();
+restoreAgentTeamsTaskMirror();
 // Restore chat history from localStorage
 const savedThreads = localStorage.getItem("energymesh.agentThreads");
 if (savedThreads) {
