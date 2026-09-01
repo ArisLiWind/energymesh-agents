@@ -234,18 +234,34 @@ http://127.0.0.1:18080
 
 EnergyMesh 白色界面运行在本机或 Codespace 都可以。它不是替代 AgentTeams，而是作为另一个 Matrix/AgentTeams 业务客户端。
 
-需要配置：
+推荐只记一个启动口令：
 
 ```bash
+scripts/start_agentteams_demo.sh
+```
+
+这个脚本会读取 `.env.agentteams.local`，检查 Codespace/远端 Matrix、AgentTeams Worker 和 Team Room，
+启动 EnergyMesh 白色 UI，并打印 Element 证据入口。
+
+需要先配置：
+
+```bash
+export AGENTTEAMS_RUNTIME_MODE=remote_matrix
 export AGENTTEAMS_ENABLED=true
 export AGENTTEAMS_LIVE_REQUIRED=true
 export AGENTTEAMS_TEAM_NAME=energymesh-demo
 export AGENTTEAMS_TEAM_ROOM_ID='!Gw8awHaQ0bFSxke5b5:matrix-local.agentteams.io:18080'
 export AGENTTEAMS_MATRIX_BASE_URL=http://127.0.0.1:18080
 export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token>
+export AGENTTEAMS_REMOTE_WORKERS=energy-dispatcher
+
+export AGENTTEAMS_LLM_PROVIDER=openai
+export AGENTTEAMS_OPENAI_BASE_URL=https://api.deepseek.com/v1
+export AGENTTEAMS_DEFAULT_MODEL=deepseek-chat
+export AGENTTEAMS_LLM_API_KEY=<deepseek-api-key>
 ```
 
-启动：
+如果不使用一键脚本，也可以手动启动：
 
 ```bash
 SIMULATION_MODE=true ALLOW_PRODUCTION_WRITE=false \

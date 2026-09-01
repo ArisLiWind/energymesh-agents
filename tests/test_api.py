@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from energymesh.agentteams_runtime import (
+    LiveAgentTeamsRuntime,
+    probe_agentteams_runtime,
+    requires_agentteams_workers,
+)
 from energymesh.api import create_app
-from energymesh.agentteams_runtime import LiveAgentTeamsRuntime, requires_agentteams_workers
 from energymesh.model_gateway import normalize_base_url
 from energymesh.storage import EvidenceStore
 
@@ -497,6 +501,35 @@ def test_live_agentteams_matrix_payload_contains_world_state(tmp_path, monkeypat
         "execution_worker",
     ]
     assert "EnergyMesh world_state" in payload["body"]
+
+
+def test_remote_matrix_agentteams_runtime_ready(monkeypatch) -> None:
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setenv("AGENTTEAMS_RUNTIME_MODE", "remote_matrix")
+    monkeypatch.setenv("AGENTTEAMS_MATRIX_BASE_URL", "http://127.0.0.1:18080")
+    monkeypatch.setenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN", "token-secret")
+    monkeypatch.setenv("AGENTTEAMS_TEAM_ROOM_ID", "!team:agentteams")
+    monkeypatch.setenv("AGENTTEAMS_TEAM_NAME", "energymesh-demo")
+    monkeypatch.setenv("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher")
+    monkeypatch.setattr(
+        "energymesh.agentteams_runtime.urlrequest.urlopen",
+        lambda req, timeout=0: FakeResponse(),
+    )
+
+    status = probe_agentteams_runtime()
+
+    assert status.ready is True
+    assert status.mode == "remote_matrix_agentteams"
+    assert status.teams == ["energymesh-demo"]
+    assert status.workers == ["energy-dispatcher"]
 
 
 def test_dispatch_request_never_falls_back_to_local_pipeline(settings, monkeypatch) -> None:

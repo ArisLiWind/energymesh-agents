@@ -118,7 +118,62 @@ def _run(command: list[str]) -> str:
     return completed.stdout.strip()
 
 
+def _matrix_reachable(base_url: str, access_token: str) -> bool:
+    if not base_url or not access_token:
+        return False
+    url = f"{base_url.rstrip('/')}/_matrix/client/versions?access_token={access_token}"
+    try:
+        with urlrequest.urlopen(url, timeout=4) as response:
+            return response.status < 300
+    except Exception:
+        return False
+
+
 def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
+    runtime_mode = os.getenv("AGENTTEAMS_RUNTIME_MODE", "local_docker").strip().lower()
+    matrix_base_url = os.getenv("AGENTTEAMS_MATRIX_BASE_URL", "").rstrip("/")
+    matrix_access_token = os.getenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN", "")
+    team_room_configured = bool(os.getenv("AGENTTEAMS_TEAM_ROOM_ID"))
+    matrix_bridge_configured = bool(matrix_base_url and matrix_access_token)
+    if runtime_mode == "remote_matrix":
+        matrix_ok = _matrix_reachable(matrix_base_url, matrix_access_token)
+        remote_workers = [
+            item.strip()
+            for item in os.getenv("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher").split(",")
+            if item.strip()
+        ]
+        remote_team = os.getenv("AGENTTEAMS_TEAM_NAME", "energymesh-demo")
+        problems: list[str] = []
+        if not team_room_configured:
+            problems.append("AGENTTEAMS_TEAM_ROOM_ID is not configured for the live Team Room bridge.")
+        if not matrix_bridge_configured:
+            problems.append(
+                "AGENTTEAMS_MATRIX_BASE_URL and AGENTTEAMS_MATRIX_ACCESS_TOKEN are required "
+                "for the remote Matrix bridge."
+            )
+        if matrix_bridge_configured and not matrix_ok:
+            problems.append("Remote AgentTeams Matrix client API is not reachable.")
+        if not remote_workers:
+            problems.append("AGENTTEAMS_REMOTE_WORKERS must list at least one verified Running Worker.")
+        ready = not problems
+        return AgentTeamsRuntimeStatus(
+            ready=ready,
+            mode="remote_matrix_agentteams" if ready else "not_ready",
+            docker_available=False,
+            agt_available=False,
+            controller_running=matrix_ok,
+            manager_running=matrix_ok,
+            team_room_configured=team_room_configured,
+            workers=remote_workers if matrix_ok else [],
+            teams=[remote_team] if matrix_ok else [],
+            problems=problems,
+            next_steps=[] if ready else [
+                "Start the Codespace or remote AgentTeams runtime.",
+                "Forward or expose Matrix: AGENTTEAMS_MATRIX_BASE_URL must answer /_matrix/client/versions.",
+                "Export AGENTTEAMS_TEAM_ROOM_ID, AGENTTEAMS_MATRIX_ACCESS_TOKEN and AGENTTEAMS_REMOTE_WORKERS.",
+            ],
+        )
+
     docker_available = shutil.which("docker") is not None
     docker_ps = _run(["docker", "ps", "--format", "{{.Names}}"]) if docker_available else ""
     containers = [line.strip() for line in docker_ps.splitlines() if line.strip()]
@@ -145,12 +200,6 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     else:
         teams_output = ""
     teams = [line for line in teams_output.splitlines() if "energymesh" in line]
-    team_room_configured = bool(os.getenv("AGENTTEAMS_TEAM_ROOM_ID"))
-    matrix_bridge_configured = bool(
-        os.getenv("AGENTTEAMS_MATRIX_BASE_URL")
-        and os.getenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN")
-    )
-
     problems: list[str] = []
     if not docker_available:
         problems.append("Docker is not installed or not available in PATH.")

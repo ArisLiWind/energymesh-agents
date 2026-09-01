@@ -16,7 +16,24 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("ENERGYMESH_SECRET_FORM_PORT", "8765"))
 
 
-PAGE = """<!doctype html>
+def load_existing() -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not TARGET.exists():
+        return values
+    for line in TARGET.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def page() -> str:
+    existing = load_existing()
+    def value(name: str, default: str = "") -> str:
+        return html.escape(existing.get(name, default), quote=True)
+
+    return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
@@ -39,19 +56,34 @@ PAGE = """<!doctype html>
   <h1>AgentTeams LLM 配置</h1>
   <p>这个页面只监听 127.0.0.1。提交后会保存到本机仓库的 .env.agentteams.local，不会显示密钥明文。</p>
   <form method="post" action="/save" autocomplete="off">
+    <label for="runtime_mode">AgentTeams Runtime</label>
+    <select id="runtime_mode" name="runtime_mode">
+      <option value="remote_matrix">Codespaces / Remote Matrix</option>
+      <option value="local_docker">Local Docker</option>
+    </select>
+    <label for="team_name">Team Name</label>
+    <input id="team_name" name="team_name" value="{value("AGENTTEAMS_TEAM_NAME", "energymesh-demo")}" />
+    <label for="team_room_id">Team Room ID</label>
+    <input id="team_room_id" name="team_room_id" value="{value("AGENTTEAMS_TEAM_ROOM_ID")}" placeholder="!xxxx:matrix-local.agentteams.io:18080" />
+    <label for="matrix_base_url">Matrix Base URL</label>
+    <input id="matrix_base_url" name="matrix_base_url" value="{value("AGENTTEAMS_MATRIX_BASE_URL", "http://127.0.0.1:18080")}" />
+    <label for="matrix_access_token">Matrix Access Token</label>
+    <input id="matrix_access_token" name="matrix_access_token" type="password" value="{value("AGENTTEAMS_MATRIX_ACCESS_TOKEN")}" />
+    <label for="remote_workers">Verified Running Workers</label>
+    <input id="remote_workers" name="remote_workers" value="{value("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher")}" />
     <label for="provider">模型服务</label>
     <select id="provider" name="provider">
       <option value="openai-compat">DeepSeek / OpenAI-compatible</option>
       <option value="qwen">通义千问 / DashScope</option>
     </select>
     <label for="base_url">Base URL</label>
-    <input id="base_url" name="base_url" value="https://api.deepseek.com/v1" />
+    <input id="base_url" name="base_url" value="{value("AGENTTEAMS_OPENAI_BASE_URL", "https://api.deepseek.com/v1")}" />
     <label for="model">默认模型</label>
-    <input id="model" name="model" value="deepseek-chat" />
+    <input id="model" name="model" value="{value("AGENTTEAMS_DEFAULT_MODEL", "deepseek-chat")}" />
     <label for="key">API Key</label>
-    <input id="key" name="key" type="password" required autofocus />
+    <input id="key" name="key" type="password" value="{value("AGENTTEAMS_LLM_API_KEY")}" required autofocus />
     <button type="submit">保存并关闭</button>
-    <small>DeepSeek 使用 OpenAI-compatible 协议。通义兼容模式可填 DashScope compatible-mode URL。</small>
+    <small>DeepSeek 使用 OpenAI-compatible 协议。Element 不配置模型；模型由 AgentTeams Manager/Worker runtime 使用。</small>
   </form>
 </main>
 </body>
@@ -66,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/":
             self.send_error(404)
             return
-        body = PAGE.encode("utf-8")
+        body = page().encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -79,6 +111,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length", "0"))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
+        runtime_mode = fields.get("runtime_mode", ["remote_matrix"])[0].strip() or "remote_matrix"
+        team_name = fields.get("team_name", ["energymesh-demo"])[0].strip() or "energymesh-demo"
+        team_room_id = fields.get("team_room_id", [""])[0].strip()
+        matrix_base_url = fields.get("matrix_base_url", ["http://127.0.0.1:18080"])[0].strip()
+        matrix_access_token = fields.get("matrix_access_token", [""])[0].strip()
+        remote_workers = fields.get("remote_workers", ["energy-dispatcher"])[0].strip()
         provider = fields.get("provider", ["openai-compat"])[0].strip() or "openai-compat"
         base_url = fields.get("base_url", [""])[0].strip()
         model = fields.get("model", [""])[0].strip() or "gpt-4o-mini"
@@ -88,6 +126,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         lines = [
             "# Local AgentTeams settings. Do not commit.",
+            "AGENTTEAMS_ENABLED=true",
+            "AGENTTEAMS_LIVE_REQUIRED=true",
+            f"AGENTTEAMS_RUNTIME_MODE={runtime_mode}",
+            f"AGENTTEAMS_TEAM_NAME={team_name}",
+            f"AGENTTEAMS_TEAM_ROOM_ID={team_room_id}",
+            f"AGENTTEAMS_MATRIX_BASE_URL={matrix_base_url}",
+            f"AGENTTEAMS_MATRIX_ACCESS_TOKEN={matrix_access_token}",
+            f"AGENTTEAMS_REMOTE_WORKERS={remote_workers}",
             f"AGENTTEAMS_LLM_PROVIDER={provider}",
             f"AGENTTEAMS_OPENAI_BASE_URL={base_url}",
             f"AGENTTEAMS_DEFAULT_MODEL={model}",
