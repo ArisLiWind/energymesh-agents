@@ -1566,7 +1566,7 @@ async function sendChatMessage(event) {
             "team_leader",
             ready
               ? (state.language === "zh" ? "AgentTeams runtime 已就绪，消息已进入真实 Team Room。" : "AgentTeams runtime is ready; the message is entering the real Team Room.")
-              : (state.language === "zh" ? "AgentTeams runtime 未就绪，停止本地伪多 Agent 流程。" : "AgentTeams runtime is not ready; local fake multi-agent flow is stopped."),
+              : (state.language === "zh" ? "AgentTeams runtime 未就绪；不会使用本地替代 Worker 流程。" : "AgentTeams runtime is not ready; no local Worker substitute will run."),
           );
         },
         onStage: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || event.stage || "AgentTeams stage started"),
@@ -1972,7 +1972,7 @@ function planNarrativeFromFlow(message = "", currentFlow = {}, previewFlow = {},
   if (chargeGain > .05) reasonBits.push(`把发电多送 ${chargeGain.toFixed(1)} kW 进储能格`);
   if (curtailDrop > .05) reasonBits.push(`减少限发 ${curtailDrop.toFixed(1)} kW`);
   if (!reasonBits.length) reasonBits.push("当前时刻约束较紧，先保持主流向，只做小幅调度预演");
-  const prefix = source === "llm" ? "LLM 根据当前沙盘和这轮对话生成：" : "本地临时预览，不是 LLM 方案：";
+  const prefix = source === "llm" ? "LLM 根据当前沙盘和这轮对话生成：" : "真实模型未接入，未生成可采用方案：";
   return {
     title,
     source,
@@ -1987,7 +1987,7 @@ function renderFlowPreviewCard(currentFlow, previewFlow, plan = {}) {
   card.hidden = !visible;
   if (!visible) return;
   card.querySelector("header strong").textContent = plan.title || "动态调度预览";
-  card.querySelector("header span").textContent = plan.source === "llm" ? "LLM 新方案预览" : "本地临时预览";
+  card.querySelector("header span").textContent = plan.source === "llm" ? "LLM 新方案预览" : "等待真实模型方案";
   $("#delta-grid").textContent = formatDelta(currentFlow.grid_load, previewFlow.grid_load);
   $("#delta-storage").textContent = formatDelta(currentFlow.storage_load, previewFlow.storage_load);
   $("#delta-curtail").textContent = formatDelta(currentFlow.curtail, previewFlow.curtail);
@@ -2107,28 +2107,11 @@ function previewFlowFromLatestSnapshot() {
 function handleLocalFlowTuningRequest(message) {
   if (!isFlowTuningRequest(message) && !isFrustratedChatRequest(message)) return false;
   if (hasReadyTeamLeaderGateway()) return false;
-  if (!state.energySnapshot) {
-    addChatMessage(
-      "agent",
-      "你说得对，我刚才不应该像系统日志一样让你自己猜。现在右侧还没接入 CSV，我看不到真实的发电、储能、用电和购电数值，所以不能硬编“储能为什么没充进去”。\n\n先上传历史数据测试，园区跑起来后我会直接看两件事：发电有没有先进用电格和储能格、限发是不是还在涨。如果储能该充没充，我会把旧线路变淡，给你一版“发电 → 储能”的虚线预览；你点采用后再把它切成真实电流。",
-      "team_leader",
-    );
-    return true;
-  }
-  const preview = previewFlowFromLatestSnapshot();
-  if (!preview) return false;
-  const plan = planNarrativeFromFlow(message, preview.currentFlow, preview.previewFlow, "local");
-  showCampusPlanPreview(preview.currentFlow, preview.previewFlow, plan);
-  const reply = [
-    "你说得对，我先接住这个问题：储能没充进去，不应该让电一直浪费。先说清楚：当前没有可用的真实 LLM 网关，所以这不是 LLM 生成的新方案，只是我按右侧实时数值给你的本地临时预览。",
-    "",
-    `我已经把右侧沙盘切到“${plan.title}”。现在看三条关键变化：电网购电 ${formatDelta(preview.currentFlow.grid_load, preview.previewFlow.grid_load)}，储能放电 ${formatDelta(preview.currentFlow.storage_load, preview.previewFlow.storage_load)}，限发 ${formatDelta(preview.currentFlow.curtail, preview.previewFlow.curtail)}。`,
-    "",
-    "要让它变成真正的 LLM 方案，需要先把 Team Leader 模型网关测试到“正常”。那样下一次你问我，我会先把当前沙盘状态发给 LLM，再由它生成方案标题、理由和调度方向，然后唤起右侧预览。",
-  ].join("\n");
-  addChatMessage("agent", reply, "team_leader", {
-    meta: { action: "confirm_execution", scenarioKey: "flow_preview" },
-  });
+  clearCampusPlanPreview(false);
+  const reply = state.energySnapshot
+    ? "我看到了右侧 CSV 园区数据，但现在没有通过测试的真实 Team Leader 模型网关，所以我不会生成本地替代方案，也不会改沙盘流向。请先接入并测试 DeepSeek/模型网关；之后调度类请求会进入真实 AgentTeams，普通聊天会由真实模型直接回答。"
+    : "右侧还没有上传 CSV，且 Team Leader 模型网关未就绪。我不会生成本地替代方案；先上传园区 CSV 并测试模型网关，之后再让真实 AgentTeams 做调度。";
+  addChatMessage("agent", reply, "team_leader");
   return true;
 }
 

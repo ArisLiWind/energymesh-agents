@@ -13,15 +13,16 @@ from energymesh.agentteams_runtime import (
     LiveAgentTeamsRuntime,
     LiveAgentTeamsRuntimeError,
     probe_agentteams_runtime,
+    requires_agentteams_workers,
 )
 from energymesh.audit import IndependentSafetyAuditor
 from energymesh.compound_demo import CompoundChangeDemo, DemoWorkflowError
 from energymesh.config import Settings
 from energymesh.data_pipeline import EnergyDataError, ReplayMonitor, SnapshotFactory
 from energymesh.demo import apply_operational_change, load_demo_scenario
+from energymesh.direct_runtime import DirectLeaderRuntime, DirectLeaderRuntimeError
 from energymesh.external_data import ExternalDataSimulator
 from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
-from energymesh.mcp_gateway import EnergyMCPGateway
 from energymesh.models import (
     AgentChatRequest,
     AgentChatResponse,
@@ -51,7 +52,6 @@ from energymesh.optimizer import DispatchOptimizer
 from energymesh.orchestrator import EnergyMeshOrchestrator, WorkflowError
 from energymesh.parallel_sim import ParallelSimError, ParallelSimulator
 from energymesh.perception import PerceptionAgent
-from energymesh.runtime import AgentRuntimeError, PersistentAgentRuntime
 from energymesh.simulator import SimulationExecutor
 from energymesh.storage import EvidenceStore, PayloadRow, PayloadRows
 
@@ -96,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         snapshot: ExternalDataSnapshot | None = app.state.uploaded_snapshot
         status = monitor.status()
         current = status.get("current")
+        cursor = status.get("cursor") if status.get("current") else snapshot.current_interval if snapshot else 0
         if current is None and snapshot and snapshot.telemetry:
             index = min(max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1)
             current = snapshot.telemetry[index].model_dump(mode="json")
@@ -105,16 +106,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pv_kw = float(current.get("pv_kw") or 0)
         battery_soc = float(current.get("battery_soc") or 0)
         grid_import_kw = max(0.0, load_kw - pv_kw)
+        telemetry_window = []
+        if snapshot and snapshot.telemetry:
+            start = min(max(int(cursor or 0), 0), len(snapshot.telemetry) - 1)
+            end = min(start + 4, len(snapshot.telemetry))
+            telemetry_window = [
+                {
+                    "interval": point.interval,
+                    "timestamp": point.timestamp.isoformat(),
+                    "load_kw": round(point.load_kw, 3),
+                    "pv_kw": round(point.pv_kw, 3),
+                    "battery_soc": round(point.battery_soc, 4),
+                    "tariff_yuan_per_kwh": point.tariff_yuan_per_kwh,
+                    "production_min_load_kw": round(point.production_min_load_kw, 3),
+                    "transformer_limit_kw": round(point.transformer_limit_kw, 3),
+                }
+                for point in snapshot.telemetry[start:end]
+            ]
+        today_load_kwh = 0.0
+        today_pv_kwh = 0.0
+        today_grid_kwh = 0.0
+        today_cost_yuan = 0.0
+        if snapshot and snapshot.telemetry:
+            stop = min(max(int(cursor or 0), 0) + 1, len(snapshot.telemetry))
+            for point in snapshot.telemetry[:stop]:
+                today_load_kwh += point.load_kw * 0.25
+                today_pv_kwh += point.pv_kw * 0.25
+                grid_kw = max(0.0, point.load_kw - point.pv_kw)
+                today_grid_kwh += grid_kw * 0.25
+                today_cost_yuan += grid_kw * 0.25 * point.tariff_yuan_per_kwh
+        pv_curtailment_kw = max(0.0, pv_kw - load_kw)
         return {
             "current": current,
             "source": status.get("source") or (snapshot.source if snapshot else "uploaded_snapshot"),
-            "cursor": status.get("cursor") if status.get("current") else snapshot.current_interval if snapshot else 0,
+            "cursor": cursor,
+            "snapshot_contract": "ExternalDataSnapshot",
+            "telemetry_points": len(snapshot.telemetry) if snapshot else 0,
+            "telemetry_window_next_hour": telemetry_window,
             "current_load_mw": round(load_kw / 1000, 4),
             "pv_forecast_mw": round(pv_kw / 1000, 4),
             "storage_soc_percent": round(battery_soc * 100, 1),
             "grid_import_mw": round(grid_import_kw / 1000, 4),
+            "pv_curtailment_kw": round(pv_curtailment_kw, 3),
             "transformer_load_percent": round(min(100.0, grid_import_kw / 10), 1),
             "available_capacity_mw": round(max(0.0, 10000 - grid_import_kw) / 1000, 4),
+            "daily_so_far": {
+                "load_kwh": round(today_load_kwh, 3),
+                "pv_kwh": round(today_pv_kwh, 3),
+                "grid_import_kwh": round(today_grid_kwh, 3),
+                "purchase_cost_yuan": round(today_cost_yuan, 4),
+            },
+            "optimization_objectives": [
+                "降低购电成本",
+                "降低能源浪费/限发",
+                "降低人工调度成本",
+            ],
             "device_status": {
                 "ems": "online",
                 "pcs": "from_uploaded_snapshot",
@@ -123,10 +169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         }
 
-    agent_runtime = PersistentAgentRuntime(
-        store,
-        mcp_gateway=EnergyMCPGateway(current_world_state),
-    )
+    direct_runtime = DirectLeaderRuntime(store)
 
     app = FastAPI(
         title="EnergyMesh Agents API",
@@ -136,7 +179,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = active_settings
     app.state.store = store
     app.state.compound_demo = compound_demo
-    app.state.agent_runtime = agent_runtime
+    app.state.direct_runtime = direct_runtime
     app.state.orchestrator = orchestrator
     app.state.scenario = scenario
     app.state.external_data = external_data
@@ -145,7 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.uploaded_snapshot = None
     app.state.parallel_sim = ParallelSimulator(orchestrator, store)
     app.state.live_agentteams_runtime = LiveAgentTeamsRuntime(
-        store, active_settings.agentteams_team_name
+        store, active_settings.agentteams_team_name, current_world_state
     )
 
     def get_orchestrator(request: Request) -> EnergyMeshOrchestrator:
@@ -154,8 +197,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_store(request: Request) -> EvidenceStore:
         return cast(EvidenceStore, request.app.state.store)
 
-    def get_agent_runtime(request: Request) -> PersistentAgentRuntime:
-        return cast(PersistentAgentRuntime, request.app.state.agent_runtime)
+    def get_direct_runtime(request: Request) -> DirectLeaderRuntime:
+        return cast(DirectLeaderRuntime, request.app.state.direct_runtime)
 
     def get_live_agentteams_runtime(request: Request) -> LiveAgentTeamsRuntime:
         return cast(LiveAgentTeamsRuntime, request.app.state.live_agentteams_runtime)
@@ -270,22 +313,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def chat_with_runtime(
         body: AgentRuntimeChatRequest,
         request: Request,
-        runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+        direct_runtime: Annotated[DirectLeaderRuntime, Depends(get_direct_runtime)],
         live_runtime: Annotated[
             LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
         ],
     ) -> AgentRuntimeChatResponse:
         try:
             settings: Settings = request.app.state.settings
-            if settings.agentteams_enabled and settings.agentteams_live_required:
+            if not requires_agentteams_workers(body.message):
+                return direct_runtime.chat(
+                    body.message,
+                    body.session_id,
+                    body.task_id,
+                    current_world_state(),
+                )
+            if settings.agentteams_enabled:
                 return live_runtime.chat(body.message, body.session_id, body.task_id)
-            return runtime.chat(body.message, body.session_id, body.task_id)
+            raise LiveAgentTeamsRuntimeError(
+                "AgentTeams is disabled; Worker tasks cannot use a local deterministic fallback."
+            )
         except LiveAgentTeamsRuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        except AgentRuntimeError as error:
-            message = str(error)
-            status = 404 if message == "task not found" else 409
-            raise HTTPException(status_code=status, detail=message) from error
+        except DirectLeaderRuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
@@ -293,7 +343,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def stream_chat_with_runtime(
         body: AgentRuntimeChatRequest,
         request: Request,
-        runtime: Annotated[PersistentAgentRuntime, Depends(get_agent_runtime)],
+        direct_runtime: Annotated[DirectLeaderRuntime, Depends(get_direct_runtime)],
         live_runtime: Annotated[
             LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
         ],
@@ -305,17 +355,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def events() -> Iterator[str]:
             try:
                 settings: Settings = request.app.state.settings
-                event_source = (
-                    live_runtime.stream_chat(body.message, body.session_id, body.task_id)
-                    if settings.agentteams_enabled
-                    and settings.agentteams_live_required
-                    else runtime.stream_chat(body.message, body.session_id, body.task_id)
-                )
+                if not requires_agentteams_workers(body.message):
+                    event_source = direct_runtime.stream_chat(
+                        body.message,
+                        body.session_id,
+                        body.task_id,
+                        current_world_state(),
+                    )
+                elif settings.agentteams_enabled:
+                    event_source = (
+                        live_runtime.stream_chat(body.message, body.session_id, body.task_id)
+                    )
+                else:
+                    raise LiveAgentTeamsRuntimeError(
+                        "AgentTeams is disabled; Worker tasks cannot use a local deterministic fallback."
+                    )
                 for event in event_source:
                     yield from sse_event(event)
             except LiveAgentTeamsRuntimeError as error:
                 yield from sse_event({"type": "runtime_error", "detail": str(error)})
-            except AgentRuntimeError as error:
+            except DirectLeaderRuntimeError as error:
                 yield from sse_event({"type": "runtime_error", "detail": str(error)})
             except Exception as error:
                 yield from sse_event({"type": "runtime_error", "detail": str(error)})

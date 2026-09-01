@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 from urllib import request as urlrequest
@@ -22,6 +23,53 @@ from energymesh.storage import EvidenceStore
 
 class LiveAgentTeamsRuntimeError(RuntimeError):
     pass
+
+
+WORKER_TRIGGER_KEYWORDS = {
+    "dispatch",
+    "schedule",
+    "simulate",
+    "simulation",
+    "execute",
+    "execution",
+    "approve",
+    "adopt",
+    "preview",
+    "optimize",
+    "optimise",
+    "rebalance",
+    "shift load",
+    "reduce cost",
+    "reduce waste",
+    "调度",
+    "模拟",
+    "仿真",
+    "执行",
+    "采用",
+    "批准",
+    "审批",
+    "预览",
+    "优化",
+    "重规划",
+    "调整",
+    "削峰",
+    "移峰",
+    "降低购电",
+    "减少购电",
+    "减少浪费",
+    "降低浪费",
+    "储能充电",
+    "储能放电",
+    "换方案",
+    "控制",
+}
+
+
+def requires_agentteams_workers(message: str) -> bool:
+    """Return true only when the operator explicitly asks to change/plan operation."""
+    normalized = message.lower()
+    return any(keyword.lower() in normalized for keyword in WORKER_TRIGGER_KEYWORDS)
+
 
 @dataclass(frozen=True)
 class AgentTeamsRuntimeStatus:
@@ -71,13 +119,30 @@ def _run(command: list[str]) -> str:
 
 def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     docker_available = shutil.which("docker") is not None
-    agt_available = shutil.which("agt") is not None
     docker_ps = _run(["docker", "ps", "--format", "{{.Names}}"]) if docker_available else ""
     containers = [line.strip() for line in docker_ps.splitlines() if line.strip()]
     controller_running = any("agentteams-controller" in name for name in containers)
     manager_running = any("agentteams-manager" in name for name in containers)
-    workers = [name for name in containers if "agentteams-worker" in name]
-    teams_output = _run(["agt", "get", "teams"]) if agt_available else ""
+    workers = [
+        name
+        for name in containers
+        if any(
+            marker in name
+            for marker in (
+                "agentteams-worker",
+                "agentteams-copaw-worker",
+                "agentteams-hermes-worker",
+            )
+        )
+    ]
+    host_agt_available = shutil.which("agt") is not None
+    agt_available = host_agt_available or controller_running
+    if host_agt_available:
+        teams_output = _run(["agt", "get", "teams"])
+    elif controller_running:
+        teams_output = _run(["docker", "exec", "agentteams-controller", "agt", "get", "teams"])
+    else:
+        teams_output = ""
     teams = [line for line in teams_output.splitlines() if "energymesh" in line]
     team_room_configured = bool(os.getenv("AGENTTEAMS_TEAM_ROOM_ID"))
     matrix_bridge_configured = bool(
@@ -90,7 +155,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     if not docker_available:
         problems.append("Docker is not installed or not available in PATH.")
     if not agt_available:
-        problems.append("AgentTeams CLI `agt` is not installed or not available in PATH.")
+        problems.append("AgentTeams CLI `agt` is not available on the host or inside agentteams-controller.")
     if docker_available and not controller_running:
         problems.append("agentteams-controller container is not running.")
     if docker_available and not manager_running:
@@ -133,9 +198,15 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
 class LiveAgentTeamsRuntime:
     """Bridge FastAPI chat to the real AgentTeams Team Room instead of a local fake pipeline."""
 
-    def __init__(self, store: EvidenceStore, team_name: str) -> None:
+    def __init__(
+        self,
+        store: EvidenceStore,
+        team_name: str,
+        world_state_provider: Callable[[], dict[str, Any] | None] | None = None,
+    ) -> None:
         self.store = store
         self.team_name = team_name
+        self.world_state_provider = world_state_provider
         self.matrix_base_url = os.getenv("AGENTTEAMS_MATRIX_BASE_URL", "").rstrip("/")
         self.matrix_access_token = os.getenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN", "")
         self.team_room_id = os.getenv("AGENTTEAMS_TEAM_ROOM_ID", "")
@@ -198,8 +269,16 @@ class LiveAgentTeamsRuntime:
     ):
         active_session_id = session_id or f"session_{uuid4().hex[:12]}"
         active_task_id = task_id or f"agentteams_task_{uuid4().hex[:12]}"
+        world_state = self._world_state()
         status = self.assert_ready()
-        self._save_message(active_session_id, active_task_id, "operator", "user", message, {"runtime": "live_agentteams"})
+        self._save_message(
+            active_session_id,
+            active_task_id,
+            "operator",
+            "user",
+            message,
+            {"runtime": "live_agentteams", "world_state": world_state},
+        )
 
         yield {
             "type": "runtime_started",
@@ -207,6 +286,7 @@ class LiveAgentTeamsRuntime:
             "session_id": active_session_id,
             "task_id": active_task_id,
             "routed_agents": ["agentteams_manager"],
+            "world_state_loaded": world_state is not None,
         }
         yield {
             "type": "agentteams_runtime_check",
@@ -221,10 +301,32 @@ class LiveAgentTeamsRuntime:
             "index": 0,
             "agent_id": "agentteams_manager",
             "stage": "team_room_submit",
-            "message": "Submitting operator message to the live AgentTeams Team Room.",
+            "message": "思考中：正在把操作员消息和右侧园区 world_state 发送到真实 AgentTeams Team Room。",
         }
+        if world_state:
+            artifact = self.store.save_runtime_artifact(
+                RuntimeArtifact(
+                    artifact_id=f"artifact_{uuid4().hex[:12]}",
+                    session_id=active_session_id,
+                    task_id=active_task_id,
+                    agent_id="agentteams_manager",
+                    artifact_type="world_state",
+                    name="world_state.json",
+                    payload=world_state,
+                    created_at=datetime.now(UTC),
+                )
+            )
+            yield {
+                "type": "world_state_loaded",
+                "session_id": active_session_id,
+                "task_id": active_task_id,
+                "agent_id": "agentteams_manager",
+                "artifact_id": artifact.artifact_id,
+                "message": "右侧 CSV/沙盘状态已作为 AgentTeams world_state 输入。",
+                "world_state": world_state,
+            }
 
-        self._send_matrix_message(active_session_id, active_task_id, message)
+        self._send_matrix_message(active_session_id, active_task_id, message, world_state)
         yield {
             "type": "team_room_message",
             "session_id": active_session_id,
@@ -237,6 +339,9 @@ class LiveAgentTeamsRuntime:
         for event in self._stream_agentteams_events(active_session_id, active_task_id):
             agent_id = str(event.get("agent_id") or event.get("worker") or "agentteams_manager")
             message_text = str(event.get("message") or event.get("response") or event.get("body") or "")
+            if event.get("type") in {"worker_joined", "handoff", "agent_joined"}:
+                event["type"] = "worker_joined"
+                event.setdefault("message", f"{agent_id} 加入真实 AgentTeams Team Room。")
             if event.get("type") == "agent_step" and message_text:
                 step = self._record_step(active_session_id, active_task_id, agent_id, message_text)
                 steps.append(step)
@@ -264,15 +369,48 @@ class LiveAgentTeamsRuntime:
             ],
         }
 
-    def _send_matrix_message(self, session_id: str, task_id: str, message: str) -> None:
+    def _send_matrix_message(
+        self,
+        session_id: str,
+        task_id: str,
+        message: str,
+        world_state: dict[str, Any] | None,
+    ) -> None:
+        body = message
+        if world_state:
+            body = (
+                f"{message}\n\n"
+                "[EnergyMesh world_state]\n"
+                f"{json.dumps(world_state, ensure_ascii=False, separators=(',', ':'))}"
+            )
         payload = {
             "msgtype": "m.text",
-            "body": message,
+            "body": body,
             "energymesh": {
                 "session_id": session_id,
                 "task_id": task_id,
                 "team_name": self.team_name,
                 "source": "fastapi_runtime_chat",
+                "intent": "dispatch_or_execution",
+                "world_state": world_state,
+                "required_workers": [
+                    "perception_worker",
+                    "dispatch_worker",
+                    "audit_worker",
+                    "execution_worker",
+                ],
+                "response_contract": {
+                    "must_use_world_state": True,
+                    "must_emit_verifiable_plan": True,
+                    "must_wait_for_human_adoption_before_execution": True,
+                    "ui_expected_events": [
+                        "worker_joined",
+                        "agent_step",
+                        "dispatch_plan",
+                        "audit_verdict",
+                        "execution_receipt",
+                    ],
+                },
             },
         }
         txn_id = uuid4().hex
@@ -309,6 +447,11 @@ class LiveAgentTeamsRuntime:
             raise LiveAgentTeamsRuntimeError(
                 f"AgentTeams event stream failed; cannot prove Worker handoff: {error}"
             ) from error
+
+    def _world_state(self) -> dict[str, Any] | None:
+        if not self.world_state_provider:
+            return None
+        return self.world_state_provider()
 
     def _record_step(self, session_id: str, task_id: str, agent_id: str, response: str) -> dict[str, str]:
         artifact = self.store.save_runtime_artifact(
