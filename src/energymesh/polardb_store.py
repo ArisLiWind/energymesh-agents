@@ -104,14 +104,23 @@ class PolarDBStore:
         valid_from: str,
     ) -> None:
         self.conn.execute(
-            "INSERT INTO plan_versions (plan_version_id, task_id, plan_id, interval_from, interval_to, valid_from) VALUES (?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO plan_versions (
+                plan_version_id, task_id, plan_id, interval_from, interval_to, valid_from
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
             (plan_version_id, task_id, plan_id, interval_from, interval_to, valid_from),
         )
         self.conn.commit()
 
     def invalidate_plan(self, plan_version_id: str, reason: str) -> None:
         self.conn.execute(
-            "UPDATE plan_versions SET valid_until = ?, invalidated_reason = ? WHERE plan_version_id = ?",
+            """
+            UPDATE plan_versions
+            SET valid_until = ?, invalidated_reason = ?
+            WHERE plan_version_id = ?
+            """,
             (datetime.now(UTC).isoformat(), reason, plan_version_id),
         )
         self.conn.commit()
@@ -127,7 +136,7 @@ class PolarDBStore:
         deviation: bool = False,
     ) -> None:
         self.conn.execute(
-            """INSERT INTO execution_results
+            """INSERT OR REPLACE INTO execution_results
             (execution_id, task_id, plan_version_id, interval, actual_grid_kw, actual_soc,
              expected_grid_kw, expected_soc, deviation_flag)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -147,7 +156,13 @@ class PolarDBStore:
 
     def get_latest_snapshot(self, source: str, interval: int) -> dict[str, Any] | None:
         row = self.conn.execute(
-            "SELECT * FROM telemetry_snapshots WHERE source = ? AND interval = ? ORDER BY created_at DESC LIMIT 1",
+            """
+            SELECT *
+            FROM telemetry_snapshots
+            WHERE source = ? AND interval = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
             (source, interval),
         ).fetchone()
         return dict(row) if row else None

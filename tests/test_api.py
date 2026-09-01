@@ -14,9 +14,34 @@ def test_agentteams_resource_assets_exist() -> None:
     text = resources.read_text(encoding="utf-8")
     assert "apiVersion: agentteams.io/v1beta1" in text
     assert "kind: Team" in text
+    assert text.count("kind: Worker") == 5
+    assert "workerMembers:" in text
+    assert text.count("role: team_leader") == 1
+    assert "leader:" not in text
+    assert "workers:" not in text
     assert "runtime: openclaw" in text
     assert "runtime: copaw" in text
     assert (root / "agentteams" / "team-leader" / "AGENTS.md").exists()
+    packaged_skills = [
+        root / "agentteams" / "team-leader" / "skills" / "microgrid_context_ingest" / "SKILL.md",
+        root
+        / "agentteams"
+        / "workers"
+        / "perception"
+        / "skills"
+        / "microgrid_context_ingest"
+        / "SKILL.md",
+        root
+        / "agentteams"
+        / "workers"
+        / "dispatch"
+        / "skills"
+        / "dispatch_plan_generate"
+        / "SKILL.md",
+        root / "agentteams" / "workers" / "audit" / "skills" / "dispatch_audit_verify" / "SKILL.md",
+        root / "agentteams" / "workers" / "execution" / "skills" / "execution_mapping" / "SKILL.md",
+    ]
+    assert all(skill.exists() for skill in packaged_skills)
 
 
 def test_health_and_demo_workflow(settings) -> None:
@@ -47,11 +72,24 @@ def test_health_and_demo_workflow(settings) -> None:
         page = client.get("/")
         assert page.status_code == 200
         assert 'id="ai-chat-form"' in page.text
+        assert 'data-day-group="today"' in page.text
+        assert 'data-ledger-summary="today"' in page.text
+        assert 'data-open-workspace="weather"' in page.text
+        assert 'data-open-workspace="context"' not in page.text
+        assert 'id="nav-ops"' in page.text
         assert "运行14:00复合变化" not in page.text
         assert 'id="trace-list"' in page.text
         script = client.get("/static/app.js")
         assert "production_load" in script.text
         assert "scenarioConversation" in script.text
+
+        evidence_board = client.get("/api/ops/evidence-board")
+        assert evidence_board.status_code == 200
+        evidence_body = evidence_board.json()
+        assert evidence_body["data_snapshot"]["contract"] == "ExternalDataSnapshot"
+        assert evidence_body["closed_loop"]["hitl_gate"]
+        assert evidence_body["agentteams"]["team_name"] == "energymesh-test-team"
+        assert evidence_body["rag_memory"]["enabled"] is True
 
         scenario = client.get("/api/demo/scenario")
         assert scenario.status_code == 200

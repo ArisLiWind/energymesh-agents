@@ -42,9 +42,10 @@ def _mean(values: list[float], default: float) -> float:
 
 
 class SnapshotFactory:
-    """Normalizes uploaded OpenCEM CSV measurements into EnergyMesh snapshots."""
+    """Normalizes uploaded public energy datasets into EnergyMesh snapshots."""
 
     required_columns = {"read_ts", "inverter", "outsumw", "pv1power", "battsoc"}
+    emsx_columns = {"timestamp", "site_id", "actual_consumption", "actual_pv"}
 
     def from_opencem_csv(
         self,
@@ -56,10 +57,18 @@ class SnapshotFactory:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError as error:
             raise EnergyDataError("CSV must be UTF-8 encoded") from error
-        reader = csv.DictReader(io.StringIO(text))
+        first_line = text.splitlines()[0] if text.splitlines() else ""
+        delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         if reader.fieldnames is None or not self.required_columns.issubset(
             reader.fieldnames
         ):
+            if reader.fieldnames is not None and self.emsx_columns.issubset(
+                reader.fieldnames
+            ):
+                return self._from_emsx_rows(
+                    list(reader), filename, current_interval=current_interval
+                )
             missing = sorted(self.required_columns.difference(reader.fieldnames or []))
             raise EnergyDataError(f"OpenCEM CSV missing columns: {', '.join(missing)}")
         rows = list(reader)
@@ -278,6 +287,169 @@ class SnapshotFactory:
             },
         )
 
+    def _from_emsx_rows(
+        self,
+        rows: list[dict[str, str]],
+        filename: str,
+        current_interval: int = 20,
+    ) -> ExternalDataSnapshot:
+        if not rows:
+            raise EnergyDataError("EMSx CSV contains no rows")
+        rows_by_day: dict[date, list[dict[str, str]]] = defaultdict(list)
+        for row in rows:
+            timestamp = row.get("timestamp", "").strip()
+            if not timestamp:
+                continue
+            try:
+                measured_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            rows_by_day[measured_at.date()].append(row)
+        complete_days = {
+            day: day_rows for day, day_rows in rows_by_day.items() if len(day_rows) >= 96
+        }
+        if not complete_days:
+            raise EnergyDataError("EMSx CSV needs at least one complete 96-point day")
+        replay_day = max(
+            complete_days,
+            key=lambda day: sum(
+                max(0.0, _number(row, "actual_consumption") or 0.0)
+                + max(0.0, _number(row, "actual_pv") or 0.0)
+                for row in complete_days[day][:96]
+            ),
+        )
+        day_rows = sorted(complete_days[replay_day], key=lambda row: row["timestamp"])[:96]
+        site_id = day_rows[0].get("site_id", "emsx-site")
+        load_values = [
+            max(0.0, (_number(row, "actual_consumption") or 0.0) * 4.0)
+            for row in day_rows
+        ]
+        pv_values = [
+            max(0.0, (_number(row, "actual_pv") or 0.0) * 4.0)
+            for row in day_rows
+        ]
+        peak_load = max(load_values)
+        battery_capacity = _number(day_rows[0], "battery_capacity_kwh") or max(
+            400.0, peak_load * 1.6
+        )
+        battery_power = (_number(day_rows[0], "battery_power_kwh_per_interval") or 100.0) * 4.0
+        initial_soc = min(0.90, max(0.30, (_number(day_rows[0], "battery_soc") or 62.0) / 100))
+        transformer_capacity = max(peak_load * 1.28, peak_load + battery_power * 0.35)
+        grid_limit = max(peak_load * 1.05, peak_load + battery_power * 0.15)
+        site = SiteConfig(
+            site_id=f"emsx-industrial-site-{site_id}",
+            transformer_capacity_kw=transformer_capacity,
+            grid_interconnection_limit_kw=grid_limit,
+            battery_capacity_kwh=battery_capacity,
+            battery_charge_max_kw=battery_power,
+            battery_discharge_max_kw=battery_power,
+            battery_efficiency_charge=_number(day_rows[0], "charge_efficiency") or 0.95,
+            battery_efficiency_discharge=(
+                _number(day_rows[0], "discharge_efficiency") or 0.95
+            ),
+            initial_soc=initial_soc,
+            safety_min_soc=0.20,
+            safety_max_soc=0.92,
+            flexible_load_kw=min(peak_load * 0.18, battery_power * 0.55),
+            demand_charge_yuan_per_kw=12.0,
+        )
+        telemetry: list[ExternalTelemetryPoint] = []
+        forecast: list[ForecastPoint] = []
+        for interval, row in enumerate(day_rows):
+            timestamp = datetime.fromisoformat(
+                row["timestamp"].strip().replace("Z", "+00:00")
+            )
+            load_kw = load_values[interval]
+            pv_kw = pv_values[interval]
+            load_forecast_kw = max(0.0, (_number(row, "load_00") or load_kw / 4.0) * 4.0)
+            pv_forecast_kw = max(0.0, (_number(row, "pv_00") or pv_kw / 4.0) * 4.0)
+            tariff = self._industrial_demo_tariff(timestamp.hour)
+            production_min = load_kw * (0.72 if 8 <= timestamp.hour < 20 else 0.45)
+            temperature = min(74.0, 38.0 + load_kw / transformer_capacity * 32.0)
+            forecast.append(
+                ForecastPoint(
+                    timestamp=timestamp,
+                    load_kw=load_forecast_kw,
+                    pv_kw=pv_forecast_kw,
+                    production_min_load_kw=production_min,
+                    tariff_yuan_per_kwh=tariff,
+                    battery_temperature_c=temperature,
+                    transformer_temperature_c=temperature,
+                    transformer_redundant_temperature_c=temperature,
+                )
+            )
+            telemetry.append(
+                ExternalTelemetryPoint(
+                    interval=interval,
+                    timestamp=timestamp,
+                    load_kw=load_kw,
+                    pv_kw=pv_kw,
+                    battery_soc=initial_soc,
+                    tariff_yuan_per_kwh=tariff,
+                    transformer_temperature_c=temperature,
+                    transformer_limit_kw=transformer_capacity,
+                    grid_interconnection_limit_kw=grid_limit,
+                    battery_available=True,
+                    production_min_load_kw=production_min,
+                )
+            )
+
+        current_interval = min(max(current_interval, 0), 95)
+        current = telemetry[current_interval]
+        return ExternalDataSnapshot(
+            source="emsx_industrial_site_upload",
+            generated_at=datetime.now(UTC),
+            current_interval=current_interval,
+            scenario=Scenario(
+                scenario_id=f"emsx-site-{site_id}-{replay_day.isoformat()}",
+                name=f"EMSx 工业站点 {site_id} 真实负荷/光伏回放",
+                description=(
+                    "Schneider Electric EMSx 匿名工业站点数据；实际负荷/光伏与"
+                    " 96 点预测来自公开数据，电价和生产保护约束为 EnergyMesh 复赛配置。"
+                ),
+                site=site,
+                forecast=forecast,
+                alerts=[],
+                device_status={
+                    "meter": "available",
+                    "pv": "available",
+                    "battery": "metadata_capacity_available",
+                    "transformer": "derived_from_peak_load",
+                },
+                production_plan={
+                    "source": "energymesh_industrial_replay_policy",
+                    "policy": "business hours protect 72% measured load",
+                },
+                simulation_faults=[],
+            ),
+            telemetry=telemetry,
+            current=current,
+            environment_signals={
+                "load_kw": current.load_kw,
+                "pv_kw": current.pv_kw,
+                "battery_soc": current.battery_soc,
+                "grid_import_kw": max(0.0, current.load_kw - current.pv_kw),
+                "raw_rows": len(rows),
+                "replay_date": replay_day.isoformat(),
+                "filename": Path(filename).name,
+                "site_id": site_id,
+            },
+            layer_summary={
+                "environment": [
+                    "EMSx Schneider Electric anonymized industrial site",
+                    f"{len(day_rows)} quarter-hour rows selected from site {site_id}",
+                ],
+                "strategy_generation": [
+                    "Actual load/PV and one-step-ahead forecasts are both available",
+                    "Industrial tariff and protected-load constraints create dispatch conflict",
+                ],
+                "deterministic_verification": [
+                    "Mapped into ExternalDataSnapshot for the same AgentTeams workflow",
+                    "RAG explains deviations; optimizer and audit recompute dispatch",
+                ],
+            },
+        )
+
     @staticmethod
     def _shenzhen_demo_tariff(hour: int) -> float:
         if 0 <= hour < 8:
@@ -285,6 +457,14 @@ class SnapshotFactory:
         if 10 <= hour < 12 or 14 <= hour < 19:
             return 1.18
         return 0.68
+
+    @staticmethod
+    def _industrial_demo_tariff(hour: int) -> float:
+        if 0 <= hour < 7:
+            return 0.28
+        if 9 <= hour < 12 or 17 <= hour < 21:
+            return 1.35
+        return 0.74
 
 
 class ReplayMonitor:

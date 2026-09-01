@@ -22,6 +22,7 @@ class AgentTeamsWorkerSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     worker_id: str
+    resource_name: str
     display_name: str
     role: str
     soul_md: str
@@ -71,7 +72,7 @@ def build_agentteams_manifest(
     model_configs: dict[str, AgentModelConfigPublic] | None = None,
 ) -> AgentTeamsManifest:
     runtime_mode = (
-        "agentteams-declarative-local" if settings.agentteams_enabled else "local-only"
+        "agentteams-assets-pending-live-apply" if settings.agentteams_enabled else "local-only"
     )
     return AgentTeamsManifest(
         framework="agentscope-ai/AgentTeams open-source runtime",
@@ -81,13 +82,17 @@ def build_agentteams_manifest(
         instance_id=settings.agentteams_instance_id,
         leader_worker_pattern=True,
         human_in_the_loop=True,
-        local_orchestrator="energymesh.orchestrator.EnergyMeshOrchestrator",
+        local_orchestrator=(
+            "energymesh.orchestrator.EnergyMeshOrchestrator "
+            "(domain simulator only; not AgentTeams control plane)"
+        ),
         import_assets_path="agentteams/",
         declarative_resources="agentteams/agentteams-resources.yaml",
         trace_actor_mapping=TRACE_ACTOR_MAPPING,
         workers=[
             AgentTeamsWorkerSpec(
                 worker_id="energymesh_team_leader",
+                resource_name="energymesh-team-leader",
                 display_name="EnergyMesh Team Leader",
                 role="意图理解、任务拆解、进度监控和人机协同入口",
                 soul_md="agentteams/team-leader/SOUL.md",
@@ -104,6 +109,7 @@ def build_agentteams_manifest(
             ),
             AgentTeamsWorkerSpec(
                 worker_id="perception_worker",
+                resource_name="perception-worker",
                 display_name="感知 Agent",
                 role="核验运行上下文、识别异常和重新定义调度任务",
                 soul_md="agentteams/workers/perception/SOUL.md",
@@ -114,6 +120,7 @@ def build_agentteams_manifest(
             ),
             AgentTeamsWorkerSpec(
                 worker_id="dispatch_worker",
+                resource_name="dispatch-worker",
                 display_name="调度 Agent",
                 role="根据新情况生成受限策略脚本草案和候选调度动作",
                 soul_md="agentteams/workers/dispatch/SOUL.md",
@@ -124,6 +131,7 @@ def build_agentteams_manifest(
             ),
             AgentTeamsWorkerSpec(
                 worker_id="audit_worker",
+                resource_name="audit-worker",
                 display_name="审核 Agent",
                 role="独立复算安全约束、收益和审批门槛",
                 soul_md="agentteams/workers/audit/SOUL.md",
@@ -134,6 +142,7 @@ def build_agentteams_manifest(
             ),
             AgentTeamsWorkerSpec(
                 worker_id="execution_worker",
+                resource_name="execution-worker",
                 display_name="执行 Agent",
                 role="把获批方案映射为幂等指令并模拟执行确认",
                 soul_md="agentteams/workers/execution/SOUL.md",
@@ -190,7 +199,7 @@ def build_agentteams_manifest(
                 "name": "energymesh-local-api",
                 "type": "http",
                 "base_url": "http://127.0.0.1:8000",
-                "status": "local_contract_ready",
+                "status": "openapi_domain_contract_only_not_live_mcp",
                 "production_write": False,
             }
         ],

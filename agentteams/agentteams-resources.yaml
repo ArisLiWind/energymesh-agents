@@ -1,79 +1,137 @@
+# AgentTeams v1beta1 resources.
+#
+# Apply order matters: Worker CRs first, then Human, then Team. The Team owns only membership and
+# collaboration context. Model, runtime, Skills, MCP access, package and lifecycle belong to each
+# standalone Worker CR, matching the current agentscope-ai/AgentTeams API.
+
 apiVersion: agentteams.io/v1beta1
-kind: Team
+kind: Worker
 metadata:
-  name: energymesh-park-control
+  name: energymesh-team-leader
 spec:
-  description: "EnergyMesh Agents team for observable, reusable, auditable park microgrid dispatch."
-  peerMentions: true
-  leader:
-    name: energymesh_team_leader
-    model: qwen-plus
-    runtime: openclaw
-    skills:
-      - microgrid_context_ingest
-      - dispatch_plan_generate
-      - dispatch_audit_verify
-      - execution_mapping
-      - approval_rollback
-    mcpServers:
-      - name: energymesh-local-api
-        url: http://127.0.0.1:8000/api/agentteams/manifest
-        transport: http
-    package: file://./agentteams/team-leader
-    soul: |
-      You are the EnergyMesh Team Leader. Decompose park microgrid dispatch tasks, coordinate the
-      perception, dispatch, audit, and execution Workers, and keep every safety-relevant action
-      visible in the AgentTeams Matrix rooms.
-  workers:
-    - name: perception_worker
-      model: qwen-plus
-      runtime: copaw
-      skills:
-        - microgrid_context_ingest
-      mcpServers:
-        - name: energymesh-local-api
-          url: http://127.0.0.1:8000/api/external/snapshot
-          transport: http
-      package: file://./agentteams/workers/perception
-    - name: dispatch_worker
-      model: qwen-plus
-      runtime: copaw
-      skills:
-        - dispatch_plan_generate
-      mcpServers:
-        - name: energymesh-local-api
-          url: http://127.0.0.1:8000/api/external/dispatch
-          transport: http
-      package: file://./agentteams/workers/dispatch
-    - name: audit_worker
-      model: qwen-plus
-      runtime: openclaw
-      skills:
-        - dispatch_audit_verify
-      mcpServers:
-        - name: energymesh-local-api
-          url: http://127.0.0.1:8000/api/tasks
-          transport: http
-      package: file://./agentteams/workers/audit
-    - name: execution_worker
-      model: qwen-plus
-      runtime: copaw
-      skills:
-        - execution_mapping
-        - approval_rollback
-      mcpServers:
-        - name: energymesh-local-api
-          url: http://127.0.0.1:8000/api/tasks
-          transport: http
-      package: file://./agentteams/workers/execution
+  workerName: energymesh-team-leader
+  model: qwen3.5-plus
+  runtime: openclaw
+  identity: >-
+    EnergyMesh Team Leader. Owns AgentTeams project planning, dynamic task DAGs, delegation,
+    progress supervision, revision, human escalation and final acceptance for park dispatch.
+  package: file://./agentteams/team-leader
+  skills:
+    - microgrid_context_ingest
+    - approval_rollback
+  mcpServers:
+    - energymesh-readonly
+    - energymesh-control
+  state: Running
+---
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: perception-worker
+spec:
+  workerName: perception-worker
+  model: qwen3.5-plus
+  runtime: copaw
+  identity: >-
+    Read-only energy context Worker. Validates telemetry, forecasts, tariffs, device state and
+    production constraints, and decides whether an existing plan remains valid.
+  package: file://./agentteams/workers/perception
+  skills:
+    - microgrid_context_ingest
+  mcpServers:
+    - energymesh-readonly
+  state: Running
+---
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: dispatch-worker
+spec:
+  workerName: dispatch-worker
+  model: qwen3.5-plus
+  runtime: copaw
+  identity: >-
+    Dispatch proposal Worker. Uses trusted snapshots and deterministic optimization tools to
+    produce versioned candidate plans, but cannot audit, approve or execute them.
+  package: file://./agentteams/workers/dispatch
+  skills:
+    - dispatch_plan_generate
+  mcpServers:
+    - energymesh-readonly
+    - energymesh-planning
+  state: Running
+---
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: audit-worker
+spec:
+  workerName: audit-worker
+  model: qwen3.5-plus
+  runtime: openclaw
+  identity: >-
+    Independent fail-closed audit Worker. Recomputes physical, production, authorization and
+    baseline-improvement constraints without accepting the Dispatch Worker's conclusions.
+  package: file://./agentteams/workers/audit
+  skills:
+    - dispatch_audit_verify
+  mcpServers:
+    - energymesh-readonly
+    - energymesh-audit
+  state: Running
+---
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: execution-worker
+spec:
+  workerName: execution-worker
+  model: qwen3.5-plus
+  runtime: copaw
+  identity: >-
+    Simulation-only execution Worker. Accepts only the currently audited and, when required,
+    human-approved plan version; verifies readback and requests rollback on deviation.
+  package: file://./agentteams/workers/execution
+  skills:
+    - execution_mapping
+    - approval_rollback
+  mcpServers:
+    - energymesh-readonly
+    - energymesh-control
+  state: Running
 ---
 apiVersion: agentteams.io/v1beta1
 kind: Human
 metadata:
   name: park-operator
 spec:
-  displayName: "Park Operator"
+  displayName: Park Operator
   email: operator@example.com
   permissionLevel: 2
   accessibleTeams:
     - energymesh-park-control
+  accessibleWorkers: []
+  note: Human approver for production-impacting or otherwise high-risk dispatch actions.
+---
+apiVersion: agentteams.io/v1beta1
+kind: Team
+metadata:
+  name: energymesh-park-control
+spec:
+  teamName: energymesh-park-control
+  description: >-
+    AgentTeams-native park energy decision team with dynamic delegation, independent audit,
+    human approval, execution verification and rollback.
+  heartbeatEvery: 5m
+  peerMentions: true
+  workerMembers:
+    - name: energymesh-team-leader
+      role: team_leader
+    - name: perception-worker
+      role: worker
+    - name: dispatch-worker
+      role: worker
+    - name: audit-worker
+      role: worker
+    - name: execution-worker
+      role: worker

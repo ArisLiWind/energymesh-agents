@@ -1,16 +1,21 @@
 {
   "framework": "agentscope-ai/AgentTeams",
+  "api_version": "agentteams.io/v1beta1",
   "framework_repository": "https://github.com/agentscope-ai/AgentTeams",
   "declarative_resources": "agentteams/agentteams-resources.yaml",
   "team_name": "energymesh-park-control",
-  "pattern": "leader-worker",
+  "coordination_owner": "AgentTeams Team Leader",
+  "domain_tools_owner": "EnergyMesh MCP backends",
   "human_in_the_loop": true,
-  "leader": "energymesh_team_leader",
+  "leader": {
+    "resource": "energymesh-team-leader",
+    "role": "team_leader"
+  },
   "workers": [
-    "perception_worker",
-    "dispatch_worker",
-    "audit_worker",
-    "execution_worker"
+    "perception-worker",
+    "dispatch-worker",
+    "audit-worker",
+    "execution-worker"
   ],
   "skills": [
     "microgrid_context_ingest",
@@ -19,12 +24,11 @@
     "execution_mapping",
     "approval_rollback"
   ],
-  "mcp_servers": [
-    {
-      "name": "energymesh-local-api",
-      "type": "http",
-      "base_url": "http://127.0.0.1:8000",
-      "production_write": false
-    }
-  ]
+  "planned_higress_mcp_servers": [
+    "energymesh-readonly",
+    "energymesh-planning",
+    "energymesh-audit",
+    "energymesh-control"
+  ],
+  "runtime_status": "assets_pending_live_agentteams_apply"
 }

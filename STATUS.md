@@ -4,6 +4,14 @@ Updated: 2026-08-29
 
 ## Implemented
 
+- Current AgentTeams `agentteams.io/v1beta1` resource shape with five standalone Worker CRs, one
+  Level-2 Human CR, and a Team that references exactly one Team Leader plus four Workers through
+  `spec.workerMembers`.
+- AgentTeams-native coordination contracts: the Team Leader owns a dynamic dependency-aware task
+  DAG, Worker delegation/progress/revision/acceptance, Human intervention and stalled-task
+  handling; EnergyMesh APIs are explicitly limited to domain-tool responsibilities.
+- Per-Worker packaged Energy Skill assets under each `package` directory, plus planned
+  least-privilege Higress MCP server separation for read, planning, audit and control scopes.
 - Official OpenCEM CUHK-Shenzhen real PV-and-battery microgrid CSV replay, with an unmodified,
   checksum-pinned public measurement partition and explicit CC BY 4.0 attribution.
 - Shared `ExternalDataSnapshot` normalization boundary for uploaded history and future read-only
@@ -48,6 +56,10 @@ Updated: 2026-08-29
 
 ## Next
 
+- Apply the v1beta1 Worker/Human/Team resources to a live official AgentTeams runtime and capture
+  Matrix, shared-task, Worker status, Human event and terminal-state evidence for one decision.
+- Implement and register the `energymesh-readonly`, `energymesh-planning`, `energymesh-audit` and
+  `energymesh-control` MCP servers behind Higress with per-Worker consumer authorization.
 - Add authenticated users and signed approval records.
 - Add forecast uncertainty bands and rolling-horizon re-optimization.
 - Evaluate against multiple seasons and measured-but-anonymized benchmark profiles.
@@ -59,8 +71,13 @@ Updated: 2026-08-29
 
 ## Known limitations
 
-- The `agentscope-ai/AgentTeams` runtime is referenced through declarative resources and Worker
-  packages, but this host has not completed a live AgentTeams install/apply cycle yet.
+- The `agentscope-ai/AgentTeams` runtime is represented by current v1beta1 declarative resources,
+  Worker packages and dynamic coordination contracts, but this host has not completed a live
+  AgentTeams install/apply cycle. Local Python orchestration is domain simulation evidence only,
+  not AgentTeams collaboration evidence.
+- The four named EnergyMesh MCP servers in Worker specs are planned authorization boundaries; the
+  repository still exposes FastAPI/OpenAPI domain contracts rather than live discoverable MCP
+  servers routed through Higress.
 - No live MCP Server, production database, cloud account, or physical equipment is connected.
 - Alibaba Cloud Skills/Nacos/Higress/PolarDB/RocketMQ/AgentLoop are documented as integration
   contracts and migration targets, not active cloud resources in the local MVP.
