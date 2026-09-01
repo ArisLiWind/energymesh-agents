@@ -12,22 +12,46 @@
 [AgentTeams 资源](agentteams/) · [架构](ARCHITECTURE.md) · [当前状态](STATUS.md) ·
 [安全边界](SECURITY.md)
 
-## 核心价值主张
 
-EnergyMesh Demo 不应该证明“界面里有很多 Agent”，而应该反复证明一件事：
 
-**AI 可以比传统人工调度更有效地使用能源，从而持续降低能源成本。**
+## 我们想解决什么问题
 
-因此产品展示、3D 沙盘、聊天、Worker 分工和证据板都必须服务于同一个闭环：
+大型园区、算力中心和工业微电网的调度失败和低效，通常是因为现实用户需求的多样性和现实运行在持续
+变化：用户的生产需求，售电供电需求业务实际需求的改变，客观现实例如天气突变会让光伏预测失效，生产订单会临时改变负荷，分时电价和需量电费会放大错误决策，储能 SOC、
+变压器温度、并网功率和关键产线保供又给调度加上硬约束。
 
-1. 接入真实或可复现的园区时序数据，形成一天 96 个 15 分钟时段的运行账本。
-2. 先展示原方案如何发电、存电、用电、购电，以及浪费和额外成本如何产生。
-3. 用户和 Team Leader 正常对话；只有明确要优化、预览、采用或执行时，才进入 AgentTeams 调度任务。
-4. AgentTeams 的 Perception、Dispatch、Audit、Execution Worker 在真实 Team Room 中协作，并把产物写入共享任务/证据。
-5. UI 只展示由真实运行时产生的思考、拆解、Worker 加入、方案预览、人工审批和执行回读事件。
-6. 最终用成本降低、弃电下降、购电峰值下降、SOC 安全、执行回读和 SHA-256 evidence 证明改善。
+传统 EMS 或人工排班常见的问题是制定调度代码需要收集多方信息，一次制定后修改麻烦，用来制定的 计划、预测、电价、设备状态和审批记录这些信息分散在不同系统里；旧计划持续判断并且微调优化非常耗费人工；这些问题会带来真实代价：高峰错付、光伏弃电、储能过充过放、关键负荷误削、
+生产返工、设备热风险和审计不可追溯。
 
-## Live AgentTeams 是硬要求
+EnergyMesh 要解决的是持续利用Ai和Agent通过负责拆分数据采集 审批等等信息，持续优化调度和应对客户的个性化需求，持续保持电力调度的最高效率。
+
+
+## 我们是如何解决的
+
+EnergyMesh Agents 采用 AgentTeams 作为协同底座，多个Agent分工持续实现调度计划的有效监测，并且持续优化。
+
+AgentTeams 在系统中承担任务组织和责任分离：
+
+- Team Leader 根据告警、上传数据或人工目标创建调度任务，维护任务 DAG、上下文版本和终态验收。
+- Perception Agent 只读 EMS/BMS/PCS/气象/MES 数据，判断旧计划是否失效，并输出可信 `context_hash`。
+- Dispatch Agent 在可信上下文上调用优化器生成候选计划，但无权审批或执行。
+- Audit Agent 独立复算 SOC、变压器、并网、生产连续性和收益，危险方案默认拒绝。
+- Human gate 只在高风险动作、柔性负荷影响或数据冲突时进入链路，审批绑定当前 `task_version` 和
+  `context_hash`。
+- Execution Agent 只执行当前获批版本，生成幂等命令、模拟回执和执行后偏差校验。
+
+这套结构让系统能动态协作：如果数据正常，Leader 保持监控而不打扰 Worker；如果天气、电价、负荷或设备状态
+突变，旧 plan_version 被废止，Dispatch 重新生成候选，Audit 重新审核，必要时再次请求人工审批；如果执行
+回读偏差超限，系统进入 rollback 并创建新的感知任务。
+
+当前仓库包含两层能力：
+
+| 层级 | 当前实现 | 评审口径 |
+| --- | --- | --- |
+| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 正式高分证据必须来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
+| 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，但不能替代 AgentTeams 协作证据 |
+
+## Live AgentTeams 
 
 本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，FastAPI 聊天入口不会再把本地 Python 顺序流水线包装成“多 Agent”。如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误，而不是继续假装 Worker 已经协作。
 
@@ -60,42 +84,6 @@ curl http://127.0.0.1:8000/api/agentteams/runtime
 如果不希望在本机安装 Docker，推荐把 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
 
 `/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 event stream bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有事件流就不展示这些状态。
-
-## 我们想解决什么问题
-
-大型园区、算力中心和工业微电网的调度失败和低效，通常是因为现实用户需求的多样性和现实运行在持续
-变化：用户的生产需求，售电供电需求业务实际需求的改变，客观现实例如天气突变会让光伏预测失效，生产订单会临时改变负荷，分时电价和需量电费会放大错误决策，储能 SOC、
-变压器温度、并网功率和关键产线保供又给调度加上硬约束。
-
-传统 EMS 或人工排班常见的问题是制定调度代码需要收集多方信息，一次制定后修改麻烦，用来制定的 计划、预测、电价、设备状态和审批记录这些信息分散在不同系统里；旧计划持续判断并且微调优化非常耗费人工；这些问题会带来真实代价：高峰错付、光伏弃电、储能过充过放、关键负荷误削、
-生产返工、设备热风险和审计不可追溯。
-
-EnergyMesh 要解决的是持续利用Ai和Agent通过负责拆分数据采集 审批等等信息，持续优化调度和应对客户的个性化需求，持续保持电力调度的最高效率。
-
-## 我们是如何解决的
-
-EnergyMesh Agents 采用 AgentTeams 作为协同底座，多个Agent分工持续实现调度计划的有效监测，并且持续优化。
-
-AgentTeams 在系统中承担任务组织和责任分离：
-
-- Team Leader 根据告警、上传数据或人工目标创建调度任务，维护任务 DAG、上下文版本和终态验收。
-- Perception Agent 只读 EMS/BMS/PCS/气象/MES 数据，判断旧计划是否失效，并输出可信 `context_hash`。
-- Dispatch Agent 在可信上下文上调用优化器生成候选计划，但无权审批或执行。
-- Audit Agent 独立复算 SOC、变压器、并网、生产连续性和收益，危险方案默认拒绝。
-- Human gate 只在高风险动作、柔性负荷影响或数据冲突时进入链路，审批绑定当前 `task_version` 和
-  `context_hash`。
-- Execution Agent 只执行当前获批版本，生成幂等命令、模拟回执和执行后偏差校验。
-
-这套结构让系统能动态协作：如果数据正常，Leader 保持监控而不打扰 Worker；如果天气、电价、负荷或设备状态
-突变，旧 plan_version 被废止，Dispatch 重新生成候选，Audit 重新审核，必要时再次请求人工审批；如果执行
-回读偏差超限，系统进入 rollback 并创建新的感知任务。
-
-当前仓库包含两层能力：
-
-| 层级 | 当前实现 | 评审口径 |
-| --- | --- | --- |
-| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 正式高分证据必须来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
-| 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，但不能替代 AgentTeams 协作证据 |
 
 ## 场景价值与完成条件
 
