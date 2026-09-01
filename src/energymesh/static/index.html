@@ -89,7 +89,7 @@
           <div class="chat-head">
             <div>
               <span id="active-agent-role">EnergyMesh Team Leader</span>
-              <strong id="active-agent-name">和你一起调园区电流</strong>
+              <strong id="active-agent-name">Team Leader</strong>
             </div>
             <button id="active-agent-gateway" class="mini-close gateway-open" type="button" aria-label="Open model gateway" title="Model gateway">⚙</button>
           </div>
@@ -505,10 +505,23 @@
           <button id="connect-energy-source" class="full-width" type="button">接入园区系统数据</button>
           <div class="upload-section">
             <button id="upload-energy-data" class="secondary" type="button">选择历史 CSV</button>
-            <div class="speed-toggle" id="speed-toggle">
-              <span>回放速度：</span>
-              <button id="speed-normal" class="active" type="button">实时（15分钟/秒）</button>
-              <button id="speed-virtual" type="button">快速（1秒/步）</button>
+            <div class="replay-control" id="replay-control">
+              <div class="replay-head">
+                <span>园区时间回放</span>
+                <strong id="replay-readout">等待 CSV</strong>
+              </div>
+              <input id="replay-slider" type="range" min="0" max="95" value="0" />
+              <div class="replay-modes" id="replay-modes">
+                <button type="button" data-replay-mode="pause">暂停</button>
+                <button class="active" type="button" data-replay-mode="real">真实 24h</button>
+                <button type="button" data-replay-mode="demo">演示</button>
+                <button type="button" data-replay-mode="fast">快速</button>
+              </div>
+            </div>
+            <div class="ems-adapter-list">
+              <article><span>EMS</span><strong>REST / OPC UA</strong><small>负荷、购电、功率计划</small></article>
+              <article><span>BMS / PCS</span><strong>只读遥测</strong><small>SOC、充放电功率、告警</small></article>
+              <article><span>Tariff</span><strong>分时电价</strong><small>电价版本进入 context_hash</small></article>
             </div>
           </div>
           <div class="connector-status">

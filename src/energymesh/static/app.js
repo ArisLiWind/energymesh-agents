@@ -16,6 +16,9 @@ const state = {
   language: "en",
   chartTick: 56,
   liveTimer: null,
+  replayTimer: null,
+  replayCursor: null,
+  replayMode: window.localStorage.getItem("energymesh.replayMode") || "real",
   activeHistory: "new",
   activeScenario: null,
   agentThreads: {},
@@ -72,7 +75,7 @@ const agentProfiles = {
     name: "EnergyMesh Team Leader",
     nameZh: "EnergyMesh Team Leader",
     role: "Tunes the live energy sandbox with you",
-    roleZh: "和你一起调园区电流",
+    roleZh: "园区调度负责人",
     defaultModel: "deepseek-chat",
     initials: "EM",
     avatar: "/static/avatars/perception.svg",
@@ -1931,6 +1934,8 @@ function snapshotAtCurrentCursor() {
   let cursor;
   if (state.parallel?.running) {
     cursor = Math.max(0, state.parallel.cursor - 1);
+  } else if (state.replayCursor != null) {
+    cursor = state.replayCursor;
   } else {
     cursor = state.monitor?.cursor ?? state.energySnapshot.current_interval ?? 0;
   }
@@ -2009,6 +2014,70 @@ function startLiveCharts() {
     state.chartTick = (state.chartTick + 1) % 96;
     if (!$(".home-view").hidden) drawHomeCharts();
   }, 1200);
+}
+
+function startCampusReplay({ reset = false } = {}) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  if (!telemetry.length) return;
+  if (reset || state.replayCursor == null) {
+    state.replayCursor = Math.min(
+      Math.max(Number(state.energySnapshot.current_interval) || 0, 0),
+      telemetry.length - 1,
+    );
+  }
+  if (state.replayTimer) window.clearInterval(state.replayTimer);
+  state.replayTimer = null;
+  applySnapshotToCampus();
+  renderPowerChart();
+  renderDailyLedger();
+  renderReplayControl();
+  if (state.replayMode === "pause") return;
+  const intervalMs = state.replayMode === "real" ? 15 * 60 * 1000 : state.replayMode === "demo" ? 5000 : 800;
+  state.replayTimer = window.setInterval(() => {
+    if (!state.energySnapshot || state.parallel?.running) return;
+    const points = state.energySnapshot.telemetry || [];
+    if (!points.length) return;
+    state.replayCursor = ((Number(state.replayCursor) || 0) + 1) % points.length;
+    state.energySnapshot.current_interval = state.replayCursor;
+    state.chartTick = state.replayCursor;
+    localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+    applySnapshotToCampus();
+    renderPowerChart();
+    renderDailyLedger();
+    renderReplayControl();
+  }, intervalMs);
+}
+
+function setReplayCursor(cursor) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  if (!telemetry.length) return;
+  state.replayCursor = Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1);
+  state.energySnapshot.current_interval = state.replayCursor;
+  state.chartTick = state.replayCursor;
+  localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+  applySnapshotToCampus();
+  renderPowerChart();
+  renderDailyLedger();
+  renderReplayControl();
+}
+
+function renderReplayControl() {
+  const slider = $("#replay-slider");
+  const readout = $("#replay-readout");
+  const telemetry = state.energySnapshot?.telemetry || [];
+  if (slider) {
+    slider.max = String(Math.max(0, telemetry.length - 1));
+    slider.value = String(Math.min(Number(state.replayCursor) || 0, Math.max(0, telemetry.length - 1)));
+    slider.disabled = !telemetry.length;
+  }
+  if (readout) {
+    const point = telemetry[Number(state.replayCursor) || 0];
+    const modeText = state.replayMode === "real" ? "真实 24h" : state.replayMode === "demo" ? "演示" : state.replayMode === "fast" ? "快速" : "暂停";
+    readout.textContent = point ? `${String(Number(state.replayCursor) + 1).padStart(2, "0")}/${telemetry.length} · ${formatSnapshotTime(point.timestamp)} · ${modeText}` : "等待 CSV";
+  }
+  $$("[data-replay-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.replayMode === state.replayMode);
+  });
 }
 
 function updateAssetLabels(labels) {
@@ -3535,13 +3604,16 @@ async function uploadEnergyCsv(file) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "CSV upload failed");
     state.energySnapshot = body;
+    state.replayMode = window.localStorage.getItem("energymesh.replayMode") || "real";
+    state.replayCursor = body.current_interval || 0;
     applySnapshotToCampus();
+    startCampusReplay({ reset: true });
     renderDailyLedger();
     setConnectorStatus(
-      `历史数据已上传：${body.environment_signals.raw_rows} 条测量已归一化，等待连接测试`,
-      [{ kind: "TEST_DATA_READY", detail: "点击“测试历史数据连接”确认 96 个时段可读后，再开始全天运行。" }],
+      `历史数据已上传：${body.environment_signals.raw_rows} 条测量已归一化，右侧园区已开始按所选速度回放`,
+      [{ kind: "TEST_DATA_RUNNING", detail: "CSV 已成为当前 world_state；滑块可选择时段，速度可选真实 24h/演示/快速。" }],
     );
-    toast("历史数据已上传，请先测试连接");
+    toast("历史数据已上传，园区开始按 96 时段流动");
   } catch (error) {
     toast(error.message);
   }
@@ -3562,11 +3634,13 @@ async function testDemoDataConnection() {
   try {
     const snapshot = await request("/api/data/snapshot/current");
     state.energySnapshot = snapshot;
+    state.replayCursor = snapshot.current_interval || 0;
     setConnectorStatus(
       `测试数据连接成功：${snapshot.source}，${snapshot.telemetry.length} 个 15 分钟时段`,
       [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区开始全天用电回放。" }],
     );
     applySnapshotToCampus();
+    startCampusReplay({ reset: true });
     renderDailyLedger();
     toast("测试数据连接成功，开始全天运行");
     $("#connector-dialog").close();
@@ -3722,15 +3796,19 @@ function setupEvents() {
       toast("真实园区连接失败");
     }
   });
-  $("#speed-normal").addEventListener("click", () => {
-    state.speedMode = "normal";
-    $("#speed-normal").classList.add("active");
-    $("#speed-virtual").classList.remove("active");
+  $("#replay-slider")?.addEventListener("input", (event) => {
+    state.replayMode = "pause";
+    window.localStorage.setItem("energymesh.replayMode", state.replayMode);
+    if (state.replayTimer) window.clearInterval(state.replayTimer);
+    state.replayTimer = null;
+    setReplayCursor(event.currentTarget.value);
   });
-  $("#speed-virtual").addEventListener("click", () => {
-    state.speedMode = "virtual";
-    $("#speed-virtual").classList.add("active");
-    $("#speed-normal").classList.remove("active");
+  $$("[data-replay-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.replayMode = button.dataset.replayMode || "real";
+      window.localStorage.setItem("energymesh.replayMode", state.replayMode);
+      startCampusReplay();
+    });
   });
   $("#nav-connect").addEventListener("click", () => {
     setWorkspaceMode("nav-connect");
@@ -3838,7 +3916,12 @@ applyLanguage(window.localStorage.getItem("energymesh.language") === "zh" ? "zh"
 restoreLatestDemo();
 const savedSnapshot = localStorage.getItem("energymesh.savedSnapshot");
 if (savedSnapshot) {
-  try { state.energySnapshot = JSON.parse(savedSnapshot); applySnapshotToCampus(); } catch(e) {}
+  try {
+    state.energySnapshot = JSON.parse(savedSnapshot);
+    state.replayCursor = state.energySnapshot.current_interval || 0;
+    applySnapshotToCampus();
+    startCampusReplay();
+  } catch(e) {}
 }
 restoreEnergyDataConnection();
 // Restore parallel simulation from localStorage only after CSV/Snapshot exists.
@@ -3849,6 +3932,7 @@ if (savedParallel && state.energySnapshot) {
   localStorage.removeItem("energymesh.parallelState");
 }
 renderPlanLedger();
+renderReplayControl();
 restoreAgentTeamsTaskMirror();
 // Restore chat history from localStorage
 const savedThreads = localStorage.getItem("energymesh.agentThreads");
