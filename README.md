@@ -53,7 +53,7 @@ AgentTeams 在系统中承担任务组织和责任分离：
 
 ## Live AgentTeams 
 
-本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，FastAPI 聊天入口不会再把本地 Python 顺序流水线包装成“多 Agent”。如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误，而不是继续假装 Worker 已经协作。
+本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误。
 
 真实运行必须准备：
 
