@@ -57,6 +57,8 @@ scripts/agentteams_runtime_check.sh
 curl http://127.0.0.1:8000/api/agentteams/runtime
 ```
 
+如果不希望在本机安装 Docker，推荐把 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
+
 `/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 event stream bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有事件流就不展示这些状态。
 
 ## 我们想解决什么问题
