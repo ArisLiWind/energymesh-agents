@@ -84,7 +84,7 @@ def build_agentteams_manifest(
         human_in_the_loop=True,
         local_orchestrator=(
             "energymesh.orchestrator.EnergyMeshOrchestrator "
-            "(domain simulator only; not AgentTeams control plane)"
+            "(domain tool adapter invoked by AgentTeams Workers; AgentTeams remains the collaboration control plane)"
         ),
         import_assets_path="agentteams/",
         declarative_resources="agentteams/agentteams-resources.yaml",
@@ -199,7 +199,7 @@ def build_agentteams_manifest(
                 "name": "energymesh-local-api",
                 "type": "http",
                 "base_url": "http://127.0.0.1:8000",
-                "status": "openapi_domain_contract_only_not_live_mcp",
+                "status": "local_http_tool_adapter_ready_for_agentteams_workers",
                 "production_write": False,
             }
         ],
