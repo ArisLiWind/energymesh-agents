@@ -107,7 +107,6 @@ Element 和 EnergyMesh 的关系：
 | AgentTeams Element | 原生 Matrix/Team Room，证明 Worker、任务房间、提交、验收真实存在 | 
 | EnergyMesh 白色 UI | 园区电力调度主界面，展示电流流动、成本、浪费、审批和执行 | 
 
-评委质疑“这是不是前端动画”时，用同一个 `project_id / task_id / room_id / worker_id` 在 Element 和 EnergyMesh 里对上即可。
 
 本仓库默认 `AGENTTEAMS_LIVE_REQUIRED=true`。也就是说，如果官方 AgentTeams runtime 没准备好，`/api/runtime/chat` 和 `/api/runtime/chat/stream` 会返回明确错误。
 
@@ -115,40 +114,10 @@ DeepSeek 或其他 OpenAI-compatible 模型配置在 AgentTeams Manager/Worker r
 Team Leader 网关中，不配置在 Element。Element 是 AgentTeams 的 Matrix 聊天客户端，只显示房间、消息和
 Worker 协作记录；真正调用模型的是 AgentTeams manager/worker 容器。
 
-真实运行必须准备：
-
-```bash
-# 1. 安装并启动 Docker Desktop
-docker ps
-
-# 2. 安装官方 AgentTeams
-git clone https://github.com/agentscope-ai/AgentTeams.git
-cd AgentTeams
-AGENTTEAMS_LLM_API_KEY=<your-model-key> make install
-
-# 3. 回到 EnergyMesh 仓库，创建真实 Worker/Human/Team
-scripts/setup_live_agentteams.sh
-
-# 4. 配置 FastAPI 到 AgentTeams Team Room
-export AGENTTEAMS_LIVE_REQUIRED=true
-export AGENTTEAMS_TEAM_ROOM_ID=<matrix-room-id-created-by-agentteams>
-export AGENTTEAMS_MATRIX_BASE_URL=<matrix-client-base-url>
-export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token-for-fastapi-bridge>
-# 可选：如果没有专用 SSE bridge，EnergyMesh 会直接轮询 Matrix Team Room
-export AGENTTEAMS_EVENT_STREAM_URL=<optional-agentteams-event-sse-url>
-
-# 5. 验证 EnergyMesh 只认真实 runtime
-scripts/agentteams_runtime_check.sh
-curl http://127.0.0.1:8000/api/agentteams/runtime
-```
-
-如果不希望在本机安装 Docker，推荐把 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
-
-`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 Matrix bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有真实事件就不展示这些状态。
 
 ### Codespaces 最小演示环境
 
-本项目已经在 GitHub Codespaces 跑通过一次真实 AgentTeams 最小环境。证据见 [`evidence/agentteams-codespaces-proof.md`](evidence/agentteams-codespaces-proof.md)。
+本项目已经在 GitHub Codespaces 跑通真实 AgentTeams 最小环境。证据见 [`evidence/agentteams-codespaces-proof.md`](evidence/agentteams-codespaces-proof.md)。
 
 已验证的最小结构：
 
@@ -229,6 +198,41 @@ Homeserver:
 ```text
 http://127.0.0.1:18080
 ```
+
+
+
+
+真实运行必须准备：
+
+```bash
+# 1. 安装并启动 Docker Desktop
+docker ps
+
+# 2. 安装官方 AgentTeams
+git clone https://github.com/agentscope-ai/AgentTeams.git
+cd AgentTeams
+AGENTTEAMS_LLM_API_KEY=<your-model-key> make install
+
+# 3. 回到 EnergyMesh 仓库，创建真实 Worker/Human/Team
+scripts/setup_live_agentteams.sh
+
+# 4. 配置 FastAPI 到 AgentTeams Team Room
+export AGENTTEAMS_LIVE_REQUIRED=true
+export AGENTTEAMS_TEAM_ROOM_ID=<matrix-room-id-created-by-agentteams>
+export AGENTTEAMS_MATRIX_BASE_URL=<matrix-client-base-url>
+export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token-for-fastapi-bridge>
+# 可选：如果没有专用 SSE bridge，EnergyMesh 会直接轮询 Matrix Team Room
+export AGENTTEAMS_EVENT_STREAM_URL=<optional-agentteams-event-sse-url>
+
+# 5. 验证 EnergyMesh 只认真实 runtime
+scripts/agentteams_runtime_check.sh
+curl http://127.0.0.1:8000/api/agentteams/runtime
+```
+
+如果不希望在本机安装 Docker，也可以 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
+
+`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 Matrix bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有真实事件就不展示这些状态。
+
 
 ### 启动 EnergyMesh 白色 UI 并接 AgentTeams
 
