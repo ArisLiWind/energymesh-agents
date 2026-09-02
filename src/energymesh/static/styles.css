@@ -684,6 +684,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   animation: spin .8s linear infinite;
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .agentteams-task-panel {
   margin: 0 22px 12px;
   padding: 12px;
@@ -749,53 +753,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   white-space: nowrap;
 }
 
-.agentteams-stage-list {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.agentteams-stage-list article {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 7px;
-  border: 1px solid #e4e7ec;
-  border-radius: 5px;
-  background: #fff;
-  color: #667085;
-  font-size: 10px;
-}
-
-.agentteams-stage-list article i {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: #d0d5dd;
-}
-
-.agentteams-stage-list article.active {
-  border-color: #93c5fd;
-  color: #1d4ed8;
-}
-
-.agentteams-stage-list article.active i {
-  background: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
-}
-
-.agentteams-stage-list article.done {
-  border-color: #a7f3d0;
-  color: #047857;
-}
-
-.agentteams-stage-list article.done i {
-  background: #10b981;
-}
-
 .agentteams-timeline {
   max-height: 110px;
   overflow: auto;
@@ -812,10 +769,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .agentteams-timeline strong {
   color: #111827;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .chat-message {
@@ -2802,59 +2755,34 @@ pre {
   white-space: nowrap;
 }
 
-#replay-slider {
+.replay-row {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.replay-row span {
+  color: #8b94a4;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+#replay-slider,
+#replay-speed-slider {
   width: 100%;
   accent-color: #4f7cff;
 }
 
-.replay-modes {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.replay-modes button {
-  min-height: 32px;
-  border: 1px solid #343b49;
-  border-radius: 6px;
-  background: #151821;
-  color: #b9beca;
-  font-size: 11px;
-  font-weight: 760;
-}
-
-.replay-modes button.active {
-  border-color: #4f7cff;
-  background: #20356c;
-  color: #fff;
-}
-
-.ems-adapter-list {
-  display: grid;
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.ems-adapter-list article {
-  padding: 8px 9px;
-  border: 1px solid #293141;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, .04);
-}
-
-.ems-adapter-list span,
-.ems-adapter-list small {
-  display: block;
+.replay-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
   color: #8b94a4;
   font-size: 11px;
-}
-
-.ems-adapter-list strong {
-  display: block;
-  margin: 2px 0;
-  color: #edf0f7;
-  font-size: 12px;
+  font-weight: 720;
 }
 
 /* ===== power chart section ===== */

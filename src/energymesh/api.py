@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, cast
@@ -92,8 +93,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     monitor = ReplayMonitor(orchestrator, rolling_decision)
 
+    def replay_status_for(snapshot: ExternalDataSnapshot | None) -> dict[str, object]:
+        if snapshot is None or not snapshot.telemetry:
+            return {
+                "running": False,
+                "paused": True,
+                "current_interval": 0,
+                "speed_multiplier": 1.0,
+                "total_intervals": 0,
+            }
+        total = len(snapshot.telemetry)
+        speed = max(0.0, float(getattr(app.state, "replay_speed_multiplier", 1.0)))
+        anchor = min(max(int(getattr(app.state, "replay_anchor_interval", snapshot.current_interval)), 0), total - 1)
+        started_at = float(getattr(app.state, "replay_started_at", time.time()))
+        paused = bool(getattr(app.state, "replay_paused", False))
+        if paused or speed <= 0:
+            cursor = anchor
+        else:
+            elapsed = max(0.0, time.time() - started_at)
+            # Telemetry is quarter-hourly; speed=1 follows the real 24h day.
+            steps = int((elapsed * speed) // (15 * 60))
+            cursor = (anchor + steps) % total
+        snapshot.current_interval = cursor
+        point = snapshot.telemetry[cursor]
+        return {
+            "running": not paused,
+            "paused": paused,
+            "current_interval": cursor,
+            "speed_multiplier": speed,
+            "total_intervals": total,
+            "timestamp": point.timestamp.isoformat(),
+            "source": snapshot.source,
+        }
+
     def current_world_state() -> dict[str, object] | None:
         snapshot: ExternalDataSnapshot | None = app.state.uploaded_snapshot
+        replay = replay_status_for(snapshot)
         status = monitor.status()
         current = status.get("current")
         cursor = status.get("cursor") if status.get("current") else snapshot.current_interval if snapshot else 0
@@ -167,6 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "bms": "from_uploaded_snapshot",
                 "mes": "simulation",
             },
+            "replay_clock": replay,
         }
 
     direct_runtime = DirectLeaderRuntime(store)
@@ -186,6 +222,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.snapshot_factory = snapshot_factory
     app.state.monitor = monitor
     app.state.uploaded_snapshot = None
+    app.state.replay_started_at = time.time()
+    app.state.replay_anchor_interval = 0
+    app.state.replay_speed_multiplier = 1.0
+    app.state.replay_paused = False
     app.state.parallel_sim = ParallelSimulator(orchestrator, store)
     app.state.live_agentteams_runtime = LiveAgentTeamsRuntime(
         store, active_settings.agentteams_team_name, current_world_state
@@ -469,6 +509,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except EnergyDataError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         request.app.state.uploaded_snapshot = snapshot
+        request.app.state.replay_started_at = time.time()
+        request.app.state.replay_anchor_interval = snapshot.current_interval
+        request.app.state.replay_speed_multiplier = 1.0
+        request.app.state.replay_paused = False
+        return snapshot
+
+    @app.post("/api/data/snapshot/restore", response_model=ExternalDataSnapshot)
+    def restore_uploaded_snapshot(
+        request: Request, snapshot: ExternalDataSnapshot
+    ) -> ExternalDataSnapshot:
+        request.app.state.uploaded_snapshot = snapshot
+        request.app.state.replay_started_at = time.time()
+        request.app.state.replay_anchor_interval = snapshot.current_interval
+        request.app.state.replay_speed_multiplier = max(
+            0.0, float(getattr(request.app.state, "replay_speed_multiplier", 1.0))
+        )
+        request.app.state.replay_paused = False
         return snapshot
 
     @app.get("/api/data/snapshot/current", response_model=ExternalDataSnapshot)
@@ -478,7 +535,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=404, detail="no normalized Snapshot is loaded"
             )
+        replay_status_for(snapshot)
         return snapshot
+
+    @app.get("/api/data/replay")
+    def get_replay_clock(request: Request) -> dict[str, object]:
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        return replay_status_for(snapshot)
+
+    @app.put("/api/data/replay")
+    async def update_replay_clock(request: Request) -> dict[str, object]:
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        if snapshot is None or not snapshot.telemetry:
+            raise HTTPException(status_code=404, detail="no normalized Snapshot is loaded")
+        body = await request.json()
+        current = replay_status_for(snapshot)["current_interval"]
+        if "current_interval" in body:
+            current = min(max(int(body["current_interval"]), 0), len(snapshot.telemetry) - 1)
+        if "speed_multiplier" in body:
+            request.app.state.replay_speed_multiplier = max(0.0, float(body["speed_multiplier"]))
+        if "paused" in body:
+            request.app.state.replay_paused = bool(body["paused"])
+        request.app.state.replay_anchor_interval = int(current)
+        request.app.state.replay_started_at = time.time()
+        snapshot.current_interval = int(current)
+        return replay_status_for(snapshot)
 
     @app.post("/api/monitor/start")
     def start_monitor(request: Request, start_interval: int = 20) -> dict[str, object]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -10,7 +11,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from urllib import request as urlrequest
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from uuid import uuid4
 
 from energymesh.models import (
@@ -484,7 +486,7 @@ class LiveAgentTeamsRuntime:
                 "team_name": self.team_name,
                 "source": "fastapi_runtime_chat",
                 "intent": "dispatch_or_execution",
-                "world_state": world_state,
+                "world_state": self._matrix_safe_value(world_state),
                 "required_workers": [
                     "perception_worker",
                     "dispatch_worker",
@@ -506,9 +508,10 @@ class LiveAgentTeamsRuntime:
             },
         }
         txn_id = uuid4().hex
+        encoded_room_id = quote(self.team_room_id, safe="")
         url = (
             f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
-            f"{self.team_room_id}/send/m.room.message/{txn_id}"
+            f"{encoded_room_id}/send/m.room.message/{txn_id}"
             f"?access_token={self.matrix_access_token}"
         )
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -517,8 +520,30 @@ class LiveAgentTeamsRuntime:
             with urlrequest.urlopen(req, timeout=12) as response:
                 if response.status >= 300:
                     raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed with HTTP {response.status}.")
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:400]
+            raise LiveAgentTeamsRuntimeError(
+                f"Matrix Team Room send failed: HTTP {error.code} {detail}"
+            ) from error
         except URLError as error:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
+
+    def _matrix_safe_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): self._matrix_safe_value(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._matrix_safe_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._matrix_safe_value(item) for item in value]
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                return None
+            return f"{value:.6g}"
+        if isinstance(value, int) and not isinstance(value, bool):
+            if abs(value) > 9_007_199_254_740_991:
+                return str(value)
+            return value
+        return value
 
     def _stream_agentteams_events(self, session_id: str, task_id: str):
         if not self.event_stream_url:
@@ -550,9 +575,10 @@ class LiveAgentTeamsRuntime:
         deadline = time.time() + int(os.getenv("AGENTTEAMS_MATRIX_POLL_TIMEOUT", "90"))
         yielded = 0
         while time.time() < deadline:
+            encoded_room_id = quote(self.team_room_id, safe="")
             url = (
                 f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
-                f"{self.team_room_id}/messages?dir=b&limit=30"
+                f"{encoded_room_id}/messages?dir=b&limit=30"
                 f"&access_token={self.matrix_access_token}"
             )
             try:
@@ -648,7 +674,12 @@ class LiveAgentTeamsRuntime:
             ),
             "team_room_id": self.team_room_id,
             **plan_payload,
-            "payload": event,
+            "payload": {
+                "type": raw_type,
+                "event_id": event.get("event_id"),
+                "source": event.get("source"),
+                "worker": event.get("worker"),
+            },
         }
 
     def _extract_embedded_payload(self, message_text: str) -> dict[str, Any]:
