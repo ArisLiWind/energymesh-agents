@@ -508,6 +508,7 @@ class LiveAgentTeamsRuntime:
                 f"{json.dumps(safe_world_state, ensure_ascii=False, separators=(',', ':'))}"
             )
         needs_workers = requires_agentteams_workers(message)
+        reply_to_event_id = self._latest_manager_event_id()
         payload = {
             "msgtype": "m.text",
             "body": body,
@@ -539,6 +540,9 @@ class LiveAgentTeamsRuntime:
                 },
             },
         }
+        if reply_to_event_id:
+            payload["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to_event_id}}
+            payload["energymesh"]["reply_to_event_id"] = reply_to_event_id
         sent_at_ms = int(time.time() * 1000)
         txn_id = uuid4().hex
         encoded_room_id = quote(self.team_room_id, safe="")
@@ -561,6 +565,29 @@ class LiveAgentTeamsRuntime:
         except URLError as error:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
         return sent_at_ms
+
+    def _latest_manager_event_id(self) -> str | None:
+        encoded_room_id = quote(self.team_room_id, safe="")
+        url = (
+            f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
+            f"{encoded_room_id}/messages?dir=b&limit=20"
+            f"&access_token={self.matrix_access_token}"
+        )
+        try:
+            with urlrequest.urlopen(url, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return None
+        for item in payload.get("chunk", []):
+            if item.get("type") != "m.room.message":
+                continue
+            sender = str(item.get("sender") or "")
+            event_id = str(item.get("event_id") or "")
+            content = item.get("content") or {}
+            body = str(content.get("body") or "")
+            if sender.startswith("@manager:") and event_id and not body.startswith("[EnergyMesh live request]"):
+                return event_id
+        return None
 
     def _matrix_sync_token(self) -> str | None:
         url = (
