@@ -405,7 +405,7 @@ class SnapshotFactory:
                 name=f"EMSx 工业站点 {site_id} 真实负荷/光伏回放",
                 description=(
                     "Schneider Electric EMSx 匿名工业站点数据；实际负荷/光伏与"
-                    " 96 点预测来自公开数据，电价和生产保护约束为 EnergyMesh 复赛配置。"
+                    " 96 点预测来自公开数据，电价和生产保护约束为 EnergyMesh 运行配置。"
                 ),
                 site=site,
                 forecast=forecast,

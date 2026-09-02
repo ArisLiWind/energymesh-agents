@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-09-01
+Updated: 2026-09-02
 
 ## Implemented
 
@@ -67,7 +67,7 @@ Updated: 2026-09-01
 
 ## Next
 
-- Capture one polished finals evidence run where the same `project_id`, EnergyMesh `task_id`,
+- Capture one polished live evidence run where the same `project_id`, EnergyMesh `task_id`,
   Team Room and Task Room are visible in both AgentTeams Element and the white EnergyMesh UI while
   `dispatch_plan` changes the 3D campus preview and execution receipt adopts it.
 - Implement and register the `energymesh-readonly`, `energymesh-planning`, `energymesh-audit` and

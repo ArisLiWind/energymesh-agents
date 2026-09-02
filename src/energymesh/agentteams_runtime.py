@@ -279,6 +279,12 @@ class LiveAgentTeamsRuntime:
         self.team_room_id = os.getenv("AGENTTEAMS_TEAM_ROOM_ID", "")
         self.project_id = os.getenv("AGENTTEAMS_PROJECT_ID", "")
         self.event_stream_url = os.getenv("AGENTTEAMS_EVENT_STREAM_URL", "")
+        self.manager_user_id = os.getenv("AGENTTEAMS_MANAGER_USER_ID", "").strip()
+        self.worker_user_ids = [
+            item.strip()
+            for item in os.getenv("AGENTTEAMS_WORKER_USER_IDS", "").split(",")
+            if item.strip()
+        ]
 
     def assert_ready(self) -> AgentTeamsRuntimeStatus:
         status = probe_agentteams_runtime()
@@ -508,10 +514,14 @@ class LiveAgentTeamsRuntime:
                 f"{json.dumps(safe_world_state, ensure_ascii=False, separators=(',', ':'))}"
             )
         needs_workers = requires_agentteams_workers(message)
+        mention_user_ids = self._matrix_mention_user_ids(needs_workers)
+        if mention_user_ids:
+            body = f"{' '.join(mention_user_ids)}\n\n{body}"
         reply_to_event_id = self._latest_manager_event_id()
         payload = {
             "msgtype": "m.text",
             "body": body,
+            "m.mentions": {"user_ids": mention_user_ids},
             "energymesh": {
                 "session_id": session_id,
                 "task_id": task_id,
@@ -565,6 +575,31 @@ class LiveAgentTeamsRuntime:
         except URLError as error:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
         return sent_at_ms
+
+    def _matrix_mention_user_ids(self, needs_workers: bool) -> list[str]:
+        domain = self._matrix_domain()
+        manager_user_id = self.manager_user_id or (f"@manager:{domain}" if domain else "")
+        mentions = [manager_user_id] if manager_user_id else []
+        worker_user_ids = self.worker_user_ids
+        if needs_workers and not worker_user_ids and domain:
+            worker_user_ids = [
+                f"@{worker}:{domain}"
+                for worker in os.getenv("AGENTTEAMS_REMOTE_WORKERS", "").split(",")
+                if worker.strip()
+            ]
+        selected_worker_user_ids = worker_user_ids if needs_workers else []
+        for user_id in selected_worker_user_ids:
+            if user_id and user_id not in mentions:
+                mentions.append(user_id)
+        return mentions
+
+    def _matrix_domain(self) -> str:
+        configured = os.getenv("AGENTTEAMS_MATRIX_DOMAIN", "").strip()
+        if configured:
+            return configured
+        if ":" in self.team_room_id:
+            return self.team_room_id.split(":", 1)[1]
+        return ""
 
     def _latest_manager_event_id(self) -> str | None:
         encoded_room_id = quote(self.team_room_id, safe="")

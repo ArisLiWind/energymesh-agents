@@ -46,10 +46,10 @@ AgentTeams 在系统中承担任务组织和责任分离：
 
 当前仓库包含两层能力：
 
-| 层级 | 当前实现 | 评审口径 |
+| 层级 | 当前实现 | 运行边界 |
 | --- | --- | --- |
-| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 证据来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
-| 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，但不能替代 AgentTeams 协作证据 |
+| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | live 运行时由官方 AgentTeams、Matrix 房间、Human/admin 身份、Manager 和 Worker 共同产生协作记录 |
+| 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，并作为 AgentTeams Worker 的业务工具和可视化客户端；不能替代 AgentTeams 协作证据 |
 
 ## Live AgentTeams 深度接入
 
@@ -75,10 +75,11 @@ AgentTeams Matrix / Team Room
 
 - 上传真实园区 CSV 或连接园区数据源后，右侧白色 UI 接入当天 96 点负荷、光伏、储能、电价和生产约束；
   虚拟园区、3D 电流、折线图和运行账本随真实时间/回放游标呈现当天电力调度情况。
-- 用户在 EnergyMesh 左侧和 Team Leader 对话。Leader 负责正常解释和讨论能源成本、清洁能源消纳、
-  生产连续性和园区安全性的冲突；普通聊天只走真实 Team Leader 模型直答，不触发 Worker。
-- 用户明确要求“调度 / 优化 / 模拟 / 预览 / 采用 / 执行”时，`/api/runtime/chat/stream`
-  才进入真实 AgentTeams，由 Leader 联系数据/感知、调度、审核、安全/执行等 Agent 协同思考。
+- 用户在 EnergyMesh 左侧和 Team Leader 对话。启用 `AGENTTEAMS_LIVE_REQUIRED=true` 时，
+  `/api/runtime/chat` 和 `/api/runtime/chat/stream` 均进入真实 AgentTeams Matrix 房间；
+  EnergyMesh 使用 human/admin Matrix token 发言，并以 Matrix reply 形式回复最近一条 manager 消息。
+- 用户明确要求“调度 / 优化 / 模拟 / 预览 / 采用 / 执行”时，Team Leader 联系数据/感知、
+  调度、审核、安全/执行等 Agent 协同思考；普通问答仍保留 human → manager 的真实对话链。
 - 上传 CSV 后，右侧园区状态会组成 `world_state`，随消息写入 AgentTeams Team Room，成为 Worker
   生成方案的真实输入。
 - 后端将 AgentTeams 事件标准化为 `task_created`、`worker_joined`、`tool_call`、`dispatch_plan`、`audit_verdict`、`awaiting_approval`、`execution_receipt`、`completed`、`failed`。
@@ -231,7 +232,19 @@ curl http://127.0.0.1:8000/api/agentteams/runtime
 
 如果不希望在本机安装 Docker，也可以 Docker 和官方 AgentTeams 部署到腾讯云 CVM，本机 FastAPI/UI 只连接远端 Team Room 与事件流。完整步骤见 [`docs/deployment/tencent-cloud-agentteams.md`](docs/deployment/tencent-cloud-agentteams.md)，云端 bootstrap 脚本为 [`scripts/tencent_cloud_agentteams_bootstrap.sh`](scripts/tencent_cloud_agentteams_bootstrap.sh)。
 
-`/api/agentteams/runtime` 只有在 Docker、`agt`、controller、manager、workers、team、Team Room 和 Matrix bridge 全部可用时才会返回 `ready=true`。UI 的“思考中 / Worker 加入 / 采用后 Execution Worker 加入”必须绑定该真实事件流；没有真实事件就不展示这些状态。
+`/api/agentteams/runtime` 会返回 `bridge_user_id`，用于确认 EnergyMesh 当前是否以 human/admin 身份发言。
+如果这个值是 `@manager`，说明 token 配错了，Element 里会出现 manager 替用户说话的错误语义。
+正确状态应类似：
+
+```json
+{
+  "ready": true,
+  "mode": "remote_matrix_agentteams",
+  "bridge_user_id": "@admin:matrix-local.agentteams.io:18080",
+  "workers": ["energy-dispatcher"],
+  "teams": ["energymesh-demo"]
+}
+```
 
 
 ### 启动 EnergyMesh 白色 UI 并接 AgentTeams
@@ -259,11 +272,24 @@ export AGENTTEAMS_MATRIX_BASE_URL=http://127.0.0.1:18080
 export AGENTTEAMS_MATRIX_ACCESS_TOKEN=<matrix-access-token>
 export AGENTTEAMS_REMOTE_WORKERS=energy-dispatcher
 
-export AGENTTEAMS_LLM_PROVIDER=openai
+export AGENTTEAMS_LLM_PROVIDER=openai-compat
 export AGENTTEAMS_OPENAI_BASE_URL=https://api.deepseek.com/v1
 export AGENTTEAMS_DEFAULT_MODEL=deepseek-chat
 export AGENTTEAMS_LLM_API_KEY=<deepseek-api-key>
 ```
+
+`AGENTTEAMS_MATRIX_ACCESS_TOKEN` 必须是 human/admin 账号的 token，不能使用 manager token。使用
+manager token 会导致 Element 里显示“manager 自己发起请求”，破坏 human → manager → Worker 的协作语义。
+本地调试可用 Matrix 密码登录获取 admin token：
+
+```bash
+curl -sS http://127.0.0.1:18080/_matrix/client/v3/login \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"admin"},"password":"<admin-password>"}'
+```
+
+EnergyMesh 发送消息时会自动读取最近一条 manager 消息，并通过 Matrix
+`m.relates_to.m.in_reply_to.event_id` 发送为 reply；在 Element 中等价于点击 manager 消息右上角“回复”后输入。
 
 如果不使用一键脚本，也可以手动启动：
 
@@ -293,14 +319,14 @@ Element 登录时 Homeserver 填：
 http://127.0.0.1:18080
 ```
 
-用户名/密码使用当前 AgentTeams Codespace 创建时的账号。登录后进入
-`#agentteams-team-energymesh-demo:matrix-local.agentteams.io:18080`。白色 UI 的
+用户名/密码使用当前 AgentTeams runtime 创建时的账号。登录后进入
+`#agentteams-worker-energy-dispatcher:matrix-local.agentteams.io:18080` 或当前 Team Room。白色 UI 的
 “AgentTeams 当前任务”面板会显示同一组 `project_id`、`task_id`、`team_room_id`、`task_room_id`
 和 `worker_id`，用于和 Element 对账。
 
 下次在另一个 Codespace 或机器重新打开仓库时，需要重新启动官方 AgentTeams、端口转发和
 EnergyMesh FastAPI；Matrix 房间和 token 属于那次 AgentTeams runtime，不会只靠 GitHub clone 自动存在。
-仓库保存的是接入代码、Worker/Team 资源和证据文档，不保存你的私密 access token。
+仓库保存的是接入代码、Worker/Team 资源、启动脚本和证据文档，不保存私密 access token 或模型 API key。
 
 推荐演示动作：
 
@@ -341,7 +367,7 @@ EnergyMesh 在这个流程中承担的是“协作调度与治理层”角色：
 来源、许可和 SHA-256 见 [`data/opencem/README.md`](data/opencem/README.md)。
 
 这组数据适合证明“数据上传、96 点归一化、滚动重调度、执行回读和证据封存”可以跑通，但它的负荷规模和业务
-冲突强度不足以单独证明大型园区价值。复赛版本应优先替换或并行加入大型园区/工业站点数据，使能源成本、
+冲突强度不足以单独覆盖大型园区价值。生产化运行时应替换或并行加入大型园区/工业站点数据，使能源成本、
 清洁能源消纳、生产连续性和安全约束之间的冲突更明显。
 
 当前 OpenCEM 可复现回放基线：
@@ -357,7 +383,7 @@ EnergyMesh 在这个流程中承担的是“协作调度与治理层”角色：
 公开实测数据只覆盖光伏/储能测量；电价、受保护负荷和生产约束是 EnergyMesh 配置，不代表该校园真实账单或
 工业 MES 数据。
 
-复赛主验证场景固定为“电价或预测突变”，例如天气突变导致 PV 预测下调、同时高峰电价上调：
+推荐主验证场景固定为“电价或预测突变”，例如天气突变导致 PV 预测下调、同时高峰电价上调：
 
 | 验收指标 | 必须展示 |
 | --- | --- |
@@ -373,9 +399,9 @@ EnergyMesh 在这个流程中承担的是“协作调度与治理层”角色：
 电价和安全规则重新筛选。报告应比较采用历史经验前后的预测偏差、人工干预次数与策略收益，不能把相似案例
 直接当作调度结果复用。
 
-复赛推荐数据路线：
+推荐数据路线：
 
-| 数据源 | 为什么更适合复赛 | 接入方式 | 当前状态 |
+| 数据源 | 适合的验证点 | 接入方式 | 当前状态 |
 | --- | --- | --- | --- |
 | 源网荷储工业园区 15 分钟公开数据 | 包含风、光、热电、负荷、储能、氢能等工业园区级源网荷储要素，适合展示多约束冲突 | 新增 `SnapshotFactory.from_industrial_park_csv()`，映射到 `ExternalDataSnapshot` | 待下载、校验许可和 SHA-256 |
 | Schneider Electric EMSx 工业站点数据 | 覆盖 70 个工业/商业站点的时序负荷，适合验证跨园区策略复用 | 按 site/day 生成每日运行账本，叠加可替换电价和储能约束 | 待接入 |
@@ -617,7 +643,7 @@ curl http://127.0.0.1:8000/api/tasks
 
 ## AgentTeams 验收门槛
 
-完成正式协作验收时，至少运行并保存以下证据：
+完成正式协作运行时，至少运行并保存以下证据：
 
 ```bash
 agt apply -f agentteams/agentteams-resources.yaml
