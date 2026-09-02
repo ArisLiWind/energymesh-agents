@@ -51,7 +51,8 @@ from energymesh.models import (
     TaskRecord,
 )
 from energymesh.optimizer import DispatchOptimizer
-from energymesh.orchestrator import EnergyMeshOrchestrator, WorkflowError
+from energymesh.orchestrator import WorkflowError
+from energymesh.orchestrator_v2 import EnergyMeshOrchestratorV2 as EnergyMeshOrchestrator
 from energymesh.parallel_sim import ParallelSimError, ParallelSimulator
 from energymesh.perception import PerceptionAgent
 from energymesh.simulator import SimulationExecutor
@@ -63,12 +64,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings.assert_safe_runtime()
     store = EvidenceStore(active_settings.db_path, active_settings.evidence_dir)
     compound_demo = CompoundChangeDemo(store)
+    from energymesh.agent_registry import SkillRegistry
+    from energymesh.polardb_store import PolarDBStore
+    from energymesh.rag_engine import RAGEngine
+    from energymesh.worker_pool import WorkerPool
+    skill_registry = SkillRegistry()
+    worker_pool = WorkerPool(skill_registry)
+    polar_store = PolarDBStore(str(active_settings.db_path.parent / "polardb_telemetry.db"))
+    rag_engine = RAGEngine(str(active_settings.db_path.parent / "rag_experience.db"))
     orchestrator = EnergyMeshOrchestrator(
         perception=PerceptionAgent(),
         optimizer=DispatchOptimizer(),
         auditor=IndependentSafetyAuditor(),
         executor=SimulationExecutor(active_settings),
         store=store,
+        skill_registry=skill_registry,
+        worker_pool=worker_pool,
+        polar_store=polar_store,
+        rag_engine=rag_engine,
     )
     scenario = load_demo_scenario()
     external_data = ExternalDataSimulator()
