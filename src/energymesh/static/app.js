@@ -1744,13 +1744,12 @@ async function sendChatMessage(event) {
               : (state.language === "zh" ? "AgentTeams runtime 未就绪；不会使用本地替代 Worker 流程。" : "AgentTeams runtime is not ready; no local Worker substitute will run."),
           );
         },
-        onWorldState: (event) => appendRuntimeStatusMessage("team_leader", event.message || "world_state loaded"),
-        onStage: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || event.stage || "AgentTeams stage started"),
-        onWorkerJoined: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || "Worker joined"),
+        onWorldState: (event) => console.log("[AgentTeams world_state]", event),
+        onStage: (event) => console.log("[AgentTeams stage]", event.agent_id || "team_leader", event.message || event.stage),
+        onWorkerJoined: (event) => console.log("[AgentTeams worker]", event.agent_id || "team_leader", event.message || "joined"),
         onStep: (event) => {
           const step = event.step || {};
           const text = step.response || "";
-          appendRuntimeStatusMessage(step.agent_id || "team_leader", isInternalAgentTeamsMessage(text) ? "AgentTeams 正在处理协作上下文。" : text);
           if (isDisplayableAgentTeamsReply(text)) visibleReplies.push({ text, agent: step.agent_id || "team_leader", model: step.model || "AgentTeams" });
         },
       });
