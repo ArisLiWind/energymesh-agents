@@ -1282,10 +1282,7 @@ function renderThreadMessages(threadKey = state.activeHistory) {
 }
 
 function findNaturalScenario(message) {
-  const match = Object.entries(naturalScenarios).find(([, scenario]) => scenario.match(message));
-  if (!match) return null;
-  const [key, scenario] = match;
-  return { ...scenario, key };
+  return null;
 }
 
 function buildScenarioEvents(scenario) {

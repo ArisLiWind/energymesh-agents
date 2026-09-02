@@ -19,9 +19,6 @@ spec:
   skills:
     - microgrid_context_ingest
     - approval_rollback
-  mcpServers:
-    - energymesh-readonly
-    - energymesh-control
   state: Running
 ---
 apiVersion: agentteams.io/v1beta1
@@ -38,8 +35,6 @@ spec:
   package: file://./agentteams/workers/perception
   skills:
     - microgrid_context_ingest
-  mcpServers:
-    - energymesh-readonly
   state: Running
 ---
 apiVersion: agentteams.io/v1beta1
@@ -56,9 +51,6 @@ spec:
   package: file://./agentteams/workers/dispatch
   skills:
     - dispatch_plan_generate
-  mcpServers:
-    - energymesh-readonly
-    - energymesh-planning
   state: Running
 ---
 apiVersion: agentteams.io/v1beta1
@@ -75,9 +67,6 @@ spec:
   package: file://./agentteams/workers/audit
   skills:
     - dispatch_audit_verify
-  mcpServers:
-    - energymesh-readonly
-    - energymesh-audit
   state: Running
 ---
 apiVersion: agentteams.io/v1beta1
@@ -95,9 +84,6 @@ spec:
   skills:
     - execution_mapping
     - approval_rollback
-  mcpServers:
-    - energymesh-readonly
-    - energymesh-control
   state: Running
 ---
 apiVersion: agentteams.io/v1beta1
