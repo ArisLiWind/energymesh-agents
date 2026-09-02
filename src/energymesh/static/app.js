@@ -2501,10 +2501,13 @@ async function applySnapshotToCampus() {
 
   // Decomposition from authority
   const fromGrid = totalGridImportKwh;
-  const fromGen = Math.max(0, totalLoadKwh - fromGrid);
+  const fromStorage = daily.storage_discharge_kwh ?? 0;
+  const fromGen = Math.max(0, totalLoadKwh - fromGrid - fromStorage);
   const toLoad = Math.max(0, totalGenKwh);
-  const toGridExport = Math.max(0, (pvKw - loadKw) * dt);
-  const wastedKwh = world?.pv_curtailment_kw ? (world.pv_curtailment_kw * dt) : Math.max(0, (pvKw - loadKw) * dt);
+  const toGridExport = daily.grid_feed_kwh ?? Math.max(0, (pvKw - loadKw) * dt);
+  const toStorageCharge = daily.storage_charge_kwh ?? 0;
+  const pvCurtailmentKw = (world && typeof world.pv_curtailment_kw === 'number') ? world.pv_curtailment_kw : Math.max(0, pvKw - loadKw);
+  const wastedKwh = daily.wasted_pv_kwh ?? daily.curtailment_kwh ?? (pvCurtailmentKw * dt);
 
   state.campusSimulation = {
     time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),
@@ -2519,16 +2522,16 @@ async function applySnapshotToCampus() {
     todayLoad: totalLoadKwh,
     todayGen: totalGenKwh,
     todayGrid: totalGridImportKwh,
-    todayCharge: 0,
-    todayDischarge: 0,
+    todayCharge: daily.storage_charge_kwh ?? 0,
+    todayDischarge: daily.storage_discharge_kwh ?? 0,
     todayCost: totalCost,
 
     totalLoad: totalLoadKwh,
     fromGen,
-    fromStorage: 0,
+    fromStorage,
     fromGrid,
     toLoad,
-    toStorageCharge: 0,
+    toStorageCharge,
     toGridExport,
     wastedKwh,
     extraCost: totalCost,
