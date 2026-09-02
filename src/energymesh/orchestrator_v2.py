@@ -247,7 +247,9 @@ class EnergyMeshOrchestratorV2:
         )
 
         # Dispatch Skill
-        def dispatch_skill(scenario: Scenario, objective_priority: str | None = None) -> dict[str, Any]:
+        def dispatch_skill(
+            scenario: Scenario, objective_priority: str | None = None
+        ) -> dict[str, Any]:
             baseline = self.optimizer.build_baseline(scenario)
             plans = self.optimizer.optimize_candidates(scenario)
             return {
@@ -271,8 +273,11 @@ class EnergyMeshOrchestratorV2:
         )
 
         # Audit Skill
-        def audit_skill(scenario: Scenario, plans: list[dict[str, Any]], baseline_plan: dict[str, Any]) -> dict[str, Any]:
+        def audit_skill(
+            scenario: Scenario, plans: list[dict[str, Any]], baseline_plan: dict[str, Any]
+        ) -> dict[str, Any]:
             from energymesh.models import DispatchPlan
+
             plan_objs = [DispatchPlan.model_validate(p) for p in plans]
             baseline_obj = DispatchPlan.model_validate(baseline_plan)
             audits = [
@@ -301,6 +306,7 @@ class EnergyMeshOrchestratorV2:
             approval_id: str | None = None,
         ) -> dict[str, Any]:
             from energymesh.models import DispatchPlan
+
             selected_obj = DispatchPlan.model_validate(selected_plan)
             baseline_obj = DispatchPlan.model_validate(baseline_plan)
             summary = self.executor.execute(scenario, selected_obj, baseline_obj, approval_id)
@@ -319,7 +325,9 @@ class EnergyMeshOrchestratorV2:
         )
 
         # Approval/rollback Skill
-        def approval_skill(task_record: dict[str, Any], approved: bool, approver: str, reason: str) -> dict[str, Any]:
+        def approval_skill(
+            task_record: dict[str, Any], approved: bool, approver: str, reason: str
+        ) -> dict[str, Any]:
             return {
                 "approved": approved,
                 "approver": approver,
@@ -460,9 +468,14 @@ class EnergyMeshOrchestratorV2:
                 "microgrid_context_ingest", exclude=["perception_worker"]
             )
             if backup_id:
-                lifecycle._record("team_leader", "worker_reassigned", "warning",
-                                   from_worker="perception_worker", to_worker=backup_id,
-                                   reason=result.error or "primary worker failed")
+                lifecycle._record(
+                    "team_leader",
+                    "worker_reassigned",
+                    "warning",
+                    from_worker="perception_worker",
+                    to_worker=backup_id,
+                    reason=result.error or "primary worker failed",
+                )
                 self._dispatch_worker(
                     lifecycle,
                     worker_id=backup_id,
@@ -473,9 +486,15 @@ class EnergyMeshOrchestratorV2:
                 return
             # No backup — human handoff
             lifecycle.transition(TaskLifecycleStage.HUMAN_HANDOFF)
-            lifecycle.task.human_handoff_reason = result.error or "perception worker failed and no backup"
-            lifecycle._record("team_leader", "human_handoff", "blocked",
-                              reason=lifecycle.task.human_handoff_reason)
+            lifecycle.task.human_handoff_reason = (
+                result.error or "perception worker failed and no backup"
+            )
+            lifecycle._record(
+                "team_leader",
+                "human_handoff",
+                "blocked",
+                reason=lifecycle.task.human_handoff_reason,
+            )
             self.store.save(lifecycle.task)
             return
 
@@ -491,9 +510,16 @@ class EnergyMeshOrchestratorV2:
         if not data_complete or recommended_action == "human_handoff":
             lifecycle.transition(TaskLifecycleStage.HUMAN_HANDOFF)
             reasons = [*missing, *conflicts]
-            lifecycle.task.human_handoff_reason = "; ".join(reasons) if reasons else "perception blocked"
-            lifecycle._record("perception_worker", "human_handoff_required", "blocked",
-                              reasons=reasons, quality_score=payload.get("quality_score"))
+            lifecycle.task.human_handoff_reason = (
+                "; ".join(reasons) if reasons else "perception blocked"
+            )
+            lifecycle._record(
+                "perception_worker",
+                "human_handoff_required",
+                "blocked",
+                reasons=reasons,
+                quality_score=payload.get("quality_score"),
+            )
             lifecycle.task.evidence_sha256 = self.store.seal_evidence(lifecycle.task)
             self.store.save(lifecycle.task)
             return
@@ -502,26 +528,35 @@ class EnergyMeshOrchestratorV2:
         lifecycle.transition(TaskLifecycleStage.SENSED)
         context_snapshot = self._build_context_snapshot(lifecycle.task, payload)
         if self.polar_store:
-            for point in lifecycle.task.scenario_snapshot.forecast:
+            scenario = lifecycle.task.scenario_snapshot
+            for interval, point in enumerate(scenario.forecast):
                 from energymesh.models import ExternalTelemetryPoint
+
                 self.polar_store.write_telemetry(
                     "simulated",
                     ExternalTelemetryPoint(
-                        interval=point.interval if hasattr(point, "interval") else 0,
+                        interval=interval,
                         timestamp=point.timestamp,
                         load_kw=point.load_kw,
                         pv_kw=point.pv_kw,
-                        battery_soc=lifecycle.task.scenario_snapshot.site.initial_soc,
-                        grid_import_kw=0,
+                        battery_soc=scenario.site.initial_soc,
                         tariff_yuan_per_kwh=point.tariff_yuan_per_kwh,
                         transformer_temperature_c=point.transformer_temperature_c,
+                        transformer_limit_kw=scenario.site.transformer_capacity_kw,
+                        grid_interconnection_limit_kw=scenario.site.grid_interconnection_limit_kw,
+                        battery_available=scenario.device_status.get("bms", "online") != "offline",
+                        production_min_load_kw=point.production_min_load_kw,
                     ),
                 )
         lifecycle.artifacts["context_snapshot"] = context_snapshot
         self.store.save_context_snapshot(context_snapshot)
-        lifecycle._record("perception_worker", "operational_context_validated", "ok",
-                          quality_score=payload.get("quality_score"),
-                          objective_priority=payload.get("objective_priority"))
+        lifecycle._record(
+            "perception_worker",
+            "operational_context_validated",
+            "ok",
+            quality_score=payload.get("quality_score"),
+            objective_priority=payload.get("objective_priority"),
+        )
         self.store.save(lifecycle.task)
 
         # Dynamic decision: Leader dispatches Dispatch Worker
@@ -546,9 +581,14 @@ class EnergyMeshOrchestratorV2:
                 "dispatch_plan_generate", exclude=["dispatch_worker"]
             )
             if backup_id:
-                lifecycle._record("team_leader", "worker_reassigned", "warning",
-                                   from_worker="dispatch_worker", to_worker=backup_id,
-                                   reason=result.error or "primary worker failed")
+                lifecycle._record(
+                    "team_leader",
+                    "worker_reassigned",
+                    "warning",
+                    from_worker="dispatch_worker",
+                    to_worker=backup_id,
+                    reason=result.error or "primary worker failed",
+                )
                 self._dispatch_worker(
                     lifecycle,
                     worker_id=backup_id,
@@ -556,26 +596,38 @@ class EnergyMeshOrchestratorV2:
                     context={
                         "scenario": lifecycle.task.scenario_snapshot.model_dump(mode="json"),
                         "objective_priority": lifecycle.task.perception.objective_priority
-                        if lifecycle.task.perception else None,
+                        if lifecycle.task.perception
+                        else None,
                     },
                     on_complete=self._on_dispatch_complete,
                 )
                 return
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("orchestrator", "dispatch_failed", "blocked",
-                              reason=result.error or "all dispatch workers failed")
+            lifecycle._record(
+                "orchestrator",
+                "dispatch_failed",
+                "blocked",
+                reason=result.error or "all dispatch workers failed",
+            )
             self.store.save(lifecycle.task)
             return
 
         lifecycle.transition(TaskLifecycleStage.DISPATCHED)
         payload = result.result.payload
         from energymesh.models import DispatchPlan
+
         baseline_data = payload.get("baseline_plan")
         plans_data = payload.get("plans", [])
-        lifecycle.task.baseline_plan = DispatchPlan.model_validate(baseline_data) if baseline_data else None
+        lifecycle.task.baseline_plan = (
+            DispatchPlan.model_validate(baseline_data) if baseline_data else None
+        )
         lifecycle.task.plans = [DispatchPlan.model_validate(p) for p in plans_data]
-        lifecycle._record("dispatch_worker", "candidate_plans_generated", "ok",
-                          plan_ids=[p.plan_id for p in lifecycle.task.plans])
+        lifecycle._record(
+            "dispatch_worker",
+            "candidate_plans_generated",
+            "ok",
+            plan_ids=[p.plan_id for p in lifecycle.task.plans],
+        )
         self.store.save(lifecycle.task)
 
         # Dynamic decision: Leader dispatches Audit Worker
@@ -589,7 +641,8 @@ class EnergyMeshOrchestratorV2:
                 "plans": [p.model_dump(mode="json") for p in lifecycle.task.plans],
                 "baseline_plan": (
                     lifecycle.task.baseline_plan.model_dump(mode="json")
-                    if lifecycle.task.baseline_plan else None
+                    if lifecycle.task.baseline_plan
+                    else None
                 ),
             },
             on_complete=self._on_audit_complete,
@@ -601,52 +654,82 @@ class EnergyMeshOrchestratorV2:
 
         if result.status != WorkerState.SUCCESS or result.result is None:
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("orchestrator", "audit_failed", "blocked",
-                              reason=result.error or "audit worker failed")
+            lifecycle._record(
+                "orchestrator",
+                "audit_failed",
+                "blocked",
+                reason=result.error or "audit worker failed",
+            )
             self.store.save(lifecycle.task)
             return
 
         lifecycle.transition(TaskLifecycleStage.AUDITED)
         payload = result.result.payload
         from energymesh.models import AuditReport
+
         audits_data = payload.get("audits", [])
         lifecycle.task.audits = [AuditReport.model_validate(a) for a in audits_data]
-        lifecycle._record("audit_worker", "independent_policy_audit", "ok",
-                          decisions={r.plan_id: r.decision.value for r in lifecycle.task.audits})
+        lifecycle._record(
+            "audit_worker",
+            "independent_policy_audit",
+            "ok",
+            decisions={r.plan_id: r.decision.value for r in lifecycle.task.audits},
+        )
         self.store.save(lifecycle.task)
 
         # Dynamic decision: select best eligible plan
         eligible = [
-            plan for plan in lifecycle.task.plans
+            plan
+            for plan in lifecycle.task.plans
             if next((r for r in lifecycle.task.audits if r.plan_id == plan.plan_id), None)
-            and next((r for r in lifecycle.task.audits if r.plan_id == plan.plan_id), None).decision != AuditDecision.REJECTED
+            and next((r for r in lifecycle.task.audits if r.plan_id == plan.plan_id), None).decision
+            != AuditDecision.REJECTED
         ]
         if not eligible:
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("orchestrator", "selection_failed", "blocked",
-                              reason="all candidate plans rejected by auditor")
+            lifecycle._record(
+                "orchestrator",
+                "selection_failed",
+                "blocked",
+                reason="all candidate plans rejected by auditor",
+            )
             self.store.save(lifecycle.task)
             return
 
         selected = min(eligible, key=lambda plan: plan.metrics.total_cost_yuan)
         lifecycle.task.selected_plan_id = selected.plan_id
         selected_audit = next(r for r in lifecycle.task.audits if r.plan_id == selected.plan_id)
-        lifecycle._record("orchestrator", "audited_plan_selected", "ok",
-                          plan_id=selected.plan_id, profile=selected.profile)
+        lifecycle._record(
+            "orchestrator",
+            "audited_plan_selected",
+            "ok",
+            plan_id=selected.plan_id,
+            profile=selected.profile,
+        )
         self.store.save(lifecycle.task)
 
         # Dynamic routing: high risk requires human approval
         if selected_audit.decision == AuditDecision.REQUIRES_APPROVAL:
             lifecycle.transition(TaskLifecycleStage.DECIDING)
-            lifecycle._record("approval_gate", "human_approval_requested", "pending",
-                              plan_id=selected.plan_id, context_hash=lifecycle.task.context_hash)
+            lifecycle._record(
+                "approval_gate",
+                "human_approval_requested",
+                "pending",
+                plan_id=selected.plan_id,
+                context_hash=lifecycle.task.context_hash,
+            )
             self.store.save(lifecycle.task)
             return
 
         # Low risk — auto-approved, proceed to execution
         lifecycle.transition(TaskLifecycleStage.APPROVED)
-        lifecycle._record("orchestrator", "auto_approved", "ok",
-                          plan_id=selected.plan_id, reason="low risk, no flexible load action")
+        lifecycle._record(
+            "orchestrator",
+            "auto_approved",
+            "ok",
+            plan_id=selected.plan_id,
+            reason="low risk, no flexible load action",
+        )
         self._execute_selected(lifecycle)
 
     def _execute_selected(self, lifecycle: TaskLifecycle) -> None:
@@ -658,8 +741,12 @@ class EnergyMeshOrchestratorV2:
         )
         if selected is None or lifecycle.task.baseline_plan is None:
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("orchestrator", "execute_failed", "blocked",
-                              reason="missing selected plan or baseline")
+            lifecycle._record(
+                "orchestrator",
+                "execute_failed",
+                "blocked",
+                reason="missing selected plan or baseline",
+            )
             self.store.save(lifecycle.task)
             return
 
@@ -686,11 +773,17 @@ class EnergyMeshOrchestratorV2:
 
         if result.status != WorkerState.SUCCESS or result.result is None:
             lifecycle.transition(TaskLifecycleStage.ROLLBACK)
-            lifecycle._record("execution_agent", "execution_failed", "fallback",
-                              reason=result.error or "execution worker failed")
-            lifecycle.task.execution_summary = {"safe_fallback_activated": True,
-                                                 "reason": result.error or "execution failed",
-                                                 "control_owner": "human_operator"}
+            lifecycle._record(
+                "execution_agent",
+                "execution_failed",
+                "fallback",
+                reason=result.error or "execution worker failed",
+            )
+            lifecycle.task.execution_summary = {
+                "safe_fallback_activated": True,
+                "reason": result.error or "execution failed",
+                "control_owner": "human_operator",
+            }
             lifecycle.task.evidence_sha256 = self.store.seal_evidence(lifecycle.task)
             self.store.save(lifecycle.task)
             return
@@ -701,9 +794,13 @@ class EnergyMeshOrchestratorV2:
 
         if fallback:
             lifecycle.transition(TaskLifecycleStage.ROLLBACK)
-            lifecycle._record("execution_agent", "safe_fallback_activated", "fallback",
-                              deviation_intervals=payload.get("deviation_intervals", 0),
-                              control_owner="human_operator")
+            lifecycle._record(
+                "execution_agent",
+                "safe_fallback_activated",
+                "fallback",
+                deviation_intervals=payload.get("deviation_intervals", 0),
+                control_owner="human_operator",
+            )
             # Write to PolarDB
             if self.polar_store:
                 for i in range(96):
@@ -718,9 +815,13 @@ class EnergyMeshOrchestratorV2:
                     )
         else:
             lifecycle.transition(TaskLifecycleStage.COMPLETED)
-            lifecycle._record("execution_agent", "post_execution_verification", "ok",
-                              real_devices_contacted=payload.get("real_devices_contacted", 0),
-                              confirmations=payload.get("confirmations_received", 0))
+            lifecycle._record(
+                "execution_agent",
+                "post_execution_verification",
+                "ok",
+                real_devices_contacted=payload.get("real_devices_contacted", 0),
+                confirmations=payload.get("confirmations_received", 0),
+            )
             # Write to PolarDB
             if self.polar_store:
                 for i in range(96):
@@ -729,10 +830,14 @@ class EnergyMeshOrchestratorV2:
                         task_id=lifecycle.task.task_id,
                         plan_version_id=lifecycle.task.selected_plan_id,
                         interval=i,
-                        actual={"grid_kw": payload.get("executed_grid_kw", [0] * 96)[i]
-                                if isinstance(payload.get("executed_grid_kw"), list) else 0,
-                                "soc": payload.get("executed_soc", [0] * 96)[i]
-                                if isinstance(payload.get("executed_soc"), list) else 0},
+                        actual={
+                            "grid_kw": payload.get("executed_grid_kw", [0] * 96)[i]
+                            if isinstance(payload.get("executed_grid_kw"), list)
+                            else 0,
+                            "soc": payload.get("executed_soc", [0] * 96)[i]
+                            if isinstance(payload.get("executed_soc"), list)
+                            else 0,
+                        },
                         expected={"grid_kw": 0, "soc": 0},
                         deviation=False,
                     )
@@ -763,13 +868,21 @@ class EnergyMeshOrchestratorV2:
             context=context,
             on_complete=callback,
         )
-        lifecycle._record("team_leader", "worker_dispatched", "ok",
-                          worker=worker_id, skill=skill_name, task_id=lifecycle.task.task_id)
+        lifecycle._record(
+            "team_leader",
+            "worker_dispatched",
+            "ok",
+            worker=worker_id,
+            skill=skill_name,
+            task_id=lifecycle.task.task_id,
+        )
 
     def _on_stage_change(self, prev: TaskLifecycleStage, curr: TaskLifecycleStage) -> None:
         pass
 
-    def _build_context_snapshot(self, task: TaskRecord, perception_payload: dict[str, Any]) -> ContextSnapshot:
+    def _build_context_snapshot(
+        self, task: TaskRecord, perception_payload: dict[str, Any]
+    ) -> ContextSnapshot:
         now = datetime.now(UTC)
         body = {
             "context_id": f"ctx_{task.task_id}_{now.timestamp()}",
@@ -782,6 +895,7 @@ class EnergyMeshOrchestratorV2:
             "automation_permission": perception_payload.get("automation_permission", "restricted"),
         }
         import hashlib, json
+
         digest = hashlib.sha256(
             json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -807,16 +921,21 @@ class EnergyMeshOrchestratorV2:
 
         if not request.approved:
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("human_approver", "approval_rejected", "blocked",
-                              reason=request.reason)
+            lifecycle._record(
+                "human_approver", "approval_rejected", "blocked", reason=request.reason
+            )
             task.evidence_sha256 = self.store.seal_evidence(task)
             self.store.save(task)
             return task
 
         lifecycle.transition(TaskLifecycleStage.APPROVED)
-        lifecycle._record("human_approver", "approval_granted", "ok",
-                          approval_id=task.approval.approval_id,
-                          context_hash=task.context_hash)
+        lifecycle._record(
+            "human_approver",
+            "approval_granted",
+            "ok",
+            approval_id=task.approval.approval_id,
+            context_hash=task.context_hash,
+        )
         self.store.save(task)
 
         # After approval, dynamically route to execution
@@ -854,13 +973,15 @@ class EnergyMeshOrchestratorV2:
         lifecycle = self._get_or_create_lifecycle(task)
         if not request.approved:
             lifecycle.transition(TaskLifecycleStage.FAILED)
-            lifecycle._record("human_approver", "approval_rejected", "blocked",
-                              reason=request.reason)
+            lifecycle._record(
+                "human_approver", "approval_rejected", "blocked", reason=request.reason
+            )
             task.evidence_sha256 = self.store.seal_evidence(task)
         else:
             lifecycle.transition(TaskLifecycleStage.APPROVED)
-            lifecycle._record("human_approver", "approval_granted", "ok",
-                              approval_id=task.approval.approval_id)
+            lifecycle._record(
+                "human_approver", "approval_granted", "ok", approval_id=task.approval.approval_id
+            )
         self.store.save(task)
         return task
 
@@ -889,14 +1010,18 @@ class EnergyMeshOrchestratorV2:
             task.baseline_plan,
         )
         scenario = task.scenario_snapshot
-        current_interval = min(
-            max(request.current_interval, 0), len(scenario.forecast) - 1
-        )
+        current_interval = min(max(request.current_interval, 0), len(scenario.forecast) - 1)
         actual_soc = max(0.0, min(1.0, request.actual_soc))
 
-        lifecycle._record("orchestrator", "rolling_reoptimize_requested", "ok",
-                          current_interval=current_interval, actual_soc=actual_soc,
-                          robustness_mode=request.robustness_mode, trigger=request.trigger)
+        lifecycle._record(
+            "orchestrator",
+            "rolling_reoptimize_requested",
+            "ok",
+            current_interval=current_interval,
+            actual_soc=actual_soc,
+            robustness_mode=request.robustness_mode,
+            trigger=request.trigger,
+        )
         self.store.save(task)
 
         # Create a child task for the new optimization
@@ -921,9 +1046,13 @@ class EnergyMeshOrchestratorV2:
         # Audit
         audit = self.auditor.audit(scenario, new_plan, child.baseline_plan)
         child.audits = [audit]
-        child_lifecycle._record("audit_worker", "rolling_plan_re_audited",
-                                audit.decision.value, plan_id=new_plan.plan_id,
-                                improvement_yuan=audit.improvement_yuan)
+        child_lifecycle._record(
+            "audit_worker",
+            "rolling_plan_re_audited",
+            audit.decision.value,
+            plan_id=new_plan.plan_id,
+            improvement_yuan=audit.improvement_yuan,
+        )
         self.store.save(child)
 
         if audit.decision == AuditDecision.REJECTED:
@@ -935,12 +1064,17 @@ class EnergyMeshOrchestratorV2:
 
         if audit.decision == AuditDecision.REQUIRES_APPROVAL:
             child_lifecycle.transition(TaskLifecycleStage.DECIDING)
-            child_lifecycle._record("approval_gate", "rolling_plan_approval_requested", "pending",
-                                    plan_id=new_plan.plan_id)
+            child_lifecycle._record(
+                "approval_gate",
+                "rolling_plan_approval_requested",
+                "pending",
+                plan_id=new_plan.plan_id,
+            )
         else:
             child_lifecycle.transition(TaskLifecycleStage.APPROVED)
-            child_lifecycle._record("orchestrator", "rolling_plan_auto_approved", "ok",
-                                    plan_id=new_plan.plan_id)
+            child_lifecycle._record(
+                "orchestrator", "rolling_plan_auto_approved", "ok", plan_id=new_plan.plan_id
+            )
 
         child.task_version = (child.task_version or 1) + 1
         child.evidence_sha256 = self.store.seal_evidence(child)
@@ -966,8 +1100,14 @@ class EnergyMeshOrchestratorV2:
         if new_snapshot.environment_signals:
             signals = new_snapshot.environment_signals
             old_signals = old.environment_signals if hasattr(old, "environment_signals") else {}
-            for key in ["load_kw", "pv_kw", "battery_soc", "tariff_yuan_per_kwh",
-                        "transformer_temp_c", "production_min_load_kw"]:
+            for key in [
+                "load_kw",
+                "pv_kw",
+                "battery_soc",
+                "tariff_yuan_per_kwh",
+                "transformer_temp_c",
+                "production_min_load_kw",
+            ]:
                 new_val = signals.get(key)
                 old_val = old_signals.get(key) if old_signals else None
                 if new_val is not None and old_val is not None:
@@ -976,11 +1116,14 @@ class EnergyMeshOrchestratorV2:
                         changes[key] = {"old": old_val, "new": new_val}
 
         if significant_change:
-            lifecycle.invalidate(
-                f"external context changed: {', '.join(changes.keys())}"
+            lifecycle.invalidate(f"external context changed: {', '.join(changes.keys())}")
+            lifecycle._record(
+                "orchestrator",
+                "context_change_detected",
+                "warning",
+                changes=changes,
+                action="old_plan_invalidated_new_task_created",
             )
-            lifecycle._record("orchestrator", "context_change_detected", "warning",
-                              changes=changes, action="old_plan_invalidated_new_task_created")
             # Spawn new child task
             child = self.run(
                 scenario=old,  # Use updated scenario in practice
@@ -1002,9 +1145,7 @@ class EnergyMeshOrchestratorV2:
         }
 
     @staticmethod
-    def _record(
-        task: TaskRecord, actor: str, action: str, status: str, **detail: object
-    ) -> None:
+    def _record(task: TaskRecord, actor: str, action: str, status: str, **detail: object) -> None:
         now = datetime.now(UTC)
         task.updated_at = now
         task.trace.append(

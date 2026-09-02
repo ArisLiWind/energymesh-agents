@@ -25,6 +25,7 @@ from energymesh.demo import apply_operational_change, load_demo_scenario
 from energymesh.direct_runtime import DirectLeaderRuntime, DirectLeaderRuntimeError
 from energymesh.external_data import ExternalDataSimulator
 from energymesh.model_gateway import chat_with_agent_config, normalize_agent_id
+from energymesh.mcp_server import handle_mcp_message, tools_for_profile
 from energymesh.models import (
     AgentChatRequest,
     AgentChatResponse,
@@ -68,9 +69,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from energymesh.polardb_store import PolarDBStore
     from energymesh.rag_engine import RAGEngine
     from energymesh.worker_pool import WorkerPool
+
     skill_registry = SkillRegistry()
     worker_pool = WorkerPool(skill_registry)
-    polar_store = PolarDBStore(str(active_settings.db_path.parent / "polardb_telemetry.db"))
+    polar_store = PolarDBStore(
+        str(active_settings.db_path.parent / "polardb_telemetry.db"),
+        dsn=active_settings.polardb_dsn,
+    )
     rag_engine = RAGEngine(str(active_settings.db_path.parent / "rag_experience.db"))
     orchestrator = EnergyMeshOrchestrator(
         perception=PerceptionAgent(),
@@ -119,7 +124,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         total = len(snapshot.telemetry)
         speed = max(0.0, float(getattr(app.state, "replay_speed_multiplier", 1.0)))
-        anchor = min(max(int(getattr(app.state, "replay_anchor_interval", snapshot.current_interval)), 0), total - 1)
+        anchor = min(
+            max(int(getattr(app.state, "replay_anchor_interval", snapshot.current_interval)), 0),
+            total - 1,
+        )
         started_at = float(getattr(app.state, "replay_started_at", time.time()))
         paused = bool(getattr(app.state, "replay_paused", False))
         interval_seconds = 15 * 60
@@ -167,7 +175,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         replay = replay_status_for(snapshot)
         status = monitor.status()
         current = status.get("current")
-        cursor = status.get("cursor") if status.get("current") else snapshot.current_interval if snapshot else 0
+        cursor = (
+            status.get("cursor")
+            if status.get("current")
+            else snapshot.current_interval
+            if snapshot
+            else 0
+        )
         if current is None and snapshot and snapshot.telemetry:
             index = min(max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1)
             current = snapshot.telemetry[index].model_dump(mode="json")
@@ -209,7 +223,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pv_curtailment_kw = max(0.0, pv_kw - load_kw)
         return {
             "current": current,
-            "source": status.get("source") or (snapshot.source if snapshot else "uploaded_snapshot"),
+            "source": status.get("source")
+            or (snapshot.source if snapshot else "uploaded_snapshot"),
             "cursor": cursor,
             "snapshot_contract": "ExternalDataSnapshot",
             "telemetry_points": len(snapshot.telemetry) if snapshot else 0,
@@ -257,6 +272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.external_data = external_data
     app.state.snapshot_factory = snapshot_factory
     app.state.monitor = monitor
+    app.state.polar_store = polar_store
     app.state.uploaded_snapshot = None
     app.state.replay_started_at = time.time()
     app.state.replay_anchor_interval = 0
@@ -305,7 +321,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "agentteams_live_required": runtime.agentteams_live_required,
             "agentteams_team_name": runtime.agentteams_team_name,
             "agentteams_runtime": agentteams_runtime,
+            "polardb": cast(PolarDBStore, request.app.state.polar_store).health(),
         }
+
+    @app.get("/mcp/{profile}/tools")
+    def mcp_tools(profile: str) -> dict[str, object]:
+        return {
+            "server": f"energymesh-{profile}",
+            "profile": profile,
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.input_schema,
+                }
+                for tool in tools_for_profile(profile)
+            ],
+        }
+
+    @app.post("/mcp/{profile}")
+    def mcp_jsonrpc(profile: str, body: dict[str, object]) -> dict[str, object]:
+        response = handle_mcp_message(body, profile)
+        if response is None:
+            return {"jsonrpc": "2.0", "result": {}}
+        return response
 
     @app.get("/api/agentteams/manifest", response_model=AgentTeamsManifest)
     def agentteams_manifest(request: Request) -> AgentTeamsManifest:
@@ -331,9 +370,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.post(
-        "/api/agents/{agent_id}/model/test", response_model=AgentModelTestResponse
-    )
+    @app.post("/api/agents/{agent_id}/model/test", response_model=AgentModelTestResponse)
     def test_agent_model(
         agent_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -381,23 +418,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reply = chat_with_agent_config(config, body.message)
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
-        return AgentChatResponse(
-            agent_id=normalized, model=config.model, response=reply
-        )
+        return AgentChatResponse(agent_id=normalized, model=config.model, response=reply)
 
     @app.post("/api/runtime/chat", response_model=AgentRuntimeChatResponse)
     def chat_with_runtime(
         body: AgentRuntimeChatRequest,
         request: Request,
         direct_runtime: Annotated[DirectLeaderRuntime, Depends(get_direct_runtime)],
-        live_runtime: Annotated[
-            LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
-        ],
+        live_runtime: Annotated[LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)],
     ) -> AgentRuntimeChatResponse:
         try:
             settings: Settings = request.app.state.settings
-            if settings.agentteams_enabled and settings.agentteams_live_required:
-                return live_runtime.chat(body.message, body.session_id, body.task_id)
             if not requires_agentteams_workers(body.message):
                 return direct_runtime.chat(
                     body.message,
@@ -405,6 +436,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     body.task_id,
                     current_world_state(),
                 )
+            if settings.agentteams_enabled and settings.agentteams_live_required:
+                return live_runtime.chat(body.message, body.session_id, body.task_id)
             if settings.agentteams_enabled:
                 return live_runtime.chat(body.message, body.session_id, body.task_id)
             raise LiveAgentTeamsRuntimeError(
@@ -422,9 +455,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body: AgentRuntimeChatRequest,
         request: Request,
         direct_runtime: Annotated[DirectLeaderRuntime, Depends(get_direct_runtime)],
-        live_runtime: Annotated[
-            LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)
-        ],
+        live_runtime: Annotated[LiveAgentTeamsRuntime, Depends(get_live_agentteams_runtime)],
     ) -> StreamingResponse:
         def sse_event(event: dict[str, object]) -> Iterator[str]:
             yield f"event: {event['type']}\n"
@@ -434,8 +465,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 settings: Settings = request.app.state.settings
                 if settings.agentteams_enabled and settings.agentteams_live_required:
-                    event_source = (
-                        live_runtime.stream_chat(body.message, body.session_id, body.task_id)
+                    event_source = live_runtime.stream_chat(
+                        body.message, body.session_id, body.task_id
                     )
                 elif not requires_agentteams_workers(body.message):
                     event_source = direct_runtime.stream_chat(
@@ -445,8 +476,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         current_world_state(),
                     )
                 elif settings.agentteams_enabled:
-                    event_source = (
-                        live_runtime.stream_chat(body.message, body.session_id, body.task_id)
+                    event_source = live_runtime.stream_chat(
+                        body.message, body.session_id, body.task_id
                     )
                 else:
                     raise LiveAgentTeamsRuntimeError(
@@ -463,9 +494,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(events(), media_type="text/event-stream")
 
-    @app.get(
-        "/api/runtime/sessions/{session_id}/messages", response_model=list[AgentMessage]
-    )
+    @app.get("/api/runtime/sessions/{session_id}/messages", response_model=list[AgentMessage])
     def list_runtime_messages(
         session_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -473,18 +502,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[AgentMessage]:
         return evidence_store.list_agent_messages(session_id, limit=limit)
 
-    @app.get(
-        "/api/runtime/tasks/{task_id}/artifacts", response_model=list[RuntimeArtifact]
-    )
+    @app.get("/api/runtime/tasks/{task_id}/artifacts", response_model=list[RuntimeArtifact])
     def list_runtime_artifacts(
         task_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
     ) -> list[RuntimeArtifact]:
         return evidence_store.list_runtime_artifacts(task_id)
 
-    @app.get(
-        "/api/runtime/tasks/{task_id}/tool-calls", response_model=list[RuntimeToolCall]
-    )
+    @app.get("/api/runtime/tasks/{task_id}/tool-calls", response_model=list[RuntimeToolCall])
     def list_runtime_tool_calls(
         task_id: str,
         evidence_store: Annotated[EvidenceStore, Depends(get_store)],
@@ -532,9 +557,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def download_opencem_sample() -> FileResponse:
         sample_path = Path(__file__).parents[2] / "data" / "opencem" / "2025-07-a.csv"
         if not sample_path.exists():
-            raise HTTPException(
-                status_code=404, detail="OpenCEM sample CSV is not available"
-            )
+            raise HTTPException(status_code=404, detail="OpenCEM sample CSV is not available")
         return FileResponse(
             sample_path,
             media_type="text/csv",
@@ -575,9 +598,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def current_uploaded_snapshot(request: Request) -> ExternalDataSnapshot:
         snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
         if snapshot is None:
-            raise HTTPException(
-                status_code=404, detail="no normalized Snapshot is loaded"
-            )
+            raise HTTPException(status_code=404, detail="no normalized Snapshot is loaded")
         replay_status_for(snapshot)
         return snapshot
 
@@ -687,13 +708,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         has_upload = snapshot is not None
         current_interval = parallel.cursor
         latest_reopt = (
-            parallel.reoptimization_events[-1]
-            if parallel.reoptimization_events
-            else None
+            parallel.reoptimization_events[-1] if parallel.reoptimization_events else None
         )
-        latest_history = (
-            parallel.interval_history[-1] if parallel.interval_history else None
-        )
+        latest_history = parallel.interval_history[-1] if parallel.interval_history else None
         trace_count = len(parallel.agentteams_trace)
         readback_rate = 1.0 if latest_history is not None else 0.0
         return {
@@ -719,9 +736,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "business_input": "Upload OpenCEM CSV or connect park EMS/BMS/PCS snapshot.",
                 "active_plan": "PARALLEL" if parallel.agentteams_active else "none",
                 "old_plan_status": (
-                    "invalidated"
-                    if parallel.plans_invalidated
-                    else "valid_until_deviation"
+                    "invalidated" if parallel.plans_invalidated else "valid_until_deviation"
                 ),
                 "replan_count": parallel.total_reoptimizations,
                 "hitl_gate": "required_before_write_or_flexible_load_action",

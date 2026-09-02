@@ -19,6 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cloud = [
+  "psycopg[binary]>=3.2,<4",
+]
 dev = [
   "httpx>=0.27,<1",
   "mypy>=1.11,<2",
@@ -29,6 +32,7 @@ dev = [
 
 [project.scripts]
 energymesh = "energymesh.api:run"
+energymesh-mcp = "energymesh.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/energymesh"]

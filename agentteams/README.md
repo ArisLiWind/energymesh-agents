@@ -24,16 +24,18 @@ Calling these APIs in a Python sequence is not AgentTeams collaboration evidence
 The Team references Workers through `spec.workerMembers` and contains exactly one
 `role: team_leader`, matching the current AgentTeams API.
 
-Before apply, the following MCP servers must exist in Higress and be authorized per Worker:
+Before apply, the following MCP servers can be exposed through the EnergyMesh FastAPI JSON-RPC
+endpoints and then routed through Higress per Worker:
 
 - `energymesh-readonly`: snapshots, task/context and evidence reads;
 - `energymesh-planning`: baseline and candidate generation;
 - `energymesh-audit`: independent verification;
 - `energymesh-control`: approval validation, simulation, readback and rollback.
 
-The repository does not yet ship those as live MCP servers. Current FastAPI/OpenAPI endpoints are
-domain contracts, not a substitute for MCP discovery, Higress consumer identity or framework-level
-authorization.
+The repository ships these as local MCP JSON-RPC endpoints at `/mcp/{profile}` and as the
+`energymesh-mcp` stdio entrypoint. `deploy/higress-mcp-routes.yaml` provides the gateway route
+asset; production still requires applying it to a real Higress installation and binding
+cloud-side consumer identity policies.
 
 ## Required runtime proof
 

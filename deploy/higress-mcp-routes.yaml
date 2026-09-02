@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: energymesh-api
+  namespace: energymesh
+  labels:
+    app.kubernetes.io/name: energymesh-api
+spec:
+  selector:
+    app.kubernetes.io/name: energymesh-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: energymesh-higress-mcp
+  namespace: energymesh
+  annotations:
+    kubernetes.io/ingress.class: higress
+    higress.io/enable-cors: "true"
+    higress.io/proxy-read-timeout: "300"
+    higress.io/proxy-send-timeout: "300"
+spec:
+  rules:
+    - host: energymesh-mcp.example.com
+      http:
+        paths:
+          - path: /mcp/readonly
+            pathType: Prefix
+            backend:
+              service:
+                name: energymesh-api
+                port:
+                  number: 8000
+          - path: /mcp/planning
+            pathType: Prefix
+            backend:
+              service:
+                name: energymesh-api
+                port:
+                  number: 8000
+          - path: /mcp/audit
+            pathType: Prefix
+            backend:
+              service:
+                name: energymesh-api
+                port:
+                  number: 8000
+          - path: /mcp/control
+            pathType: Prefix
+            backend:
+              service:
+                name: energymesh-api
+                port:
+                  number: 8000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: energymesh-agentteams-mcp
+  namespace: energymesh
+data:
+  energymesh-readonly.url: https://energymesh-mcp.example.com/mcp/readonly
+  energymesh-planning.url: https://energymesh-mcp.example.com/mcp/planning
+  energymesh-audit.url: https://energymesh-mcp.example.com/mcp/audit
+  energymesh-control.url: https://energymesh-mcp.example.com/mcp/control
+  authorization-boundary: |
+    readonly: energy.snapshot.read, microgrid.context.ingest
+    planning: dispatch.plan.generate
+    audit: dispatch.audit.verify
+    control: approval.validate, execution.simulate, execution.readback, control.rollback

@@ -10,8 +10,9 @@ Updated: 2026-09-02
 - AgentTeams-native coordination contracts: the Team Leader owns a dynamic dependency-aware task
   DAG, Worker delegation/progress/revision/acceptance, Human intervention and stalled-task
   handling; EnergyMesh APIs are explicitly limited to domain-tool responsibilities.
-- Per-Worker packaged Energy Skill assets under each `package` directory, plus planned
-  least-privilege Higress MCP server separation for read, planning, audit and control scopes.
+- Per-Worker packaged Energy Skill assets under each `package` directory, plus implemented
+  least-privilege MCP server separation for read, planning, audit and control scopes with Higress
+  route assets under `deploy/`.
 - Official OpenCEM CUHK-Shenzhen real PV-and-battery microgrid CSV replay, with an unmodified,
   checksum-pinned public measurement partition and explicit CC BY 4.0 attribution.
 - Shared `ExternalDataSnapshot` normalization boundary for uploaded history and future read-only
@@ -36,7 +37,11 @@ Updated: 2026-09-02
 - Explicit task state machine, human approval gate, rejection path, simulation-only executor, and
   post-execution verification.
 - SQLite task/trace persistence and SHA-256 JSON evidence packages.
+- PolarDB for PostgreSQL DSN support through `POLARDB_DSN` / `DATABASE_URL`, with SQLite fallback
+  for offline demo runs.
 - FastAPI/OpenAPI service and responsive operator console.
+- Live MCP JSON-RPC endpoints at `/mcp/readonly`, `/mcp/planning`, `/mcp/audit` and `/mcp/control`,
+  plus `energymesh-mcp` stdio entrypoint for AgentTeams or local MCP clients.
 - Vercel Python serverless preview configuration; local `vercel build --yes` completed
   successfully after adding `api/index.py`, `vercel.json`, `.python-version`, and `uv.lock`.
 - Open-source `agentscope-ai/AgentTeams` Team Leader, Worker, Skill, MCP, and trace mapping manifest
@@ -70,14 +75,16 @@ Updated: 2026-09-02
 - Capture one polished live evidence run where the same `project_id`, EnergyMesh `task_id`,
   Team Room and Task Room are visible in both AgentTeams Element and the white EnergyMesh UI while
   `dispatch_plan` changes the 3D campus preview and execution receipt adopts it.
-- Implement and register the `energymesh-readonly`, `energymesh-planning`, `energymesh-audit` and
-  `energymesh-control` MCP servers behind Higress with per-Worker consumer authorization.
+- Deploy `energymesh-readonly`, `energymesh-planning`, `energymesh-audit` and
+  `energymesh-control` behind a real Higress gateway with cloud-side per-Worker consumer
+  authorization policies.
 - Add authenticated users and signed approval records.
 - Add forecast uncertainty bands and rolling-horizon re-optimization.
 - Evaluate against multiple seasons and measured-but-anonymized benchmark profiles.
-- Implement an MCP read-only facade for the documented FastAPI/OpenAPI tool contracts.
-- Replace local SQLite evidence/model-config persistence with PolarDB for PostgreSQL or an
-  equivalent external database before using Vercel as a long-running shared demo.
+- Verify the MCP endpoints through the target AgentTeams MCP client and capture the same-task
+  discovery/call transcript.
+- Provision PolarDB for PostgreSQL and verify `POLARDB_DSN` against the target cloud database
+  before using Vercel as a long-running shared demo.
 - Validate `agentteams/agentteams-resources.yaml` against a live `agentscope-ai/AgentTeams`
   quickstart or Helm deployment.
 
@@ -87,12 +94,12 @@ Updated: 2026-09-02
   GitHub Codespaces or another Docker Linux host. Local Python orchestration is still domain
   simulation evidence only, but dispatch/execution chat paths no longer fall back to a fake local
   multi-Agent Worker pipeline when AgentTeams is unavailable.
-- The four named EnergyMesh MCP servers in Worker specs are planned authorization boundaries; the
-  repository still exposes FastAPI/OpenAPI domain contracts rather than live discoverable MCP
-  servers routed through Higress.
-- No live MCP Server, production database, cloud account, or physical equipment is connected.
-- Alibaba Cloud Skills/Nacos/Higress/PolarDB/RocketMQ/AgentLoop are documented as integration
-  contracts and migration targets, not active cloud resources in the local MVP.
+- The four named EnergyMesh MCP servers are implemented as JSON-RPC endpoints and stdio profiles,
+  but the current local checkout has not been deployed behind a real Higress gateway.
+- No production database, cloud account, or physical equipment is connected in the local checkout.
+- Alibaba Cloud Skills/Nacos/RocketMQ/AgentLoop remain documented integration contracts and
+  migration targets; Higress and PolarDB now have repository-level runtime/configuration assets but
+  still require cloud provisioning for production proof.
 - The model is park-level economic dispatch, not network power flow or real-time control.
 - Docker validation depends on Codespaces or a Docker Linux host; absence on the Mac must be
   reported in verification notes.

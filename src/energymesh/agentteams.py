@@ -104,7 +104,12 @@ def build_agentteams_manifest(
                     "execution_mapping",
                     "approval_rollback",
                 ],
-                mcp_servers=["energymesh-local-api"],
+                mcp_servers=[
+                    "energymesh-readonly",
+                    "energymesh-planning",
+                    "energymesh-audit",
+                    "energymesh-control",
+                ],
                 permissions=["read_scenario", "create_task", "request_human_approval"],
             ),
             AgentTeamsWorkerSpec(
@@ -115,7 +120,7 @@ def build_agentteams_manifest(
                 soul_md="agentteams/workers/perception/SOUL.md",
                 agents_md="agentteams/workers/perception/AGENTS.md",
                 skills=["microgrid_context_ingest"],
-                mcp_servers=["energymesh-local-api"],
+                mcp_servers=["energymesh-readonly"],
                 permissions=["read_scenario", "read_task"],
             ),
             AgentTeamsWorkerSpec(
@@ -126,7 +131,7 @@ def build_agentteams_manifest(
                 soul_md="agentteams/workers/dispatch/SOUL.md",
                 agents_md="agentteams/workers/dispatch/AGENTS.md",
                 skills=["dispatch_plan_generate"],
-                mcp_servers=["energymesh-local-api"],
+                mcp_servers=["energymesh-readonly", "energymesh-planning"],
                 permissions=["read_context", "generate_plan"],
             ),
             AgentTeamsWorkerSpec(
@@ -137,7 +142,7 @@ def build_agentteams_manifest(
                 soul_md="agentteams/workers/audit/SOUL.md",
                 agents_md="agentteams/workers/audit/AGENTS.md",
                 skills=["dispatch_audit_verify"],
-                mcp_servers=["energymesh-local-api"],
+                mcp_servers=["energymesh-readonly", "energymesh-audit"],
                 permissions=["read_plan", "write_audit_decision"],
             ),
             AgentTeamsWorkerSpec(
@@ -148,7 +153,7 @@ def build_agentteams_manifest(
                 soul_md="agentteams/workers/execution/SOUL.md",
                 agents_md="agentteams/workers/execution/AGENTS.md",
                 skills=["execution_mapping", "approval_rollback"],
-                mcp_servers=["energymesh-local-api"],
+                mcp_servers=["energymesh-readonly", "energymesh-control"],
                 permissions=["read_approved_plan", "write_simulated_commands"],
             ),
         ],
@@ -196,12 +201,42 @@ def build_agentteams_manifest(
         ],
         mcp_servers=[
             {
-                "name": "energymesh-local-api",
-                "type": "http",
-                "base_url": "http://127.0.0.1:8000",
-                "status": "local_http_tool_adapter_ready_for_agentteams_workers",
+                "name": "energymesh-readonly",
+                "type": "mcp-http-jsonrpc",
+                "base_url": "http://127.0.0.1:8000/mcp/readonly",
+                "tools": ["energy.snapshot.read", "microgrid.context.ingest"],
+                "status": "implemented",
                 "production_write": False,
-            }
+            },
+            {
+                "name": "energymesh-planning",
+                "type": "mcp-http-jsonrpc",
+                "base_url": "http://127.0.0.1:8000/mcp/planning",
+                "tools": ["dispatch.plan.generate"],
+                "status": "implemented",
+                "production_write": False,
+            },
+            {
+                "name": "energymesh-audit",
+                "type": "mcp-http-jsonrpc",
+                "base_url": "http://127.0.0.1:8000/mcp/audit",
+                "tools": ["dispatch.audit.verify"],
+                "status": "implemented",
+                "production_write": False,
+            },
+            {
+                "name": "energymesh-control",
+                "type": "mcp-http-jsonrpc",
+                "base_url": "http://127.0.0.1:8000/mcp/control",
+                "tools": [
+                    "approval.validate",
+                    "execution.simulate",
+                    "execution.readback",
+                    "control.rollback",
+                ],
+                "status": "implemented_simulation_only",
+                "production_write": False,
+            },
         ],
         model_configs=model_configs or {},
     )
