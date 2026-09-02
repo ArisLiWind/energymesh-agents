@@ -402,7 +402,8 @@ class LiveAgentTeamsRuntime:
                 },
             )
 
-        self._send_matrix_message(active_session_id, active_task_id, message, safe_world_state)
+        since_token = self._matrix_sync_token()
+        sent_at_ms = self._send_matrix_message(active_session_id, active_task_id, message, safe_world_state)
         yield {
             "type": "team_room_message",
             "session_id": active_session_id,
@@ -414,7 +415,9 @@ class LiveAgentTeamsRuntime:
         }
 
         steps: list[dict[str, str]] = []
-        for event in self._stream_agentteams_events(active_session_id, active_task_id):
+        for event in self._stream_agentteams_events(
+            active_session_id, active_task_id, sent_at_ms, since_token
+        ):
             agent_id = str(event.get("agent_id") or event.get("worker") or "agentteams_manager")
             message_text = str(event.get("message") or event.get("response") or event.get("body") or "")
             if event.get("type") in {"worker_joined", "handoff", "agent_joined"}:
@@ -469,15 +472,24 @@ class LiveAgentTeamsRuntime:
         task_id: str,
         message: str,
         world_state: dict[str, Any] | None,
-    ) -> None:
+    ) -> int:
+        import time
+
         safe_world_state = self._matrix_safe_value(world_state)
-        body = message
+        body = (
+            "[EnergyMesh live request]\n"
+            f"session_id={session_id}\n"
+            f"task_id={task_id}\n"
+            f"team={self.team_name}\n\n"
+            f"{message}"
+        )
         if safe_world_state:
             body = (
-                f"{message}\n\n"
+                f"{body}\n\n"
                 "[EnergyMesh world_state]\n"
                 f"{json.dumps(safe_world_state, ensure_ascii=False, separators=(',', ':'))}"
             )
+        needs_workers = requires_agentteams_workers(message)
         payload = {
             "msgtype": "m.text",
             "body": body,
@@ -487,7 +499,7 @@ class LiveAgentTeamsRuntime:
                 "project_id": self.project_id or None,
                 "team_name": self.team_name,
                 "source": "fastapi_runtime_chat",
-                "intent": "dispatch_or_execution",
+                "intent": "dispatch_or_execution" if needs_workers else "conversation",
                 "world_state": safe_world_state,
                 "required_workers": [
                     "perception_worker",
@@ -509,6 +521,7 @@ class LiveAgentTeamsRuntime:
                 },
             },
         }
+        sent_at_ms = int(time.time() * 1000)
         txn_id = uuid4().hex
         encoded_room_id = quote(self.team_room_id, safe="")
         url = (
@@ -529,6 +542,20 @@ class LiveAgentTeamsRuntime:
             ) from error
         except URLError as error:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
+        return sent_at_ms
+
+    def _matrix_sync_token(self) -> str | None:
+        url = (
+            f"{self.matrix_base_url}/_matrix/client/v3/sync"
+            f"?timeout=0&access_token={self.matrix_access_token}"
+        )
+        try:
+            with urlrequest.urlopen(url, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return None
+        token = payload.get("next_batch")
+        return str(token) if token else None
 
     def _matrix_safe_value(self, value: Any, seen: set[int] | None = None) -> Any:
         if seen is None:
@@ -577,9 +604,11 @@ class LiveAgentTeamsRuntime:
             return value.isoformat()
         return value
 
-    def _stream_agentteams_events(self, session_id: str, task_id: str):
+    def _stream_agentteams_events(
+        self, session_id: str, task_id: str, sent_at_ms: int, since_token: str | None
+    ):
         if not self.event_stream_url:
-            yield from self._poll_matrix_team_room(session_id, task_id)
+            yield from self._poll_matrix_team_room(session_id, task_id, sent_at_ms, since_token)
             return
         url = (
             f"{self.event_stream_url}"
@@ -600,26 +629,41 @@ class LiveAgentTeamsRuntime:
                 f"AgentTeams event stream failed; cannot prove Worker handoff: {error}"
             ) from error
 
-    def _poll_matrix_team_room(self, session_id: str, task_id: str):
+    def _poll_matrix_team_room(
+        self, session_id: str, task_id: str, sent_at_ms: int, since_token: str | None
+    ):
         import time
 
         seen: set[str] = set()
         deadline = time.time() + int(os.getenv("AGENTTEAMS_MATRIX_POLL_TIMEOUT", "90"))
         yielded = 0
         while time.time() < deadline:
-            encoded_room_id = quote(self.team_room_id, safe="")
-            url = (
-                f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
-                f"{encoded_room_id}/messages?dir=b&limit=30"
-                f"&access_token={self.matrix_access_token}"
-            )
+            if since_token:
+                url = (
+                    f"{self.matrix_base_url}/_matrix/client/v3/sync"
+                    f"?since={quote(since_token, safe='')}&timeout=30000"
+                    f"&access_token={self.matrix_access_token}"
+                )
+            else:
+                encoded_room_id = quote(self.team_room_id, safe="")
+                url = (
+                    f"{self.matrix_base_url}/_matrix/client/v3/rooms/"
+                    f"{encoded_room_id}/messages?dir=b&limit=30"
+                    f"&access_token={self.matrix_access_token}"
+                )
             try:
                 with urlrequest.urlopen(url, timeout=10) as response:
                     payload = json.loads(response.read().decode("utf-8"))
             except Exception:
                 time.sleep(2)
                 continue
-            messages = list(reversed(payload.get("chunk", [])))
+            if since_token:
+                since_token = str(payload.get("next_batch") or since_token)
+                joined = payload.get("rooms", {}).get("join", {})
+                room = joined.get(self.team_room_id, {})
+                messages = list((room.get("timeline", {}) or {}).get("events", []))
+            else:
+                messages = list(reversed(payload.get("chunk", [])))
             for item in messages:
                 event_id = str(item.get("event_id") or "")
                 if not event_id or event_id in seen:
@@ -627,12 +671,15 @@ class LiveAgentTeamsRuntime:
                 seen.add(event_id)
                 if item.get("type") != "m.room.message":
                     continue
+                origin_server_ts = int(item.get("origin_server_ts") or 0)
+                if origin_server_ts and origin_server_ts < sent_at_ms - 1000:
+                    continue
                 content = item.get("content") or {}
                 body = str(content.get("body") or "")
                 sender = str(item.get("sender") or "")
                 if not body or sender.startswith("@admin:"):
                     continue
-                if session_id not in body and task_id not in body and "EnergyMesh" not in body and "dispatch" not in body.lower() and "调度" not in body:
+                if body.startswith("[EnergyMesh live request]"):
                     continue
                 yielded += 1
                 yield {

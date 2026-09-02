@@ -383,6 +383,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> AgentRuntimeChatResponse:
         try:
             settings: Settings = request.app.state.settings
+            if settings.agentteams_enabled and settings.agentteams_live_required:
+                return live_runtime.chat(body.message, body.session_id, body.task_id)
             if not requires_agentteams_workers(body.message):
                 return direct_runtime.chat(
                     body.message,
@@ -418,7 +420,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def events() -> Iterator[str]:
             try:
                 settings: Settings = request.app.state.settings
-                if not requires_agentteams_workers(body.message):
+                if settings.agentteams_enabled and settings.agentteams_live_required:
+                    event_source = (
+                        live_runtime.stream_chat(body.message, body.session_id, body.task_id)
+                    )
+                elif not requires_agentteams_workers(body.message):
                     event_source = direct_runtime.stream_chat(
                         body.message,
                         body.session_id,
