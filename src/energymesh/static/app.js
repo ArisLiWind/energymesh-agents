@@ -1244,7 +1244,7 @@ async function confirmScenarioExecution() {
     const executed = await request(`/api/tasks/${taskId}/execute-approved`, { method: "POST" });
     state.task = executed;
     state.approval = executed.approval;
-    renderTask(); renderTrace(); renderCandidates(); applySnapshotToCampus();
+    renderTask(); renderTrace(); renderCandidates(); await applySnapshotToCampus();
     const baseline = state.parallel?.baseline_cost_yuan ?? "--";
     const opt = state.parallel?.optimized_cost_yuan ?? "--";
     const save = state.parallel?.savings_yuan ?? "--";
@@ -1311,7 +1311,7 @@ function buildScenarioEvents(scenario) {
   }));
 }
 
-function applyNaturalScenario(scenario) {
+async function applyNaturalScenario(scenario) {
   state.activeScenario = scenario;
   state.activeHistory = "new";
   state.selectedAgent = scenario.selectedAgent || "team_leader";
@@ -1357,7 +1357,7 @@ function applyNaturalScenario(scenario) {
   renderCandidates();
   renderTrace();
   renderOpsReport();
-  applySnapshotToCampus();
+  await applySnapshotToCampus();
 }
 
 function scenarioConversation(scenario) {
@@ -2073,7 +2073,7 @@ async function refreshReplayClock() {
     state.energySnapshot.simulated_time = clock.simulated_time || clock.timestamp;
     state.chartTick = state.replayCursor;
     localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
     renderPowerChart();
     renderDailyLedger();
     renderReplayControl();
@@ -2107,7 +2107,7 @@ async function startCampusReplay({ reset = false } = {}) {
   } catch {
     // Keep the campus usable if the backend clock is temporarily unavailable.
   }
-  applySnapshotToCampus();
+  await applySnapshotToCampus();
   renderPowerChart();
   renderDailyLedger();
   renderReplayControl();
@@ -2126,7 +2126,7 @@ async function setReplayCursor(cursor) {
     // Local preview still follows the user's scrub action.
   }
   localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
-  applySnapshotToCampus();
+  await applySnapshotToCampus();
   renderPowerChart();
   renderDailyLedger();
   renderReplayControl();
@@ -2450,7 +2450,7 @@ function renderPlanLedger() {
   `).join("");
 }
 
-function applySnapshotToCampus() {
+async function applySnapshotToCampus() {
   const telemetry = state.energySnapshot?.telemetry || [];
   const point = snapshotAtCurrentCursor();
   if (!point) {
@@ -2467,124 +2467,99 @@ function applySnapshotToCampus() {
     });
     return;
   }
-  const cursor = Math.min(Math.max(Number(point.interval) || 0, 0), telemetry.length - 1);
-  const storageFlow = batteryPowerAt(cursor);
-  const capacity = Number(state.energySnapshot?.scenario?.site?.battery_capacity_kwh || 800);
-  const dt = 0.25; // 15 minutes in hours
 
-  // Compute cumulative energy balances from interval 0 to cursor
-  let totalLoadKwh = 0;
-  let totalGenKwh = 0;
-  let totalGridImportKwh = 0;
-  let totalGridExportKwh = 0;
-  let totalChargeKwh = 0;
-  let totalDischargeKwh = 0;
-  let totalCost = 0;
-  let wastedKwh = 0;
-  let extraCost = 0;
-
-  for (let i = 0; i <= cursor; i++) {
-    const pt = telemetry[i];
-    const prev = i > 0 ? telemetry[i - 1] : pt;
-    const loadKwh = (pt.load_kw || 0) * dt;
-    const pvKwh = (pt.pv_kw || 0) * dt;
-    const deltaSoc = (pt.battery_soc || 0) - (prev.battery_soc || 0);
-    const deltaEnergy = deltaSoc * capacity; // kWh charged(+) or discharged(-)
-
-    let chargeKwh = 0;
-    let dischargeKwh = 0;
-    if (deltaEnergy > 0) chargeKwh = deltaEnergy;
-    else dischargeKwh = -deltaEnergy;
-
-    // Use authoritative backend logic: grid import = max(0, load - pv).
-    // Battery charge/discharge does not affect grid import in the current model.
-    const gridImportKwh = Math.max(0, loadKwh - pvKwh);
-    const gridExportKwh = Math.max(0, pvKwh - loadKwh);
-    const cost = gridImportKwh * (pt.tariff_yuan_per_kwh || 0);
-
-    totalLoadKwh += loadKwh;
-    totalGenKwh += pvKwh;
-    totalGridImportKwh += gridImportKwh;
-    totalGridExportKwh += gridExportKwh;
-    totalChargeKwh += chargeKwh;
-    totalDischargeKwh += dischargeKwh;
-    totalCost += cost;
-    wastedKwh += Math.max(0, pvKwh - loadKwh);
-    extraCost += cost;
+  let world = null;
+  try {
+    world = await request("/api/world-state");
+  } catch (e) {
+    console.error("applySnapshotToCampus: failed to fetch world-state, falling back", e);
   }
 
-  // Current instant power values
+  const cursor = Math.min(Math.max(Number(point.interval) || 0, 0), telemetry.length - 1);
+  const capacity = Number(state.energySnapshot?.scenario?.site?.battery_capacity_kwh || 800);
+  const dt = 0.25;
+
+  // Authority: world-state (MW -> kW)
+  const loadKw = world ? (world.current_load_mw || 0) * 1000 : (point.load_kw || 0);
+  const pvKw   = world ? (world.pv_forecast_mw || 0) * 1000 : (point.pv_kw || 0);
+  const gridImportKw = world ? (world.grid_import_mw || 0) * 1000 : Math.max(0, loadKw - pvKw);
+  const socPercent = world ? (world.storage_soc_percent || 0) : ((point.battery_soc || 0) * 100);
+
+  // Battery power from SOC delta (backend does not expose this)
   const prevPt = cursor > 0 ? telemetry[cursor - 1] : point;
-  const deltaSoc = point.battery_soc - prevPt.battery_soc;
+  const deltaSoc = (point.battery_soc || 0) - (prevPt.battery_soc || 0);
   const batteryPowerKw = Math.abs(deltaSoc * capacity / dt);
   const batteryMode = deltaSoc >= 0.001 ? "charge" : deltaSoc <= -0.001 ? "discharge" : "idle";
   const batteryLabel = batteryMode === "charge" ? "正在充电" : batteryMode === "discharge" ? "正在放电" : "待机";
-  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0));
-  const exportKw = Number(point.grid_export_kw || point.export_kw || 0);
+
+  // Authority: daily cumulative
+  const daily = world?.daily_so_far || {};
+  const totalLoadKwh = daily.load_kwh ?? 0;
+  const totalGenKwh = daily.pv_kwh ?? 0;
+  const totalGridImportKwh = daily.grid_import_kwh ?? 0;
+  const totalCost = daily.purchase_cost_yuan ?? 0;
+
+  // Decomposition from authority
+  const fromGrid = totalGridImportKwh;
+  const fromGen = Math.max(0, totalLoadKwh - fromGrid);
+  const toLoad = Math.max(0, totalGenKwh);
+  const toGridExport = Math.max(0, (pvKw - loadKw) * dt);
+  const wastedKwh = world?.pv_curtailment_kw ? (world.pv_curtailment_kw * dt) : Math.max(0, (pvKw - loadKw) * dt);
+
+  state.campusSimulation = {
+    time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),
+    balance: `¥${Math.max(0, 10000 - totalCost).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    load: `${loadKw.toFixed(2)} kW`,
+    generation: `${pvKw.toFixed(2)} kW`,
+    storage: `SOC ${socPercent.toFixed(0)}%`,
+    storageFlow: `${batteryLabel}${batteryPowerKw > 0.01 ? " " + batteryPowerKw.toFixed(2) + " kW" : ""}`,
+    gridImport: `${gridImportKw.toFixed(2)} kW`,
+    socPercent,
+
+    todayLoad: totalLoadKwh,
+    todayGen: totalGenKwh,
+    todayGrid: totalGridImportKwh,
+    todayCharge: 0,
+    todayDischarge: 0,
+    todayCost: totalCost,
+
+    totalLoad: totalLoadKwh,
+    fromGen,
+    fromStorage: 0,
+    fromGrid,
+    toLoad,
+    toStorageCharge: 0,
+    toGridExport,
+    wastedKwh,
+    extraCost: totalCost,
+  };
+  renderCampusSimulation();
+
   const currentFlow = campusFlowFromPower({
-    loadKw: point.load_kw || 0,
-    pvKw: point.pv_kw || 0,
+    loadKw,
+    pvKw,
     gridImportKw,
     batteryPowerKw,
     batteryMode,
-    exportKw,
+    exportKw: Math.max(0, pvKw - loadKw - batteryPowerKw),
   });
   const previewFlow = previewFlowFromCurrent({
-    loadKw: point.load_kw || 0,
-    pvKw: point.pv_kw || 0,
+    loadKw,
+    pvKw,
     gridImportKw,
     batteryPowerKw,
     batteryMode,
   });
   state.lastCampusFlow = currentFlow;
 
-  // Energy balance decomposition
-  const fromGrid = totalGridImportKwh;
-  const fromStorage = totalDischargeKwh;
-  const fromGen = Math.max(0, totalLoadKwh - fromGrid - fromStorage);
-  const toStorageCharge = totalChargeKwh;
-  const toGridExport = totalGridExportKwh;
-  const toLoad = Math.max(0, totalGenKwh - toStorageCharge - toGridExport);
-
-  state.campusSimulation = {
-    // Current status (kW)
-    time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),
-    balance: `¥${Math.max(0, 10000 - totalCost).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    load: `${(point.load_kw || 0).toFixed(2)} kW`,
-    generation: `${(point.pv_kw || 0).toFixed(2)} kW`,
-    storage: `SOC ${((point.battery_soc || 0) * 100).toFixed(0)}%`,
-    storageFlow: `${batteryLabel}${batteryPowerKw > 0.01 ? " " + batteryPowerKw.toFixed(2) + " kW" : ""}`,
-    gridImport: `${gridImportKw.toFixed(2)} kW`,
-    socPercent: (point.battery_soc || 0) * 100,
-
-    // Today cumulative (度)
-    todayLoad: totalLoadKwh,
-    todayGen: totalGenKwh,
-    todayGrid: totalGridImportKwh,
-    todayCharge: totalChargeKwh,
-    todayDischarge: totalDischargeKwh,
-    todayCost: totalCost,
-
-    // Energy balance
-    totalLoad: totalLoadKwh,
-    fromGen,
-    fromStorage,
-    fromGrid,
-    toLoad,
-    toStorageCharge,
-    toGridExport,
-    wastedKwh,
-    extraCost,
-  };
-  renderCampusSimulation();
   state.campus3d?.applyEnergyState?.({
     optimized: Boolean(state.task?.approval?.approved),
     gridImport: `${gridImportKw.toFixed(2)} kW`,
-    generation: `${(point.pv_kw || 0).toFixed(2)} kW`,
-    storage: `SOC ${((point.battery_soc || 0) * 100).toFixed(0)}%`,
+    generation: `${pvKw.toFixed(2)} kW`,
+    storage: `SOC ${socPercent.toFixed(0)}%`,
     storageFlow: state.campusSimulation.storageFlow,
-    load: `${(point.load_kw || 0).toFixed(2)} kW`,
-    socPercent: (point.battery_soc || 0) * 100,
+    load: `${loadKw.toFixed(2)} kW`,
+    socPercent,
     flows: currentFlow,
     previewFlows: state.flowPreview ? previewFlow : null,
   });
@@ -2592,7 +2567,7 @@ function applySnapshotToCampus() {
   else clearCampusPlanPreview(false);
 }
 
-function applyRuntimeToCampus(runtime) {
+async function applyRuntimeToCampus(runtime) {
   const artifacts = runtime?.artifacts || [];
   const stateArtifact = artifacts.find((artifact) => artifact.name === "state.json");
   const planArtifact = artifacts.find((artifact) => artifact.name === "plan.json");
@@ -3188,7 +3163,7 @@ async function restoreEnergyDataConnection() {
     state.chartTick = state.monitor?.cursor ?? state.replayCursor ?? state.chartTick;
     if (state.monitor?.task_id && state.energySnapshot) await loadMonitorTask(state.monitor.task_id);
     renderMonitor();
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
     await startCampusReplay();
   } catch {
     const savedSnapshot = localStorage.getItem("energymesh.savedSnapshot");
@@ -3205,15 +3180,15 @@ async function restoreEnergyDataConnection() {
           "历史 CSV 已恢复：后端回放钟重新接管当前园区时段",
           [{ kind: "DATA_REPLAY_RESTORED", detail: "浏览器缓存的归一化快照已重新写入后端 world_state。" }],
         );
-        applySnapshotToCampus();
+        await applySnapshotToCampus();
         return;
       } catch {}
     }
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
   }
 }
 
-function renderMonitor() {
+async function renderMonitor() {
   const monitor = state.monitor;
   if (!monitor) return;
   $("#monitor-state").textContent = monitor.running ? "READING" : "STOPPED";
@@ -3239,10 +3214,10 @@ function renderMonitor() {
   // Rolling reoptimize: enabled when a task exists with selected plan and monitor is running
   $("#monitor-rolling").disabled = !monitor.task_id || !state.task?.selected_plan_id || !monitor.running;
 
-  applySnapshotToCampus();
+  await applySnapshotToCampus();
 }
 
-function renderParallel() {
+async function renderParallel() {
   const p = state.parallel;
   if (!p) return;
   $("#monitor-state").textContent = p.running ? "RUNNING" : "STOPPED";
@@ -3528,7 +3503,7 @@ async function loadMonitorTask(taskId) {
   renderTask();
   renderCandidates();
   renderTrace();
-  applySnapshotToCampus();
+  await applySnapshotToCampus();
 }
 
 function formatParallelTrace(t) {
@@ -3579,7 +3554,7 @@ async function pollParallelStep() {
     pollRetryCount = 0;
     state.chartTick = state.parallel.cursor;
     try { renderParallel(); } catch (e) { console.error("renderParallel error:", e); }
-    try { applySnapshotToCampus(); } catch (e) { console.error("applySnapshotToCampus error:", e); }
+    try { await applySnapshotToCampus(); } catch (e) { console.error("applySnapshotToCampus error:", e); }
     // Limit left chat messages to avoid DOM bloat causing browser lag
     const chatContainer = $("#chat-messages");
     while (chatContainer && chatContainer.children.length > 40) {
@@ -3656,7 +3631,7 @@ async function startParallelSimulation() {
     state.energySnapshot = await request("/api/data/snapshot/current");
     state.parallelTraceCursor = 0;
     renderParallel();
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
     const interval = state.speedMode === "normal" ? 15000 : 800;
     state.parallelTimer = window.setInterval(pollParallelStep, interval);
     toast(state.speedMode === "normal" ? "平行对比开始：实时流速（15秒/步）" : "平行对比开始：快速流速（0.8秒/步）");
@@ -3681,7 +3656,7 @@ async function uploadEnergyCsv(file) {
     localStorage.removeItem("energymesh.parallelState");
     state.energySnapshot = body;
     state.replayCursor = body.current_interval || 0;
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
     await startCampusReplay({ reset: true });
     renderDailyLedger();
     setConnectorStatus(
@@ -3714,7 +3689,7 @@ async function testDemoDataConnection() {
       `测试数据连接成功：${snapshot.source}，${snapshot.telemetry.length} 个 15 分钟时段`,
       [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区开始全天用电回放。" }],
     );
-    applySnapshotToCampus();
+    await applySnapshotToCampus();
     await startCampusReplay({ reset: true });
     renderDailyLedger();
     toast("测试数据连接成功，开始全天运行");
@@ -3739,7 +3714,7 @@ async function testLiveDataConnection() {
       );
       toast("真实园区连接成功");
       renderMonitor();
-      applySnapshotToCampus();
+      await applySnapshotToCampus();
       return;
     }
     setConnectorStatus(
@@ -3984,12 +3959,14 @@ applyLanguage(window.localStorage.getItem("energymesh.language") === "zh" ? "zh"
 restoreLatestDemo();
 const savedSnapshot = localStorage.getItem("energymesh.savedSnapshot");
 if (savedSnapshot) {
-  try {
-    state.energySnapshot = JSON.parse(savedSnapshot);
-    state.replayCursor = state.energySnapshot.current_interval || 0;
-    applySnapshotToCampus();
-    startCampusReplay();
-  } catch(e) {}
+  (async () => {
+    try {
+      state.energySnapshot = JSON.parse(savedSnapshot);
+      state.replayCursor = state.energySnapshot.current_interval || 0;
+      await applySnapshotToCampus();
+      await startCampusReplay();
+    } catch(e) {}
+  })();
 }
 restoreEnergyDataConnection();
 localStorage.removeItem("energymesh.parallelState");
