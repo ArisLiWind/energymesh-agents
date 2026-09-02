@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import sleep
 
 from fastapi.testclient import TestClient
 
@@ -95,3 +96,63 @@ def test_monitor_can_record_deepseek_rolling_decision(settings) -> None:
         for _ in range(6):
             status = monitor.step()
         assert any(event["kind"] == "DEEPSEEK_DECISION" for event in status["events"])
+
+
+def test_csv_upload_drives_replay_clock_world_state_and_current_snapshot(settings) -> None:
+    with TestClient(create_app(settings)) as client:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "data" / "opencem" / "2025-07-a.csv"
+        uploaded = client.post(
+            "/api/data/upload?filename=2025-07-a.csv",
+            content=path.read_bytes(),
+            headers={"Content-Type": "text/csv"},
+        )
+        assert uploaded.status_code == 200
+        start = uploaded.json()["current_interval"]
+
+        fast = client.put(
+            "/api/data/replay",
+            json={"current_interval": start, "speed_multiplier": 900, "paused": False},
+        )
+        assert fast.status_code == 200
+        assert fast.json()["seconds_per_interval"] == 1.0
+
+        sleep(1.15)
+        clock = client.get("/api/data/replay").json()
+        assert clock["current_interval"] == (start + 1) % clock["total_intervals"]
+
+        snapshot = client.get("/api/data/snapshot/current").json()
+        assert snapshot["current_interval"] == clock["current_interval"]
+        assert snapshot["current"]["interval"] == clock["current_interval"]
+
+        world_state = client.get("/api/world-state").json()
+        assert world_state["cursor"] == clock["current_interval"]
+        assert world_state["replay_clock"]["speed_multiplier"] == 900.0
+        assert world_state["current"]["interval"] == clock["current_interval"]
+
+
+def test_replay_speed_multiplier_controls_clock_rate(settings) -> None:
+    with TestClient(create_app(settings)) as client:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "data" / "opencem" / "2025-07-a.csv"
+        client.post(
+            "/api/data/upload?filename=2025-07-a.csv",
+            content=path.read_bytes(),
+            headers={"Content-Type": "text/csv"},
+        )
+
+        slow = client.put(
+            "/api/data/replay",
+            json={"current_interval": 10, "speed_multiplier": 60, "paused": False},
+        ).json()
+        assert slow["seconds_per_interval"] == 15.0
+        sleep(1.15)
+        assert client.get("/api/data/replay").json()["current_interval"] == 10
+
+        fast = client.put(
+            "/api/data/replay",
+            json={"current_interval": 10, "speed_multiplier": 900, "paused": False},
+        ).json()
+        assert fast["seconds_per_interval"] == 1.0
+        sleep(1.15)
+        assert client.get("/api/data/replay").json()["current_interval"] == 11

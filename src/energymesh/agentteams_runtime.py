@@ -320,6 +320,7 @@ class LiveAgentTeamsRuntime:
         active_session_id = session_id or f"session_{uuid4().hex[:12]}"
         active_task_id = task_id or f"agentteams_task_{uuid4().hex[:12]}"
         world_state = self._world_state()
+        safe_world_state = self._matrix_safe_value(world_state)
         status = self.assert_ready()
         self._save_message(
             active_session_id,
@@ -327,7 +328,7 @@ class LiveAgentTeamsRuntime:
             "operator",
             "user",
             message,
-            {"runtime": "live_agentteams", "world_state": world_state},
+            {"runtime": "live_agentteams", "world_state": safe_world_state},
         )
 
         yield {
@@ -336,7 +337,7 @@ class LiveAgentTeamsRuntime:
             "session_id": active_session_id,
             "task_id": active_task_id,
             "routed_agents": ["agentteams_manager"],
-            "world_state_loaded": world_state is not None,
+            "world_state_loaded": safe_world_state is not None,
         }
         self._mirror_event(
             active_session_id,
@@ -347,7 +348,7 @@ class LiveAgentTeamsRuntime:
                 "message": "EnergyMesh 请求已进入真实 AgentTeams runtime。",
                 "project_id": self.project_id or None,
                 "team_room_id": self.team_room_id,
-                "world_state_loaded": world_state is not None,
+                "world_state_loaded": safe_world_state is not None,
             },
         )
         yield {
@@ -365,7 +366,7 @@ class LiveAgentTeamsRuntime:
             "stage": "team_room_submit",
             "message": "思考中：正在把操作员消息和右侧园区 world_state 发送到真实 AgentTeams Team Room。",
         }
-        if world_state:
+        if safe_world_state:
             artifact = self.store.save_runtime_artifact(
                 RuntimeArtifact(
                     artifact_id=f"artifact_{uuid4().hex[:12]}",
@@ -374,7 +375,7 @@ class LiveAgentTeamsRuntime:
                     agent_id="agentteams_manager",
                     artifact_type="world_state",
                     name="world_state.json",
-                    payload=world_state,
+                    payload=safe_world_state,
                     created_at=datetime.now(UTC),
                 )
             )
@@ -385,7 +386,7 @@ class LiveAgentTeamsRuntime:
                 "agent_id": "agentteams_manager",
                 "artifact_id": artifact.artifact_id,
                 "message": "右侧 CSV/沙盘状态已作为 AgentTeams world_state 输入。",
-                "world_state": world_state,
+                "world_state": safe_world_state,
             }
             self._mirror_event(
                 active_session_id,
@@ -397,11 +398,11 @@ class LiveAgentTeamsRuntime:
                     "artifact_type": "world_state",
                     "message": "右侧 CSV/沙盘状态已作为真实 world_state 输入 AgentTeams。",
                     "project_id": self.project_id or None,
-                    "world_state": world_state,
+                    "world_state": safe_world_state,
                 },
             )
 
-        self._send_matrix_message(active_session_id, active_task_id, message, world_state)
+        self._send_matrix_message(active_session_id, active_task_id, message, safe_world_state)
         yield {
             "type": "team_room_message",
             "session_id": active_session_id,
@@ -469,12 +470,13 @@ class LiveAgentTeamsRuntime:
         message: str,
         world_state: dict[str, Any] | None,
     ) -> None:
+        safe_world_state = self._matrix_safe_value(world_state)
         body = message
-        if world_state:
+        if safe_world_state:
             body = (
                 f"{message}\n\n"
                 "[EnergyMesh world_state]\n"
-                f"{json.dumps(world_state, ensure_ascii=False, separators=(',', ':'))}"
+                f"{json.dumps(safe_world_state, ensure_ascii=False, separators=(',', ':'))}"
             )
         payload = {
             "msgtype": "m.text",
@@ -486,7 +488,7 @@ class LiveAgentTeamsRuntime:
                 "team_name": self.team_name,
                 "source": "fastapi_runtime_chat",
                 "intent": "dispatch_or_execution",
-                "world_state": self._matrix_safe_value(world_state),
+                "world_state": safe_world_state,
                 "required_workers": [
                     "perception_worker",
                     "dispatch_worker",
@@ -528,13 +530,41 @@ class LiveAgentTeamsRuntime:
         except URLError as error:
             raise LiveAgentTeamsRuntimeError(f"Matrix Team Room send failed: {error}") from error
 
-    def _matrix_safe_value(self, value: Any) -> Any:
+    def _matrix_safe_value(self, value: Any, seen: set[int] | None = None) -> Any:
+        if seen is None:
+            seen = set()
+        if hasattr(value, "model_dump"):
+            try:
+                value = value.model_dump(mode="json")
+            except Exception:
+                value = str(value)
         if isinstance(value, dict):
-            return {str(key): self._matrix_safe_value(item) for key, item in value.items()}
+            marker = id(value)
+            if marker in seen:
+                return "[Circular]"
+            seen.add(marker)
+            try:
+                return {str(key): self._matrix_safe_value(item, seen) for key, item in value.items()}
+            finally:
+                seen.discard(marker)
         if isinstance(value, list):
-            return [self._matrix_safe_value(item) for item in value]
+            marker = id(value)
+            if marker in seen:
+                return "[Circular]"
+            seen.add(marker)
+            try:
+                return [self._matrix_safe_value(item, seen) for item in value]
+            finally:
+                seen.discard(marker)
         if isinstance(value, tuple):
-            return [self._matrix_safe_value(item) for item in value]
+            marker = id(value)
+            if marker in seen:
+                return "[Circular]"
+            seen.add(marker)
+            try:
+                return [self._matrix_safe_value(item, seen) for item in value]
+            finally:
+                seen.discard(marker)
         if isinstance(value, float):
             if not math.isfinite(value):
                 return None
@@ -543,6 +573,8 @@ class LiveAgentTeamsRuntime:
             if abs(value) > 9_007_199_254_740_991:
                 return str(value)
             return value
+        if isinstance(value, datetime):
+            return value.isoformat()
         return value
 
     def _stream_agentteams_events(self, session_id: str, task_id: str):

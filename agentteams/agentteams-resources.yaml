@@ -10,7 +10,7 @@ metadata:
   name: energymesh-team-leader
 spec:
   workerName: energymesh-team-leader
-  model: qwen3.5-plus
+  model: deepseek-chat
   runtime: openclaw
   identity: >-
     EnergyMesh Team Leader. Owns AgentTeams project planning, dynamic task DAGs, delegation,
@@ -30,7 +30,7 @@ metadata:
   name: perception-worker
 spec:
   workerName: perception-worker
-  model: qwen3.5-plus
+  model: deepseek-chat
   runtime: copaw
   identity: >-
     Read-only energy context Worker. Validates telemetry, forecasts, tariffs, device state and
@@ -48,7 +48,7 @@ metadata:
   name: dispatch-worker
 spec:
   workerName: dispatch-worker
-  model: qwen3.5-plus
+  model: deepseek-chat
   runtime: copaw
   identity: >-
     Dispatch proposal Worker. Uses trusted snapshots and deterministic optimization tools to
@@ -67,7 +67,7 @@ metadata:
   name: audit-worker
 spec:
   workerName: audit-worker
-  model: qwen3.5-plus
+  model: deepseek-chat
   runtime: openclaw
   identity: >-
     Independent fail-closed audit Worker. Recomputes physical, production, authorization and
@@ -86,7 +86,7 @@ metadata:
   name: execution-worker
 spec:
   workerName: execution-worker
-  model: qwen3.5-plus
+  model: deepseek-chat
   runtime: copaw
   identity: >-
     Simulation-only execution Worker. Accepts only the currently audited and, when required,

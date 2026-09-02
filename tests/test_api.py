@@ -493,7 +493,7 @@ def test_live_agentteams_matrix_payload_contains_world_state(tmp_path, monkeypat
     runtime._send_matrix_message("session-1", "task-1", "请优化调度", world_state)
 
     payload = captured["payload"]
-    assert payload["energymesh"]["world_state"]["current_load_mw"] == 6.8
+    assert payload["energymesh"]["world_state"]["current_load_mw"] == "6.8"
     assert payload["energymesh"]["required_workers"] == [
         "perception_worker",
         "dispatch_worker",
@@ -501,6 +501,42 @@ def test_live_agentteams_matrix_payload_contains_world_state(tmp_path, monkeypat
         "execution_worker",
     ]
     assert "EnergyMesh world_state" in payload["body"]
+
+
+def test_live_agentteams_matrix_payload_tolerates_circular_world_state(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(req, timeout=0):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return FakeResponse()
+
+    circular: dict[str, object] = {"current_load_mw": 6.8}
+    circular["self"] = circular
+
+    monkeypatch.setenv("AGENTTEAMS_MATRIX_BASE_URL", "http://matrix.local")
+    monkeypatch.setenv("AGENTTEAMS_MATRIX_ACCESS_TOKEN", "token-secret")
+    monkeypatch.setenv("AGENTTEAMS_TEAM_ROOM_ID", "!room:agentteams")
+    monkeypatch.setattr("energymesh.agentteams_runtime.urlrequest.urlopen", fake_urlopen)
+    runtime = LiveAgentTeamsRuntime(
+        EvidenceStore(tmp_path / "energymesh.db", tmp_path / "evidence"),
+        "energymesh-test-team",
+        lambda: circular,
+    )
+
+    runtime._send_matrix_message("session-1", "task-1", "请优化调度", runtime._world_state())
+
+    payload = captured["payload"]
+    assert payload["energymesh"]["world_state"]["self"] == "[Circular]"
+    assert json.dumps(payload, ensure_ascii=False)
 
 
 def test_remote_matrix_agentteams_runtime_ready(monkeypatch) -> None:

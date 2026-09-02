@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260902-replay-bridge-v1";
+import { createCampus3D } from "/static/campus3d.js?v=20260902-replay-minute-v2";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -18,7 +18,7 @@ const state = {
   liveTimer: null,
   replayTimer: null,
   replayCursor: null,
-  replaySpeedIndex: Number(window.localStorage.getItem("energymesh.replaySpeedIndex") || 0),
+  replaySpeedIndex: Number(window.localStorage.getItem("energymesh.replaySpeedIndex.v2") || 0),
   activeHistory: "new",
   activeScenario: null,
   agentThreads: {},
@@ -65,10 +65,10 @@ const state = {
 };
 
 const replaySpeedOptions = [
-  { label: "真实 24h", multiplier: 1 },
-  { label: "15 秒/步", multiplier: 60 },
-  { label: "5 秒/步", multiplier: 180 },
-  { label: "1 秒/步", multiplier: 900 },
+  { label: "真实 1:1", multiplier: 1 },
+  { label: "1秒=1分钟", multiplier: 60 },
+  { label: "1秒=5分钟", multiplier: 300 },
+  { label: "1秒=15分钟", multiplier: 900 },
 ];
 
 try {
@@ -1175,10 +1175,6 @@ function campusPromptContext() {
   } else {
     lines.push("正在预览的新流向: 无。");
   }
-  lines.push(`判断提示: 当前购电 ${gridKw.toFixed(1)} kW，限发 ${curtailKw.toFixed(1)} kW。小功率购电或储能充电本身不代表故障；没有异常事件时先说运行正常。`);
-  lines.push("回答顺序: 先说园区电力当前会怎样运行，再说是否需要 Worker 或调度；不要把回答写成“你会在沙盘看到什么”的界面说明。");
-  lines.push("Worker 触发原则: 普通聊天不触发；询问当前状态只读状态；明确要求优化/模拟/预览/调整/采用/执行时，才建议进入调度或生成预览。");
-  lines.push("禁止: 没有数据质量、通信、预测偏差或告警证据时，不要猜测信号接错或设备故障。");
   return lines.join("\n");
 }
 
@@ -2011,6 +2007,10 @@ function drawHomeCharts() {
   $$(".mini-chart").forEach((canvas) => drawMiniChart(canvas, canvas.dataset.seed || 0));
 }
 
+function renderPowerChart() {
+  if (typeof window.renderPowerChart === "function") window.renderPowerChart();
+}
+
 function startLiveCharts() {
   if (state.liveTimer) return;
   state.liveTimer = window.setInterval(() => {
@@ -2036,17 +2036,22 @@ async function updateReplayClock(patch = {}) {
     body: JSON.stringify(body),
   });
   state.replayCursor = Number(clock.current_interval) || 0;
-  if (state.energySnapshot) state.energySnapshot.current_interval = state.replayCursor;
+  if (state.energySnapshot) {
+    state.energySnapshot.current_interval = state.replayCursor;
+    state.energySnapshot.simulated_time = clock.simulated_time || clock.timestamp;
+  }
   state.chartTick = state.replayCursor;
   return clock;
 }
 
 async function refreshReplayClock() {
-  if (!state.energySnapshot || state.parallel?.running) return;
+  if (!state.energySnapshot) return;
   try {
     const clock = await request("/api/data/replay");
     state.replayCursor = Number(clock.current_interval) || 0;
+    state.energySnapshot = await request("/api/data/snapshot/current");
     state.energySnapshot.current_interval = state.replayCursor;
+    state.energySnapshot.simulated_time = clock.simulated_time || clock.timestamp;
     state.chartTick = state.replayCursor;
     localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
     applySnapshotToCampus();
@@ -2062,6 +2067,10 @@ async function refreshReplayClock() {
 async function startCampusReplay({ reset = false } = {}) {
   const telemetry = state.energySnapshot?.telemetry || [];
   if (!telemetry.length) return;
+  if (state.parallelTimer) window.clearInterval(state.parallelTimer);
+  state.parallelTimer = null;
+  state.parallel = null;
+  localStorage.removeItem("energymesh.parallelState");
   if (reset || state.replayCursor == null) {
     state.replayCursor = Math.min(
       Math.max(Number(state.energySnapshot.current_interval) || 0, 0),
@@ -2121,7 +2130,8 @@ function renderReplayControl() {
   if (readout) {
     const point = telemetry[Number(state.replayCursor) || 0];
     const modeText = currentReplaySpeed().label;
-    readout.textContent = point ? `${String(Number(state.replayCursor) + 1).padStart(2, "0")}/${telemetry.length} · ${formatSnapshotTime(point.timestamp)} · ${modeText}` : "等待 CSV";
+    const displayTime = state.energySnapshot?.simulated_time || point?.timestamp;
+    readout.textContent = point ? `${String(Number(state.replayCursor) + 1).padStart(2, "0")}/${telemetry.length} · ${formatSnapshotTime(displayTime)} · ${modeText}` : "等待 CSV";
   }
 }
 
@@ -2519,7 +2529,7 @@ function applySnapshotToCampus() {
 
   state.campusSimulation = {
     // Current status (kW)
-    time: formatSnapshotTime(point.timestamp),
+    time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),
     balance: `¥${Math.max(0, 10000 - totalCost).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     load: `${(point.load_kw || 0).toFixed(2)} kW`,
     generation: `${(point.pv_kw || 0).toFixed(2)} kW`,
@@ -3613,29 +3623,7 @@ function saveParallelHistory() {
 }
 
 function restoreParallelHistory() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("energymesh.parallelHistory") || "[]");
-    for (const item of saved) {
-      if (historyThreads[item.key]) continue;
-      historyThreads[item.key] = {
-        agentId: "team_leader",
-        en: { opener: "View parallel simulation", messages: item.messages },
-        zh: { opener: "查看平行时空对比", messages: item.messages },
-      };
-      const board = $(".insight-board");
-      if (board && !board.querySelector(`[data-open-workspace="${item.key}"]`)) {
-        const card = document.createElement("article");
-        card.className = "history-card";
-        card.dataset.openWorkspace = item.key;
-        const d = new Date(item.date);
-        const dayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-        const dateStr = `${dayKey} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-        card.innerHTML = historyCardMarkup("平行时空对比 · 全天 Agent 决策", dateStr, "96 个时段完整调度记录，Agent Teams 感知→调度→审核→执行闭环。");
-        ensureDayGroup(dayKey)?.append(card);
-        card.addEventListener("click", () => openWorkspaceFromHistory(item.key));
-      }
-    }
-  } catch(e) {}
+  localStorage.removeItem("energymesh.parallelHistory");
 }
 
 async function startParallelSimulation() {
@@ -3668,6 +3656,10 @@ async function uploadEnergyCsv(file) {
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "CSV upload failed");
+    if (state.parallelTimer) window.clearInterval(state.parallelTimer);
+    state.parallelTimer = null;
+    state.parallel = null;
+    localStorage.removeItem("energymesh.parallelState");
     state.energySnapshot = body;
     state.replayCursor = body.current_interval || 0;
     applySnapshotToCampus();
@@ -3708,7 +3700,6 @@ async function testDemoDataConnection() {
     renderDailyLedger();
     toast("测试数据连接成功，开始全天运行");
     $("#connector-dialog").close();
-    await startParallelSimulation();
   } catch {
     setConnectorStatus(
       "测试数据未连接：请先上传历史 CSV",
@@ -3865,7 +3856,7 @@ function setupEvents() {
   });
   $("#replay-speed-slider")?.addEventListener("input", async (event) => {
     state.replaySpeedIndex = Number(event.currentTarget.value) || 0;
-    window.localStorage.setItem("energymesh.replaySpeedIndex", String(state.replaySpeedIndex));
+    window.localStorage.setItem("energymesh.replaySpeedIndex.v2", String(state.replaySpeedIndex));
     await startCampusReplay();
   });
   $("#nav-connect").addEventListener("click", () => {
@@ -3982,13 +3973,7 @@ if (savedSnapshot) {
   } catch(e) {}
 }
 restoreEnergyDataConnection();
-// Restore parallel simulation from localStorage only after CSV/Snapshot exists.
-const savedParallel = localStorage.getItem("energymesh.parallelState");
-if (savedParallel && state.energySnapshot) {
-  try { state.parallel = JSON.parse(savedParallel); renderParallel(); } catch(e) {}
-} else if (!state.energySnapshot) {
-  localStorage.removeItem("energymesh.parallelState");
-}
+localStorage.removeItem("energymesh.parallelState");
 renderPlanLedger();
 renderReplayControl();
 restoreAgentTeamsTaskMirror();

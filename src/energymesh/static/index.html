@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260902-replay-bridge-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260902-replay-minute-v2" />
   </head>
   <body>
     <main class="app-shell">
@@ -508,7 +508,7 @@
                 <span>回放速度</span>
                 <input id="replay-speed-slider" type="range" min="0" max="3" step="1" value="0" />
               </label>
-              <div class="replay-scale"><span>左：真实 24h</span><span>右：更快</span></div>
+              <div class="replay-scale"><span>左：真实 1:1</span><span>中：1秒=1分钟</span><span>右：更快</span></div>
             </div>
           </div>
           <div class="connector-status">
@@ -531,6 +531,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260902-replay-bridge-v1"></script>
+    <script type="module" src="/static/app.js?v=20260902-replay-minute-v2"></script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 import json
 import time
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "paused": True,
                 "current_interval": 0,
                 "speed_multiplier": 1.0,
+                "seconds_per_interval": None,
                 "total_intervals": 0,
             }
         total = len(snapshot.telemetry)
@@ -107,22 +109,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         anchor = min(max(int(getattr(app.state, "replay_anchor_interval", snapshot.current_interval)), 0), total - 1)
         started_at = float(getattr(app.state, "replay_started_at", time.time()))
         paused = bool(getattr(app.state, "replay_paused", False))
+        interval_seconds = 15 * 60
+        replay_seconds = total * interval_seconds
+        seconds_per_interval = interval_seconds / speed if speed > 0 else None
+        cursor = anchor
         if paused or speed <= 0:
-            cursor = anchor
+            simulated_time = snapshot.telemetry[cursor].timestamp
         else:
             elapsed = max(0.0, time.time() - started_at)
-            # Telemetry is quarter-hourly; speed=1 follows the real 24h day.
-            steps = int((elapsed * speed) // (15 * 60))
-            cursor = (anchor + steps) % total
+            # The CSV rows are quarter-hourly, but the visible replay clock is continuous.
+            # speed=1 means one real second advances one simulated second.
+            simulated_seconds = (anchor * interval_seconds + elapsed * speed) % replay_seconds
+            cursor = int(simulated_seconds // interval_seconds) % total
+            day_start = snapshot.telemetry[0].timestamp
+            simulated_time = day_start + timedelta(seconds=simulated_seconds)
         snapshot.current_interval = cursor
         point = snapshot.telemetry[cursor]
+        snapshot.current = point
+        snapshot.environment_signals.update(
+            {
+                "load_kw": point.load_kw,
+                "pv_kw": point.pv_kw,
+                "battery_soc": point.battery_soc,
+                "grid_import_kw": max(0.0, point.load_kw - point.pv_kw),
+                "current_interval": cursor,
+                "current_timestamp": point.timestamp.isoformat(),
+                "simulated_time": simulated_time.isoformat(),
+            }
+        )
         return {
             "running": not paused,
             "paused": paused,
             "current_interval": cursor,
             "speed_multiplier": speed,
+            "seconds_per_interval": seconds_per_interval,
             "total_intervals": total,
             "timestamp": point.timestamp.isoformat(),
+            "simulated_time": simulated_time.isoformat(),
             "source": snapshot.source,
         }
 
@@ -513,6 +536,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.app.state.replay_anchor_interval = snapshot.current_interval
         request.app.state.replay_speed_multiplier = 1.0
         request.app.state.replay_paused = False
+        replay_status_for(snapshot)
         return snapshot
 
     @app.post("/api/data/snapshot/restore", response_model=ExternalDataSnapshot)
@@ -542,6 +566,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_replay_clock(request: Request) -> dict[str, object]:
         snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
         return replay_status_for(snapshot)
+
+    @app.get("/api/world-state")
+    def get_world_state() -> dict[str, object]:
+        world_state = current_world_state()
+        if world_state is None:
+            raise HTTPException(status_code=404, detail="no world_state is loaded")
+        return world_state
 
     @app.put("/api/data/replay")
     async def update_replay_clock(request: Request) -> dict[str, object]:
