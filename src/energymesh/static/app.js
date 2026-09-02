@@ -2392,7 +2392,7 @@ function previewFlowFromLatestSnapshot() {
   const deltaSoc = (point.battery_soc || 0) - (prevPt.battery_soc || 0);
   const batteryPowerKw = Math.abs(deltaSoc * capacity / dt);
   const batteryMode = deltaSoc >= 0.001 ? "charge" : deltaSoc <= -0.001 ? "discharge" : "idle";
-  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0) + deltaSoc * capacity / dt);
+  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0));
   const currentFlow = state.lastCampusFlow || campusFlowFromPower({
     loadKw: point.load_kw || 0,
     pvKw: point.pv_kw || 0,
@@ -2496,10 +2496,10 @@ function applySnapshotToCampus() {
     if (deltaEnergy > 0) chargeKwh = deltaEnergy;
     else dischargeKwh = -deltaEnergy;
 
-    // Grid import = load - pv + charge - discharge (energy balance)
-    const netGridKwh = loadKwh - pvKwh + chargeKwh - dischargeKwh;
-    const gridImportKwh = Math.max(0, netGridKwh);
-    const gridExportKwh = Math.max(0, -netGridKwh);
+    // Use authoritative backend logic: grid import = max(0, load - pv).
+    // Battery charge/discharge does not affect grid import in the current model.
+    const gridImportKwh = Math.max(0, loadKwh - pvKwh);
+    const gridExportKwh = Math.max(0, pvKwh - loadKwh);
     const cost = gridImportKwh * (pt.tariff_yuan_per_kwh || 0);
 
     totalLoadKwh += loadKwh;
@@ -2509,8 +2509,8 @@ function applySnapshotToCampus() {
     totalChargeKwh += chargeKwh;
     totalDischargeKwh += dischargeKwh;
     totalCost += cost;
-    wastedKwh += Math.max(0, pvKwh - Math.min(pvKwh, loadKwh + chargeKwh) - gridExportKwh);
-    extraCost += gridImportKwh * (pt.tariff_yuan_per_kwh || 0);
+    wastedKwh += Math.max(0, pvKwh - loadKwh);
+    extraCost += cost;
   }
 
   // Current instant power values
@@ -2519,7 +2519,7 @@ function applySnapshotToCampus() {
   const batteryPowerKw = Math.abs(deltaSoc * capacity / dt);
   const batteryMode = deltaSoc >= 0.001 ? "charge" : deltaSoc <= -0.001 ? "discharge" : "idle";
   const batteryLabel = batteryMode === "charge" ? "正在充电" : batteryMode === "discharge" ? "正在放电" : "待机";
-  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0) + deltaSoc * capacity / dt);
+  const gridImportKw = Math.max(0, (point.load_kw || 0) - (point.pv_kw || 0));
   const exportKw = Number(point.grid_export_kw || point.export_kw || 0);
   const currentFlow = campusFlowFromPower({
     loadKw: point.load_kw || 0,
