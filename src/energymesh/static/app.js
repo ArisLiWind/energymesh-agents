@@ -1114,6 +1114,18 @@ function agentHistoryForRequest(agentId) {
     }));
 }
 
+function isInternalAgentTeamsMessage(text = "") {
+  const trimmed = String(text).trim();
+  return /^(Let me|I need to|I will|I've |I have |The admin's|Given the|Now I|This is a direct|Earlier |I sent the|I'll |I'm )/i.test(trimmed)
+    || trimmed.includes("[EnergyMesh live request]")
+    || trimmed.includes("[EnergyMesh world_state]");
+}
+
+function isDisplayableAgentTeamsReply(text = "") {
+  const trimmed = String(text).trim();
+  return trimmed.length > 0 && trimmed.length <= 280 && !isInternalAgentTeamsMessage(trimmed);
+}
+
 async function chatWithSelectedAgent(agentId, message, history = []) {
   const { ok, body } = await requestAllowingError(`/api/agents/${agentId}/chat`, {
     method: "POST",
@@ -1718,8 +1730,10 @@ async function sendChatMessage(event) {
     runtimeStatus.hidden = false;
     runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
     let reply = null;
+    const wantsWorkerFlow = isFlowTuningRequest(message);
     if (agentId === "team_leader") {
       appendRuntimeStatusMessage("team_leader", state.language === "zh" ? "正在连接真实 AgentTeams Team Room..." : "Connecting to the live AgentTeams Team Room...");
+      const visibleReplies = [];
       await chatWithRuntimeStream(routedMessage, {
         onRuntimeCheck: (event) => {
           const ready = event.status?.ready;
@@ -1735,16 +1749,25 @@ async function sendChatMessage(event) {
         onWorkerJoined: (event) => appendRuntimeStatusMessage(event.agent_id || "team_leader", event.message || "Worker joined"),
         onStep: (event) => {
           const step = event.step || {};
-          if (step.response) addChatMessage("agent", step.response, step.agent_id || "team_leader", { meta: { model: step.model || "AgentTeams" } });
+          const text = step.response || "";
+          appendRuntimeStatusMessage(step.agent_id || "team_leader", isInternalAgentTeamsMessage(text) ? "AgentTeams 正在处理协作上下文。" : text);
+          if (isDisplayableAgentTeamsReply(text)) visibleReplies.push({ text, agent: step.agent_id || "team_leader", model: step.model || "AgentTeams" });
         },
       });
+      const finalReply = [...visibleReplies].reverse().find((item) => item.text);
+      if (finalReply) {
+        reply = { response: finalReply.text };
+        addChatMessage("agent", finalReply.text, finalReply.agent, { meta: { model: finalReply.model } });
+      } else {
+        addChatMessage("agent", state.language === "zh" ? "AgentTeams 已接收请求，正在等待可展示的业务结果。" : "AgentTeams accepted the request and is waiting for a displayable result.", agentId);
+      }
     } else {
       reply = await chatWithSelectedAgent(agentId, routedMessage, history);
       addChatMessage("agent", reply.response, agentId, {
         meta: { model: reply.model },
       });
     }
-    if (agentId === "team_leader" && isFlowTuningRequest(message) && state.energySnapshot) {
+    if (agentId === "team_leader" && wantsWorkerFlow && state.energySnapshot) {
       const flowPreview = previewFlowFromLatestSnapshot();
       if (flowPreview) {
         const plan = planNarrativeFromFlow(`${message}\n${reply?.response || ""}`, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
