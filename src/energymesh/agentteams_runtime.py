@@ -85,6 +85,7 @@ class AgentTeamsRuntimeStatus:
     team_room_configured: bool
     workers: list[str] = field(default_factory=list)
     teams: list[str] = field(default_factory=list)
+    bridge_user_id: str | None = None
     problems: list[str] = field(default_factory=list)
     next_steps: list[str] = field(default_factory=list)
 
@@ -99,6 +100,7 @@ class AgentTeamsRuntimeStatus:
             "team_room_configured": self.team_room_configured,
             "workers": self.workers,
             "teams": self.teams,
+            "bridge_user_id": self.bridge_user_id,
             "problems": self.problems,
             "next_steps": self.next_steps,
         }
@@ -131,6 +133,19 @@ def _matrix_reachable(base_url: str, access_token: str) -> bool:
         return False
 
 
+def _matrix_whoami(base_url: str, access_token: str) -> str | None:
+    if not base_url or not access_token:
+        return None
+    url = f"{base_url.rstrip('/')}/_matrix/client/v3/account/whoami?access_token={access_token}"
+    try:
+        with urlrequest.urlopen(url, timeout=4) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    user_id = payload.get("user_id")
+    return str(user_id) if user_id else None
+
+
 def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     runtime_mode = os.getenv("AGENTTEAMS_RUNTIME_MODE", "local_docker").strip().lower()
     matrix_base_url = os.getenv("AGENTTEAMS_MATRIX_BASE_URL", "").rstrip("/")
@@ -139,6 +154,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     matrix_bridge_configured = bool(matrix_base_url and matrix_access_token)
     if runtime_mode == "remote_matrix":
         matrix_ok = _matrix_reachable(matrix_base_url, matrix_access_token)
+        bridge_user_id = _matrix_whoami(matrix_base_url, matrix_access_token) if matrix_ok else None
         remote_workers = [
             item.strip()
             for item in os.getenv("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher").split(",")
@@ -168,6 +184,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
             team_room_configured=team_room_configured,
             workers=remote_workers if matrix_ok else [],
             teams=[remote_team] if matrix_ok else [],
+            bridge_user_id=bridge_user_id,
             problems=problems,
             next_steps=[] if ready else [
                 "Start the Codespace or remote AgentTeams runtime.",
@@ -239,6 +256,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
         team_room_configured=team_room_configured,
         workers=workers,
         teams=teams,
+        bridge_user_id=_matrix_whoami(matrix_base_url, matrix_access_token),
         problems=problems,
         next_steps=[] if ready else next_steps,
     )
