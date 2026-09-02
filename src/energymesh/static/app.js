@@ -81,8 +81,8 @@ const agentProfiles = {
   team_leader: {
     name: "EnergyMesh Team Leader",
     nameZh: "EnergyMesh Team Leader",
-    role: "Tunes the live energy sandbox with you",
-    roleZh: "园区调度负责人",
+    role: "",
+    roleZh: "",
     defaultModel: "deepseek-chat",
     initials: "EM",
     avatar: "/static/avatars/perception.svg",
@@ -953,10 +953,14 @@ function appendChatMessage(role, text, agentId = state.selectedAgent, meta = {})
     const labelNode = document.createElement("strong");
     labelNode.className = "chat-speaker";
     labelNode.textContent = label;
-    const roleNode = document.createElement("small");
-    roleNode.className = "chat-role";
-    roleNode.textContent = agentRole(agentId);
-    heading.append(labelNode, roleNode);
+    const agentRoleText = agentRole(agentId);
+    heading.append(labelNode);
+    if (agentRoleText) {
+      const roleNode = document.createElement("small");
+      roleNode.className = "chat-role";
+      roleNode.textContent = agentRoleText;
+      heading.append(roleNode);
+    }
   }
   const body = document.createElement("div");
   body.className = "chat-message-body";
@@ -1140,8 +1144,8 @@ async function chatWithSelectedAgent(agentId, message, history = []) {
 function agentTeamsRuntimeProblemMessage(error) {
   const detail = error?.message || "Live AgentTeams runtime is not ready.";
   return state.language === "zh"
-    ? `真实 AgentTeams 还没有接管这次对话。\n\n${detail}\n\n必须先完成 Docker、官方 AgentTeams、agt apply 和 Team Room bridge 配置；在这些证据都成立前，界面不会再把本地流水线伪装成多 Agent。`
-    : `Live AgentTeams has not taken over this turn.\n\n${detail}\n\nDocker, official AgentTeams, agt apply, and Team Room bridge configuration must be ready before the UI can claim multi-agent work.`;
+    ? `AgentTeams 连接暂时不可用。\n\n${detail}\n\n请启动 Codespace AgentTeams，并保持 Matrix/Element 端口转发在线后重试。`
+    : `AgentTeams is temporarily unavailable.\n\n${detail}\n\nStart the Codespace AgentTeams runtime, keep Matrix/Element port forwarding online, then retry.`;
 }
 
 function campusPromptContext() {
