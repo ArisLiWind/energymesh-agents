@@ -48,7 +48,7 @@ AgentTeams 在系统中承担任务组织和责任分离：
 
 | 层级 | 当前实现 | 评审口径 |
 | --- | --- | --- |
-| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 正式高分证据必须来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
+| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | 证据来自 live AgentTeams 运行：任务、Matrix 消息、共享文件、Human 事件和终态 |
 | 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，但不能替代 AgentTeams 协作证据 |
 
 ## Live AgentTeams 深度接入
