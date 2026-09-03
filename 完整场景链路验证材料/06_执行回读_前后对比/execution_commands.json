@@ -1,0 +1,62 @@
+[
+  {
+    "id": "CMD-014-01",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-B",
+    "idempotency_key": "IDEMP-TASK-014-B-ROLLBACK",
+    "target_system": "EMS",
+    "resource_id": "dispatch-plan",
+    "command": "select_candidate",
+    "value": 1.0,
+    "unit": "flag",
+    "status": "simulated",
+    "created_at": "2026-07-31T14:00:21+08:00"
+  },
+  {
+    "id": "CMD-014-02",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-B",
+    "idempotency_key": "IDEMP-TASK-014-B-ROLLBACK",
+    "target_system": "BMS",
+    "resource_id": "battery-cluster-01",
+    "command": "set_discharge_power",
+    "value": 220.0,
+    "unit": "kW",
+    "status": "simulated",
+    "created_at": "2026-07-31T14:00:21+08:00"
+  },
+  {
+    "id": "CMD-014-03",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-B",
+    "idempotency_key": "IDEMP-TASK-014-B-ROLLBACK",
+    "target_system": "PCS",
+    "resource_id": "pcs-01",
+    "command": "limit_export_power",
+    "value": 0.0,
+    "unit": "kW",
+    "status": "simulated",
+    "created_at": "2026-07-31T14:00:21+08:00"
+  },
+  {
+    "id": "CMD-014-04",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-B",
+    "idempotency_key": "IDEMP-TASK-014-B-ROLLBACK",
+    "target_system": "MES",
+    "resource_id": "production-line-a",
+    "command": "shift_flexible_load",
+    "value": 110.0,
+    "unit": "kW",
+    "status": "simulated",
+    "created_at": "2026-07-31T14:00:21+08:00"
+  }
+]

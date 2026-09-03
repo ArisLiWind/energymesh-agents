@@ -1,0 +1,3 @@
+comparison,plan_id,strategy,status,total_cost_yuan,energy_cost_yuan,demand_charge_yuan,degradation_cost_yuan,peak_grid_kw,pv_self_consumption_ratio,end_soc,shed_energy_kwh,savings_yuan,savings_percent,approval_requirement
+before,baseline_7d653c9264c5,原 EMS 固定策略：光伏自用、储能不参与动态充放电、生产负荷不调整,baseline,15616.85,9313.54,6303.30,0.00,787.91,1.00,0.55,0.00,0,0,not_required
+after_agent_selected,plan_a12eb40f46fe,Agent 优化后选中策略：储能参与动态充放电并调整柔性负荷,requires_approval,13628.21,8766.35,4752.23,109.64,594.03,1.00,0.52,110.40,1988.64,12.7,human_approval_required

@@ -1,0 +1,6 @@
+stage,plan_or_record,status,cost_yuan,max_power_kw,soc_min_percent,soc_max_percent,transformer_load_percent,reserve_capacity_kwh,approval,execution_or_readback
+rejected_candidate,Candidate-A,audit_rejected,9280,1298,28,72,103.8,120,not_approved,rejected_by_audit_transformer_capacity
+selected_new_plan,Candidate-B,audit_approved,9860,1126,35,68,90.1,210,APPROVAL-Candidate-B-V2,simulated_dispatched
+alternate_safe_plan,Candidate-C,audit_approved,10480,1062,42,74,84.9,280,not_selected,not_executed
+readback_verification,VERIFY-Candidate-B-V2,deviation_exceeded,,,,,,,approved,max_deviation_percent_7.8_threshold_5.0
+rollback,ROLLBACK-Candidate-B-V2,baseline_restored,,,,,,,human_operator,safe_baseline_restored_grid_import_limit_950kw

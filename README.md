@@ -120,6 +120,7 @@ Worker 协作记录；真正调用模型的是 AgentTeams manager/worker 容器�
 
 本项目已经在 GitHub Codespaces 跑通真实 AgentTeams 最小环境。证据见 [`evidence/agentteams-codespaces-proof.md`](evidence/agentteams-codespaces-proof.md)。
 本地园区数据触发、多 Worker 调度链和成本改善证据见 [`evidence/cost-improvement-proof.md`](evidence/cost-improvement-proof.md)。
+真实测试中，原 EMS 固定策略成本为 **15616.85 元**；Agent 多轮调度后选中方案成本为 **13628.21 元**，相对基线预计节省 **1988.64 元 / 12.7%**，峰值购电从 **787.91 kW** 降至 **594.03 kW**。对应证据见 [`完整场景链路验证材料/06_执行回读_前后对比/baseline_vs_agent_savings.csv`](完整场景链路验证材料/06_执行回读_前后对比/baseline_vs_agent_savings.csv)。
 
 已验证的最小结构：
 

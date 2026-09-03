@@ -1,0 +1,62 @@
+[
+  {
+    "id": "SKILL-014-001",
+    "task_id": "TASK-20260731-014",
+    "task_version": 1,
+    "trace_id": "TRACE-20260731-014",
+    "agent": "Perception Agent",
+    "skill_name": "microgrid_context_ingest",
+    "status": "completed",
+    "input_reference": "simulated_external_feeds@14:00",
+    "output_reference": "CTX-014-V2",
+    "started_at": "2026-07-31T14:00:03+08:00",
+    "ended_at": "2026-07-31T14:00:03.820000+08:00",
+    "duration_ms": 820,
+    "error": null
+  },
+  {
+    "id": "SKILL-014-002",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "agent": "Dispatch Agent",
+    "skill_name": "dispatch_plan_generate",
+    "status": "completed",
+    "input_reference": "CTX-014-V2",
+    "output_reference": "CANDIDATES-014-V2",
+    "started_at": "2026-07-31T14:00:04+08:00",
+    "ended_at": "2026-07-31T14:00:05.310000+08:00",
+    "duration_ms": 1310,
+    "error": null
+  },
+  {
+    "id": "SKILL-014-003",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "agent": "Audit Agent",
+    "skill_name": "dispatch_audit_verify",
+    "status": "completed",
+    "input_reference": "CANDIDATES-014-V2",
+    "output_reference": "AUDIT-014-V2",
+    "started_at": "2026-07-31T14:00:05+08:00",
+    "ended_at": "2026-07-31T14:00:05.970000+08:00",
+    "duration_ms": 970,
+    "error": null
+  },
+  {
+    "id": "SKILL-014-004",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "agent": "Execution Agent",
+    "skill_name": "execution_mapping",
+    "status": "completed",
+    "input_reference": "Candidate-B",
+    "output_reference": "IDEMP-TASK-014-B-ROLLBACK",
+    "started_at": "2026-07-31T14:00:06+08:00",
+    "ended_at": "2026-07-31T14:00:06.640000+08:00",
+    "duration_ms": 640,
+    "error": null
+  }
+]

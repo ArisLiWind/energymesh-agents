@@ -1,0 +1,36 @@
+{
+  "task_id": "TASK-20260731-014",
+  "scenario_id": "pv-drop-hot-battery-peak-tariff",
+  "state": "ROLLBACK",
+  "task_version": 2,
+  "trace_id": "TRACE-20260731-014",
+  "context_id": "CTX-014-V2",
+  "context_hash": "9419ec11ef09755dfb3c6984e0dde40b472f3ad5885327ade02de8c896421c20",
+  "created_at": "2026-07-31T14:00:01+08:00",
+  "updated_at": "2026-07-31T14:00:25+08:00",
+  "trigger": "14:00_compound_change",
+  "alerts": [
+    "EMERGENCY_PRODUCTION_ORDER",
+    "PV_ACTUAL_BELOW_FORECAST",
+    "TRANSFORMER_TEMPERATURE_RISK",
+    "BATTERY_TEMPERATURE_DERATE",
+    "PEAK_TARIFF_APPROACHING"
+  ],
+  "device_status": {
+    "meter": "available",
+    "pv": "available",
+    "battery": "derated",
+    "transformer": "available",
+    "production_line_a": "available"
+  },
+  "production_plan": {
+    "plan_id": "production-plan-2026-07-27-r2",
+    "emergency_order": true,
+    "deferrable": false,
+    "priority": "critical"
+  },
+  "safety_declaration": {
+    "simulation_mode": true,
+    "allow_production_write": false
+  }
+}

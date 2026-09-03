@@ -1,0 +1,170 @@
+{
+  "source_run": "runs/task_0243d286235e.json",
+  "task_id": "task_0243d286235e",
+  "state": "completed",
+  "selected_plan_id": "plan_a12eb40f46fe",
+  "baseline_plan_id": "baseline_7d653c9264c5",
+  "baseline_rationale": "原 EMS 固定策略：光伏自用、储能不参与动态充放电、生产负荷不调整。",
+  "baseline_metrics": {
+    "energy_cost_yuan": 9313.54,
+    "demand_charge_yuan": 6303.3,
+    "degradation_cost_yuan": 0.0,
+    "total_cost_yuan": 15616.85,
+    "peak_grid_kw": 787.91,
+    "pv_self_consumption_ratio": 1.0,
+    "end_soc": 0.55,
+    "shed_energy_kwh": 0.0
+  },
+  "selected_plan": {
+    "plan_id": "plan_a12eb40f46fe",
+    "profile": "balanced",
+    "rationale": "在电池安全、最大需量与有限柔性负荷响应之间取得平衡。",
+    "metrics": {
+      "energy_cost_yuan": 8766.35,
+      "demand_charge_yuan": 4752.23,
+      "degradation_cost_yuan": 109.64,
+      "total_cost_yuan": 13628.21,
+      "peak_grid_kw": 594.03,
+      "pv_self_consumption_ratio": 1.0,
+      "end_soc": 0.52,
+      "shed_energy_kwh": 110.4
+    },
+    "solver_status": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
+  },
+  "selected_audit": {
+    "plan_id": "plan_a12eb40f46fe",
+    "decision": "requires_approval",
+    "findings": [
+      {
+        "code": "BASELINE_IMPROVEMENT_VERIFIED",
+        "severity": "info",
+        "message": "相对原 EMS 策略预计节省 1988.64 元（12.7%）。",
+        "interval": null
+      },
+      {
+        "code": "HUMAN_APPROVAL_REQUIRED",
+        "severity": "warning",
+        "message": "计划削减柔性负荷 110.40 kWh，执行前必须人工审批。",
+        "interval": null
+      }
+    ],
+    "checked_rules": [
+      "declared SOC policy",
+      "realized SOC bounds",
+      "battery power and temperature derating",
+      "transformer import capacity",
+      "grid interconnection import capacity",
+      "production minimum-load plan",
+      "interval energy balance",
+      "flexible load authorization",
+      "measurable improvement over original EMS policy"
+    ],
+    "baseline_total_cost_yuan": 15616.85,
+    "improvement_yuan": 1988.64,
+    "improvement_ratio": 0.1273
+  },
+  "approval": {
+    "approval_id": "approval_d82ddcd31073",
+    "task_id": "task_0243d286235e",
+    "approved": true,
+    "approver": "演示审批员",
+    "reason": "演示环境中确认安全约束与影响范围。",
+    "created_at": "2026-07-26T12:15:59.981764Z"
+  },
+  "execution_summary": {
+    "mode": "simulation",
+    "adapters": [
+      "simulated_ems_adapter",
+      "simulated_pcs_adapter",
+      "simulated_flexible_load_adapter"
+    ],
+    "production_writes_attempted": 0,
+    "real_devices_contacted": 0,
+    "simulated_commands_dispatched": 288,
+    "command_targets": [
+      "EMS",
+      "LOAD_CONTROLLER",
+      "PCS"
+    ],
+    "command_sample": [
+      {
+        "command_id": "cmd_3360f2322776",
+        "target_system": "EMS",
+        "resource_id": "park-grid-connection",
+        "interval": 0,
+        "parameter": "grid_import_schedule",
+        "value": 520.0,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:ems:0",
+        "approval_id": "approval_d82ddcd31073"
+      },
+      {
+        "command_id": "cmd_34c8bf13093d",
+        "target_system": "PCS",
+        "resource_id": "battery-01",
+        "interval": 0,
+        "parameter": "active_power_setpoint",
+        "value": 0.0,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:pcs:0",
+        "approval_id": "approval_d82ddcd31073"
+      },
+      {
+        "command_id": "cmd_b59ddecb76e3",
+        "target_system": "LOAD_CONTROLLER",
+        "resource_id": "flexible-load-group-01",
+        "interval": 0,
+        "parameter": "load_shed_setpoint",
+        "value": 0.0,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:load:0",
+        "approval_id": "approval_d82ddcd31073"
+      },
+      {
+        "command_id": "cmd_77b330c2a965",
+        "target_system": "EMS",
+        "resource_id": "park-grid-connection",
+        "interval": 1,
+        "parameter": "grid_import_schedule",
+        "value": 543.665,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:ems:1",
+        "approval_id": "approval_d82ddcd31073"
+      },
+      {
+        "command_id": "cmd_1b9456ea530b",
+        "target_system": "PCS",
+        "resource_id": "battery-01",
+        "interval": 1,
+        "parameter": "active_power_setpoint",
+        "value": 0.0,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:pcs:1",
+        "approval_id": "approval_d82ddcd31073"
+      },
+      {
+        "command_id": "cmd_449925ea28ee",
+        "target_system": "LOAD_CONTROLLER",
+        "resource_id": "flexible-load-group-01",
+        "interval": 1,
+        "parameter": "load_shed_setpoint",
+        "value": 0.0,
+        "unit": "kW",
+        "idempotency_key": "plan_a12eb40f46fe:load:1",
+        "approval_id": "approval_d82ddcd31073"
+      }
+    ],
+    "intervals_replayed": 96,
+    "confirmations_received": 96,
+    "confirmation_ratio": 1.0,
+    "baseline_peak_kw": 787.91,
+    "simulated_peak_kw": 594.03,
+    "peak_reduction_kw": 193.88,
+    "baseline_total_cost_yuan": 15616.85,
+    "simulated_total_cost_yuan": 13628.21,
+    "verified_savings_yuan": 1988.64,
+    "simulated_energy_cost_yuan": 8766.35,
+    "soc_bounds_held": true,
+    "critical_load_served_ratio": 1.0
+  }
+}

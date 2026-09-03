@@ -1,0 +1,52 @@
+{
+  "execution_receipts": [
+    {
+      "id": "RECEIPT-Candidate-B-V2",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "candidate_id": "Candidate-B",
+      "idempotency_key": "IDEMP-TASK-014-B-ROLLBACK",
+      "status": "simulated_dispatched",
+      "command_count": 4,
+      "simulated": true,
+      "created_at": "2026-07-31T14:00:21+08:00"
+    }
+  ],
+  "verification_results": [
+    {
+      "id": "VERIFY-Candidate-B-V2",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "candidate_id": "Candidate-B",
+      "status": "deviation_exceeded",
+      "max_deviation_percent": 7.8,
+      "evidence_hash": "c2832ffc0fb73b9edb2ce9ed4e2279513e04061208e82af7e8b877516d5c7156",
+      "created_at": "2026-07-31T14:00:23+08:00"
+    }
+  ],
+  "rollback_records": [
+    {
+      "id": "ROLLBACK-Candidate-B-V2",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "reason": "执行偏差7.8%超过5%阈值",
+      "baseline_restored": true,
+      "fallback_policy": {
+        "policy": "safe_baseline",
+        "pcs_power_kw": 0,
+        "grid_import_limit_kw": 950,
+        "control_owner": "human_operator"
+      },
+      "created_at": "2026-07-31T14:00:24+08:00"
+    }
+  ],
+  "safety_declaration": {
+    "simulation_mode": true,
+    "allow_production_write": false,
+    "real_devices_contacted": 0,
+    "data_source": "Simulation"
+  }
+}

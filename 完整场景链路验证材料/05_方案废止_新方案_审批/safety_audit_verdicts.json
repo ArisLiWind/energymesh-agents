@@ -1,0 +1,65 @@
+[
+  {
+    "id": "AUDIT-014-A",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-A",
+    "context_hash": "9419ec11ef09755dfb3c6984e0dde40b472f3ad5885327ade02de8c896421c20",
+    "verdict": "rejected",
+    "reason": "预计变压器负载率103.8%，超过95%安全上限",
+    "transformer_load_percent": 103.8,
+    "safety_limit_percent": 95.0,
+    "checks": {
+      "soc_boundary": "passed",
+      "pcs_power_boundary": "passed",
+      "grid_interconnection_limit": "passed",
+      "energy_conservation": "passed",
+      "production_constraint": "passed",
+      "transformer_capacity": "rejected"
+    },
+    "created_at": "2026-07-31T14:00:16+08:00"
+  },
+  {
+    "id": "AUDIT-014-B",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-B",
+    "context_hash": "9419ec11ef09755dfb3c6984e0dde40b472f3ad5885327ade02de8c896421c20",
+    "verdict": "approved",
+    "reason": "硬约束全部通过，需人工确认生产柔性负荷调整",
+    "transformer_load_percent": 90.1,
+    "safety_limit_percent": 95.0,
+    "checks": {
+      "soc_boundary": "passed",
+      "pcs_power_boundary": "passed",
+      "grid_interconnection_limit": "passed",
+      "energy_conservation": "passed",
+      "production_constraint": "passed",
+      "transformer_capacity": "passed"
+    },
+    "created_at": "2026-07-31T14:00:17+08:00"
+  },
+  {
+    "id": "AUDIT-014-C",
+    "task_id": "TASK-20260731-014",
+    "task_version": 2,
+    "trace_id": "TRACE-20260731-014",
+    "candidate_id": "Candidate-C",
+    "context_hash": "9419ec11ef09755dfb3c6984e0dde40b472f3ad5885327ade02de8c896421c20",
+    "verdict": "approved",
+    "reason": "保留容量更高，成本较高但风险最低",
+    "transformer_load_percent": 84.9,
+    "safety_limit_percent": 95.0,
+    "checks": {
+      "soc_boundary": "passed",
+      "pcs_power_boundary": "passed",
+      "grid_interconnection_limit": "passed",
+      "energy_conservation": "passed",
+      "production_constraint": "passed",
+      "transformer_capacity": "passed"
+    },
+    "created_at": "2026-07-31T14:00:18+08:00"
+  }
+]

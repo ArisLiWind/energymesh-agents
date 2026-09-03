@@ -1,0 +1,88 @@
+{
+  "package_name": "完整场景链路验证材料",
+  "submission": "GOAI 复赛",
+  "primary_task_id": "TASK-20260731-014",
+  "trace_id": "TRACE-20260731-014",
+  "scenario_id": "pv-drop-hot-battery-peak-tariff",
+  "context_id": "CTX-014-V2",
+  "context_hash": "9419ec11ef09755dfb3c6984e0dde40b472f3ad5885327ade02de8c896421c20",
+  "execution_scope": {
+    "mode": "digital_twin_simulation",
+    "simulation_mode": true,
+    "allow_production_write": false,
+    "real_devices_contacted": 0
+  },
+  "evidence_groups": [
+    {
+      "id": "01",
+      "name": "真实数据输入",
+      "files": [
+        "01_真实数据输入/emsx_site8_core_upload.csv",
+        "01_真实数据输入/emsx_metadata.csv",
+        "01_真实数据输入/opencem_2025-07-a.csv",
+        "01_真实数据输入/opencem_data_source.md",
+        "01_真实数据输入/data_source.md"
+      ]
+    },
+    {
+      "id": "02",
+      "name": "事件触发与快照",
+      "files": [
+        "02_事件触发与快照/event_snapshot_summary.json",
+        "02_事件触发与快照/task_events_state_machine.json",
+        "02_事件触发与快照/decision_context_snapshot_CTX-014-V2.json"
+      ]
+    },
+    {
+      "id": "03",
+      "name": "AgentTeams协作",
+      "files": [
+        "03_AgentTeams协作/agent_handoffs.json",
+        "03_AgentTeams协作/agentteams_collaboration_trace.json"
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Skill / Tool 真调用",
+      "files": [
+        "04_Skill_Tool真调用/skill_invocations.json"
+      ]
+    },
+    {
+      "id": "05",
+      "name": "方案废止、新方案、审批",
+      "files": [
+        "05_方案废止_新方案_审批/candidate_plans.json",
+        "05_方案废止_新方案_审批/safety_audit_verdicts.json",
+        "05_方案废止_新方案_审批/human_approval.json",
+        "05_方案废止_新方案_审批/old_plan_invalidated_new_plan_selected.json"
+      ]
+    },
+    {
+      "id": "06",
+      "name": "执行回读与前后对比",
+      "files": [
+        "06_执行回读_前后对比/baseline_vs_agent_savings.csv",
+        "06_执行回读_前后对比/baseline_vs_agent_selected_plan.json",
+        "06_执行回读_前后对比/execution_commands.json",
+        "06_执行回读_前后对比/execution_readback_and_rollback.json",
+        "06_执行回读_前后对比/before_after_metrics.csv"
+      ]
+    },
+    {
+      "id": "99",
+      "name": "原始完整归档",
+      "files": [
+        "99_原始完整归档/TASK-20260731-014.full_evidence_archive.json"
+      ]
+    }
+  ],
+  "key_findings": [
+    "Perception Agent detected compound change and moved task to REPLANNING_REQUIRED.",
+    "Dispatch Agent generated three candidate plans under CTX-014-V2.",
+    "Audit Agent rejected Candidate-A because transformer load reached 103.8%, above 95% limit.",
+    "Candidate-B passed audit, received human approval, and generated EMS/BMS/PCS/MES simulation commands.",
+    "Original EMS baseline cost was 15616.85 yuan; Agent-selected plan cost was 13628.21 yuan, saving 1988.64 yuan / 12.7%.",
+    "Readback verification found 7.8% deviation, above 5% threshold, and triggered rollback to safe baseline."
+  ]
+}

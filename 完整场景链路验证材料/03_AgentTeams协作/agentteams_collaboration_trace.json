@@ -1,0 +1,228 @@
+{
+  "task_events": [
+    {
+      "event_id": "EVT-014-001",
+      "task_id": "TASK-20260731-014",
+      "task_version": 1,
+      "from_state": null,
+      "to_state": "TASK_RECEIVED",
+      "actor": "Team Leader",
+      "timestamp": "2026-07-31T14:00:01+08:00",
+      "reason": "创建14:00复合变化任务",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "TASK_RECEIVED"
+      }
+    },
+    {
+      "event_id": "EVT-014-002",
+      "task_id": "TASK-20260731-014",
+      "task_version": 1,
+      "from_state": "TASK_RECEIVED",
+      "to_state": "SENSING",
+      "actor": "Team Leader",
+      "timestamp": "2026-07-31T14:00:02+08:00",
+      "reason": "任务交给感知Agent读取模拟EMS/BMS/PCS/PV/负荷/电价/生产计划",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "SENSING"
+      }
+    },
+    {
+      "event_id": "EVT-014-003",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "SENSING",
+      "to_state": "REPLANNING_REQUIRED",
+      "actor": "Perception Agent",
+      "timestamp": "2026-07-31T14:00:03+08:00",
+      "reason": "新增负荷、光伏偏差、传感器冲突和峰价共同使V1计划失效，任务升级为V2",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "REPLANNING_REQUIRED"
+      }
+    },
+    {
+      "event_id": "EVT-014-004",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "REPLANNING_REQUIRED",
+      "to_state": "PLANNING",
+      "actor": "Team Leader",
+      "timestamp": "2026-07-31T14:00:04+08:00",
+      "reason": "按V2上下文交给调度Agent重新规划",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "PLANNING"
+      }
+    },
+    {
+      "event_id": "EVT-014-005",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "PLANNING",
+      "to_state": "AUDITING",
+      "actor": "Dispatch Agent",
+      "timestamp": "2026-07-31T14:00:05+08:00",
+      "reason": "三套候选策略脚本已生成，调度Agent无批准权限",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "AUDITING"
+      }
+    },
+    {
+      "event_id": "EVT-014-006",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "AUDITING",
+      "to_state": "AWAITING_APPROVAL",
+      "actor": "Audit Agent",
+      "timestamp": "2026-07-31T14:00:06+08:00",
+      "reason": "Candidate A被否决，Candidate B/C通过硬约束并等待人工审批",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "AWAITING_APPROVAL"
+      }
+    },
+    {
+      "event_id": "EVT-014-007",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "AWAITING_APPROVAL",
+      "to_state": "AWAITING_APPROVAL",
+      "actor": "Human Approval",
+      "timestamp": "2026-07-31T14:00:07+08:00",
+      "reason": "Candidate-B已通过人工审批，审批绑定context_hash",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": "Candidate-B",
+      "output_reference": "APPROVAL-Candidate-B-V2",
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "AWAITING_APPROVAL"
+      }
+    },
+    {
+      "event_id": "EVT-014-008",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "AWAITING_APPROVAL",
+      "to_state": "EXECUTING",
+      "actor": "Team Leader",
+      "timestamp": "2026-07-31T14:00:08+08:00",
+      "reason": "审批有效，交给执行Agent映射模拟指令",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "EXECUTING"
+      }
+    },
+    {
+      "event_id": "EVT-014-009",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "EXECUTING",
+      "to_state": "VERIFYING",
+      "actor": "Execution Agent",
+      "timestamp": "2026-07-31T14:00:09+08:00",
+      "reason": "结构化指令已生成，进入执行偏差验证",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "VERIFYING"
+      }
+    },
+    {
+      "event_id": "EVT-014-010",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "from_state": "VERIFYING",
+      "to_state": "ROLLBACK",
+      "actor": "Verification",
+      "timestamp": "2026-07-31T14:00:10+08:00",
+      "reason": "执行偏差7.8%超过5%阈值",
+      "trace_id": "TRACE-20260731-014",
+      "input_reference": null,
+      "output_reference": null,
+      "skill_name": null,
+      "detail": {
+        "agentteams_task_state": "ROLLBACK"
+      }
+    }
+  ],
+  "agent_handoffs": [
+    {
+      "id": "HANDOFF-014-001",
+      "task_id": "TASK-20260731-014",
+      "task_version": 1,
+      "trace_id": "TRACE-20260731-014",
+      "from_agent": "Team Leader",
+      "to_agent": "Perception Agent",
+      "status": "completed",
+      "input_reference": "TASK-20260731-014/V1",
+      "output_reference": "CTX-014-V2",
+      "skill_name": "microgrid_context_ingest",
+      "created_at": "2026-07-31T14:00:02+08:00"
+    },
+    {
+      "id": "HANDOFF-014-002",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "from_agent": "Team Leader",
+      "to_agent": "Dispatch Agent",
+      "status": "completed",
+      "input_reference": "CTX-014-V2",
+      "output_reference": "CANDIDATES-014-V2",
+      "skill_name": "dispatch_plan_generate",
+      "created_at": "2026-07-31T14:00:03+08:00"
+    },
+    {
+      "id": "HANDOFF-014-003",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "from_agent": "Team Leader",
+      "to_agent": "Audit Agent",
+      "status": "completed",
+      "input_reference": "CANDIDATES-014-V2",
+      "output_reference": "AUDIT-014-V2",
+      "skill_name": "dispatch_audit_verify",
+      "created_at": "2026-07-31T14:00:04+08:00"
+    },
+    {
+      "id": "HANDOFF-014-004",
+      "task_id": "TASK-20260731-014",
+      "task_version": 2,
+      "trace_id": "TRACE-20260731-014",
+      "from_agent": "Team Leader",
+      "to_agent": "Execution Agent",
+      "status": "completed",
+      "input_reference": "APPROVAL-Candidate-B-V2",
+      "output_reference": "EXECUTION-RECEIPT-014",
+      "skill_name": "execution_mapping",
+      "created_at": "2026-07-31T14:00:05+08:00"
+    }
+  ]
+}
