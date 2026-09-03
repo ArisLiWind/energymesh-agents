@@ -70,7 +70,7 @@ def page() -> str:
     <label for="matrix_access_token">Matrix Access Token</label>
     <input id="matrix_access_token" name="matrix_access_token" type="password" value="{value("AGENTTEAMS_MATRIX_ACCESS_TOKEN")}" />
     <label for="remote_workers">Verified Running Workers</label>
-    <input id="remote_workers" name="remote_workers" value="{value("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher")}" />
+    <input id="remote_workers" name="remote_workers" value="{value("AGENTTEAMS_REMOTE_WORKERS", "energymesh-team-leader,perception-worker,dispatch-worker,audit-worker,execution-worker")}" />
     <label for="provider">模型服务</label>
     <select id="provider" name="provider">
       <option value="openai-compat">DeepSeek / OpenAI-compatible</option>
@@ -116,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         team_room_id = fields.get("team_room_id", [""])[0].strip()
         matrix_base_url = fields.get("matrix_base_url", ["http://127.0.0.1:18080"])[0].strip()
         matrix_access_token = fields.get("matrix_access_token", [""])[0].strip()
-        remote_workers = fields.get("remote_workers", ["energy-dispatcher"])[0].strip()
+        remote_workers = fields.get("remote_workers", ["energymesh-team-leader,perception-worker,dispatch-worker,audit-worker,execution-worker"])[0].strip()
         provider = fields.get("provider", ["openai-compat"])[0].strip() or "openai-compat"
         base_url = fields.get("base_url", [""])[0].strip()
         model = fields.get("model", [""])[0].strip() or "gpt-4o-mini"

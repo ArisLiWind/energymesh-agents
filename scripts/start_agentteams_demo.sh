@@ -24,7 +24,8 @@ Minimum required values:
   AGENTTEAMS_TEAM_ROOM_ID=<Team Room ID>
   AGENTTEAMS_MATRIX_BASE_URL=http://127.0.0.1:18080
   AGENTTEAMS_MATRIX_ACCESS_TOKEN=<Matrix access token>
-  AGENTTEAMS_REMOTE_WORKERS=energy-dispatcher
+  AGENTTEAMS_MANAGER_USER_ID=@energymesh-team-leader:matrix-local.agentteams.io:18080
+  AGENTTEAMS_REMOTE_WORKERS=energymesh-team-leader,perception-worker,dispatch-worker,audit-worker,execution-worker
   AGENTTEAMS_LLM_PROVIDER=openai-compat
   AGENTTEAMS_OPENAI_BASE_URL=https://api.deepseek.com/v1
   AGENTTEAMS_DEFAULT_MODEL=deepseek-chat
@@ -43,8 +44,9 @@ export ALLOW_PRODUCTION_WRITE=false
 export AGENTTEAMS_ENABLED="${AGENTTEAMS_ENABLED:-true}"
 export AGENTTEAMS_LIVE_REQUIRED="${AGENTTEAMS_LIVE_REQUIRED:-true}"
 export AGENTTEAMS_RUNTIME_MODE="${AGENTTEAMS_RUNTIME_MODE:-remote_matrix}"
-export AGENTTEAMS_TEAM_NAME="${AGENTTEAMS_TEAM_NAME:-energymesh-demo}"
-export AGENTTEAMS_REMOTE_WORKERS="${AGENTTEAMS_REMOTE_WORKERS:-energy-dispatcher}"
+export AGENTTEAMS_TEAM_NAME="${AGENTTEAMS_TEAM_NAME:-energymesh-park-control}"
+export AGENTTEAMS_MANAGER_USER_ID="${AGENTTEAMS_MANAGER_USER_ID:-@energymesh-team-leader:matrix-local.agentteams.io:18080}"
+export AGENTTEAMS_REMOTE_WORKERS="${AGENTTEAMS_REMOTE_WORKERS:-energymesh-team-leader,perception-worker,dispatch-worker,audit-worker,execution-worker}"
 export AGENTTEAMS_MATRIX_BASE_URL="${AGENTTEAMS_MATRIX_BASE_URL:-http://127.0.0.1:18080}"
 export ENERGYMESH_HOST=127.0.0.1
 export ENERGYMESH_PORT

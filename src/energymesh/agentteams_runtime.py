@@ -157,7 +157,10 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
         bridge_user_id = _matrix_whoami(matrix_base_url, matrix_access_token) if matrix_ok else None
         remote_workers = [
             item.strip()
-            for item in os.getenv("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher").split(",")
+            for item in os.getenv(
+                "AGENTTEAMS_REMOTE_WORKERS",
+                "energymesh-team-leader,perception-worker,dispatch-worker,audit-worker,execution-worker",
+            ).split(",")
             if item.strip()
         ]
         remote_team = os.getenv("AGENTTEAMS_TEAM_NAME", "energymesh-demo")
@@ -578,7 +581,7 @@ class LiveAgentTeamsRuntime:
 
     def _matrix_mention_user_ids(self, needs_workers: bool) -> list[str]:
         domain = self._matrix_domain()
-        manager_user_id = self.manager_user_id or (f"@manager:{domain}" if domain else "")
+        manager_user_id = self.manager_user_id or (f"@energymesh-team-leader:{domain}" if domain else "")
         mentions = [manager_user_id] if manager_user_id else []
         worker_user_ids = self.worker_user_ids
         if needs_workers and not worker_user_ids and domain:
