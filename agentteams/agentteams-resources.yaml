@@ -11,7 +11,7 @@ metadata:
 spec:
   workerName: energymesh-team-leader
   model: deepseek-chat
-  runtime: openclaw
+  runtime: copaw
   identity: >-
     EnergyMesh Team Leader. Owns AgentTeams project planning, dynamic task DAGs, delegation,
     progress supervision, revision, human escalation and final acceptance for park dispatch.
