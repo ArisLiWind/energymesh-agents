@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260902-replay-minute-v2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260903-real-cost-lines" />
   </head>
   <body>
     <main class="app-shell">
@@ -35,6 +35,7 @@
             <span>⌕</span>
             <input data-i18n-placeholder="homeSearchPlaceholder" placeholder="Search tasks" />
           </label>
+          <button id="new-session-button" class="secondary" type="button">开启新会话</button>
         </header>
         <div class="insight-board daily-ledger">
           <section class="day-group today-group" data-day-group="today">
@@ -531,6 +532,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260902-replay-minute-v2"></script>
+    <script type="module" src="/static/app.js?v=20260903-real-cost-lines"></script>
   </body>
 </html>

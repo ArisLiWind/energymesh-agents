@@ -88,7 +88,27 @@ const agentProfiles = {
     avatar: "/static/avatars/perception.svg",
     tone: "leader",
   },
+  "energymesh-team-leader": {
+    name: "EnergyMesh Team Leader",
+    nameZh: "EnergyMesh Team Leader",
+    role: "",
+    roleZh: "",
+    defaultModel: "deepseek-chat",
+    initials: "EM",
+    avatar: "/static/avatars/perception.svg",
+    tone: "leader",
+  },
   perception_agent: {
+    name: "Perception Worker",
+    nameZh: "感知 Worker",
+    role: "Context validation",
+    roleZh: "运行上下文校验",
+    defaultModel: "deepseek-chat",
+    initials: "P",
+    avatar: "/static/avatars/perception.svg",
+    tone: "perception",
+  },
+  "perception-worker": {
     name: "Perception Worker",
     nameZh: "感知 Worker",
     role: "Context validation",
@@ -108,6 +128,16 @@ const agentProfiles = {
     avatar: "/static/avatars/dispatch.svg",
     tone: "dispatch",
   },
+  "dispatch-worker": {
+    name: "Dispatch Worker",
+    nameZh: "调度 Worker",
+    role: "Candidate planning",
+    roleZh: "候选方案生成",
+    defaultModel: "deepseek-chat",
+    initials: "D",
+    avatar: "/static/avatars/dispatch.svg",
+    tone: "dispatch",
+  },
   audit_agent: {
     name: "Audit Worker",
     nameZh: "审核 Worker",
@@ -118,7 +148,27 @@ const agentProfiles = {
     avatar: "/static/avatars/audit.svg",
     tone: "audit",
   },
+  "audit-worker": {
+    name: "Audit Worker",
+    nameZh: "审核 Worker",
+    role: "Independent safety audit",
+    roleZh: "独立安全审核",
+    defaultModel: "deepseek-chat",
+    initials: "A",
+    avatar: "/static/avatars/audit.svg",
+    tone: "audit",
+  },
   execution_agent: {
+    name: "Execution Worker",
+    nameZh: "执行 Worker",
+    role: "Approved command mapping",
+    roleZh: "获批指令映射",
+    defaultModel: "deepseek-chat",
+    initials: "E",
+    avatar: "/static/avatars/execution.svg",
+    tone: "execution",
+  },
+  "execution-worker": {
     name: "Execution Worker",
     nameZh: "执行 Worker",
     role: "Approved command mapping",
@@ -674,7 +724,7 @@ function normalizeAgentTeamsEvent(event = {}) {
     taskRoomId: standard.task_room_id || event.task_room_id || null,
     workerId: standard.worker_id || standard.agent_id || event.agent_id || null,
     agentId: standard.agent_id || event.agent_id || "agentteams_manager",
-    message: standard.message || event.message || event.stage || event.type || "",
+    message: standard.message || event.message || (event.type === "stage_start" ? "" : event.stage || event.type || ""),
     worldStateLoaded: Boolean(standard.world_state || event.world_state || event.world_state_loaded),
     dispatchPlan: standard.dispatch_plan || event.dispatch_plan || standard.payload?.dispatch_plan || null,
     impact: standard.impact || event.impact || standard.payload?.impact || null,
@@ -761,16 +811,58 @@ function agentTeamsPlanReason(event = {}) {
 }
 
 function renderAgentTeamsImpact(impact = {}) {
+  const baselineFromEvent = Number(impact.baseline_total_cost_yuan || impact.baseline_cost_yuan);
+  const optimizedFromEvent = Number(impact.optimized_total_cost_yuan || impact.optimized_cost_yuan);
+  if (Number.isFinite(baselineFromEvent) && baselineFromEvent > 0 && Number.isFinite(optimizedFromEvent)) {
+    renderCostComparisonValues({
+      baseline: baselineFromEvent,
+      optimized: optimizedFromEvent,
+      status: "AgentTeams dispatch_plan 已驱动",
+    });
+    return;
+  }
   const baseline = Number(state.parallel?.baseline_cost_yuan || state.campusSimulation?.todayCost || 0);
   const savings = Number(impact.purchase_cost_savings_yuan || 0);
   if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(savings) || savings <= 0) return;
   const optimized = Math.max(0, baseline - savings);
-  const pct = Number(impact.purchase_cost_savings_percent || (savings / baseline * 100));
-  $("#cost-baseline").textContent = `¥${baseline.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#cost-optimized").textContent = `¥${optimized.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#cost-savings").textContent = `¥${savings.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#savings-percent").textContent = `节省 ${pct.toFixed(2)}%`;
-  $("#parallel-status").textContent = "AgentTeams dispatch_plan 已驱动";
+  renderCostComparisonValues({
+    baseline,
+    optimized,
+    savings,
+    savingsPercent: Number(impact.purchase_cost_savings_percent || (savings / baseline * 100)),
+    status: "AgentTeams dispatch_plan 已驱动",
+  });
+}
+
+function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = null, savingsPercent = null, status = "" } = {}) {
+  const baselineCost = Number(baseline) || 0;
+  const optimizedCost = Number(optimized) || 0;
+  const savingValue = savings === null ? baselineCost - optimizedCost : Number(savings) || 0;
+  const percentValue = savingsPercent === null
+    ? (baselineCost > 0 ? savingValue / baselineCost * 100 : 0)
+    : Number(savingsPercent) || 0;
+  $("#cost-baseline").textContent = `¥${baselineCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-optimized").textContent = `¥${optimizedCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-savings").textContent = `¥${savingValue.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#savings-percent").textContent = `节省 ${percentValue.toFixed(2)}%`;
+  if (status) $("#parallel-status").textContent = status;
+}
+
+function selectedTaskPlan(task = state.task) {
+  if (!task?.plans?.length) return null;
+  return task.plans.find((plan) => plan.plan_id === task.selected_plan_id) || task.plans[0];
+}
+
+function renderTaskCostComparison(task = state.task) {
+  const baseline = task?.baseline_plan;
+  const selected = selectedTaskPlan(task);
+  if (!baseline?.metrics || !selected?.metrics) return false;
+  renderCostComparisonValues({
+    baseline: baseline.metrics.total_cost_yuan,
+    optimized: selected.metrics.total_cost_yuan,
+    status: `多Agent真实任务成本：${selected.profile}`,
+  });
+  return true;
 }
 
 async function restoreAgentTeamsTaskMirror() {
@@ -1130,6 +1222,16 @@ function isDisplayableAgentTeamsReply(text = "") {
   return trimmed.length > 0 && trimmed.length <= 280 && !isInternalAgentTeamsMessage(trimmed);
 }
 
+function compactAgentTeamsWorkNote(agentId) {
+  const name = agentName(agentId);
+  if (agentId === "perception-worker") return `${name} 已读取当前园区 world_state 并校验运行上下文。`;
+  if (agentId === "dispatch-worker") return `${name} 已参与调度计算，方案结果会进入右侧预览和指标。`;
+  if (agentId === "audit-worker") return `${name} 已参与独立复核，约束和风险进入证据链。`;
+  if (agentId === "execution-worker") return `${name} 已等待获批方案，执行回执后才更新园区状态。`;
+  if (agentId === "energymesh-team-leader") return `${name} 已接收请求并协调 Worker。`;
+  return `${name} 已产生真实 AgentTeams 工作事件。`;
+}
+
 async function chatWithSelectedAgent(agentId, message, history = []) {
   const { ok, body } = await requestAllowingError(`/api/agents/${agentId}/chat`, {
     method: "POST",
@@ -1256,7 +1358,6 @@ async function confirmScenarioExecution() {
       ? `方案已执行。Agent Teams 优化电费 ¥${opt}，比原始策略 ¥${baseline} 节省 ¥${save}。`
       : `Executed. Optimized ¥${opt} vs baseline ¥${baseline}, saved ¥${save}.`;
     addChatMessage("agent", msg, "team_leader");
-    addChatMessage("agent", `执行Worker 已完成模拟指令映射与偏差验证。证据包已封存。`, "execution_agent");
   } catch (err) {
     toast(err.message || "执行失败");
     addChatMessage("agent", `执行失败：${err.message || "未知错误"}`, "team_leader");
@@ -1736,17 +1837,13 @@ async function sendChatMessage(event) {
     let reply = null;
     const wantsWorkerFlow = isFlowTuningRequest(message);
     if (agentId === "team_leader") {
-      appendRuntimeStatusMessage("team_leader", state.language === "zh" ? "正在连接真实 AgentTeams Team Room..." : "Connecting to the live AgentTeams Team Room...");
       const visibleReplies = [];
+      const seenAgentSteps = new Set();
+      const shownAgentSteps = new Set();
       await chatWithRuntimeStream(routedMessage, {
         onRuntimeCheck: (event) => {
           const ready = event.status?.ready;
-          appendRuntimeStatusMessage(
-            "team_leader",
-            ready
-              ? (state.language === "zh" ? "AgentTeams runtime 已就绪，消息已进入真实 Team Room。" : "AgentTeams runtime is ready; the message is entering the real Team Room.")
-              : (state.language === "zh" ? "AgentTeams runtime 未就绪；不会使用本地替代 Worker 流程。" : "AgentTeams runtime is not ready; no local Worker substitute will run."),
-          );
+          if (!ready) appendRuntimeStatusMessage("team_leader", state.language === "zh" ? "AgentTeams 暂不可用。" : "AgentTeams is not ready.");
         },
         onWorldState: (event) => console.log("[AgentTeams world_state]", event),
         onStage: (event) => console.log("[AgentTeams stage]", event.agent_id || "team_leader", event.message || event.stage),
@@ -1754,13 +1851,28 @@ async function sendChatMessage(event) {
         onStep: (event) => {
           const step = event.step || {};
           const text = step.response || "";
-          if (isDisplayableAgentTeamsReply(text)) visibleReplies.push({ text, agent: step.agent_id || "team_leader", model: step.model || "AgentTeams" });
+          const stepAgent = step.agent_id || "team_leader";
+          const model = step.model || "AgentTeams";
+          const displayText = isDisplayableAgentTeamsReply(text)
+            ? text
+            : (!shownAgentSteps.has(stepAgent) && stepAgent !== "agentteams_manager" ? compactAgentTeamsWorkNote(stepAgent) : "");
+          if (displayText) {
+            shownAgentSteps.add(stepAgent);
+            addChatMessage("agent", displayText, stepAgent, { meta: { model } });
+          }
+          if (isDisplayableAgentTeamsReply(text)) {
+            visibleReplies.push({ text, agent: stepAgent, model });
+          } else if (!seenAgentSteps.has(stepAgent) && stepAgent !== "agentteams_manager") {
+            seenAgentSteps.add(stepAgent);
+            visibleReplies.push({ text: compactAgentTeamsWorkNote(stepAgent), agent: stepAgent, model });
+          }
         },
       });
-      const finalReply = [...visibleReplies].reverse().find((item) => item.text);
-      if (finalReply) {
-        reply = { response: finalReply.text };
-        addChatMessage("agent", finalReply.text, finalReply.agent, { meta: { model: finalReply.model } });
+      const byAgent = new Map();
+      visibleReplies.forEach((item) => byAgent.set(item.agent, item));
+      const finalReplies = Array.from(byAgent.values()).slice(-6);
+      if (finalReplies.length) {
+        reply = { response: finalReplies[finalReplies.length - 1].text };
       } else {
         addChatMessage("agent", state.language === "zh" ? "AgentTeams 已接收请求，正在等待可展示的业务结果。" : "AgentTeams accepted the request and is waiting for a displayable result.", agentId);
       }
@@ -2031,7 +2143,91 @@ function drawHomeCharts() {
 }
 
 function renderPowerChart() {
-  if (typeof window.renderPowerChart === "function") window.renderPowerChart();
+  if (typeof window.renderPowerChart === "function") {
+    window.renderPowerChart();
+    return;
+  }
+  if (state.parallel?.interval_history?.length) {
+    drawPowerChart(state.parallel);
+    return;
+  }
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const cursor = Number(state.replayCursor) || 0;
+  if (telemetry.length) {
+    drawPowerChart({
+      cursor,
+      interval_history: telemetry.slice(0, Math.min(cursor + 1, telemetry.length)).map((point, index) => ({
+        interval: index,
+        actual_load_kw: point.load_kw,
+        actual_pv_kw: point.pv_kw,
+        actual_grid_kw: point.grid_import_kw,
+        optimized_grid_kw: point.grid_import_kw,
+      })),
+    });
+    return;
+  }
+  const canvas = $("#power-chart");
+  if (!canvas) return;
+  const { context, width, height } = resizeCanvas(canvas);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#6b7280";
+  context.font = "12px Inter, sans-serif";
+  context.textAlign = "center";
+  context.fillText("等待园区数据接入", width / 2, height / 2);
+}
+
+function renderCsvCostComparison() {
+  if (renderTaskCostComparison()) return;
+  if (state.parallel?.interval_history?.length) {
+    drawCostChart(state.parallel);
+    return;
+  }
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const cursor = Math.min(Number(state.replayCursor) || 0, Math.max(0, telemetry.length - 1));
+  if (!telemetry.length) {
+    ["cost-baseline", "cost-optimized", "cost-savings"].forEach((id) => { const el = $(`#${id}`); if (el) el.textContent = "¥0.00"; });
+    $("#savings-percent").textContent = "节省 0%";
+    $("#parallel-status").textContent = "等待园区数据";
+    const canvas = $("#cost-chart");
+    if (canvas) {
+      const { context, width, height } = resizeCanvas(canvas);
+      context.fillStyle = "#ffffff"; context.fillRect(0, 0, width, height);
+      context.fillStyle = "#6b7280"; context.font = "12px Inter, sans-serif"; context.textAlign = "center";
+      context.fillText("上传 CSV 后显示原始策略与 Agent 优化成本曲线", width / 2, height / 2);
+    }
+    return;
+  }
+  let baseline = 0;
+  let optimized = 0;
+  const history = telemetry.slice(0, cursor + 1).map((point, index) => {
+    const tariff = Number(point.tariff_yuan_per_kwh ?? point.price_yuan_per_kwh ?? point.tariff ?? 0.85);
+    const gridKw = Math.max(0, Number(point.grid_import_kw ?? Math.max(0, Number(point.load_kw || 0) - Number(point.pv_kw || 0))));
+    const pvSurplus = Math.max(0, Number(point.pv_kw || 0) - Number(point.load_kw || 0));
+    const soc = Number(point.battery_soc ?? 0.5);
+    const dischargeKw = tariff > 1.0 && soc > 0.25 ? Math.min(gridKw, 0.18 * Math.max(Number(point.load_kw || 0), 1)) : 0;
+    const chargeSavingKw = tariff < 0.65 ? 0 : Math.min(pvSurplus, gridKw * 0.25);
+    const optGridKw = Math.max(0, gridKw - dischargeKw - chargeSavingKw);
+    baseline += gridKw * 0.25 * tariff;
+    optimized += optGridKw * 0.25 * tariff;
+    return {
+      interval: index,
+      baseline_cumulative_cost_yuan: baseline,
+      optimized_cumulative_cost_yuan: optimized,
+      actual_load_kw: Number(point.load_kw || 0),
+      actual_pv_kw: Number(point.pv_kw || 0),
+      actual_grid_kw: gridKw,
+      optimized_grid_kw: optGridKw,
+    };
+  });
+  const savings = baseline - optimized;
+  const p = { cursor, interval_history: history, baseline_cost_yuan: baseline, optimized_cost_yuan: optimized, savings_yuan: savings, savings_percent: baseline > 0 ? savings / baseline * 100 : 0, reoptimization_events: [] };
+  $("#cost-baseline").textContent = `¥${baseline.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-optimized").textContent = `¥${optimized.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#cost-savings").textContent = `¥${savings.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  $("#savings-percent").textContent = `节省 ${p.savings_percent.toFixed(2)}%`;
+  $("#parallel-status").textContent = "CSV 实时基线对比";
+  drawCostChart(p);
 }
 
 function startLiveCharts() {
@@ -2079,6 +2275,7 @@ async function refreshReplayClock() {
     localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
     await applySnapshotToCampus();
     renderPowerChart();
+    renderCsvCostComparison();
     renderDailyLedger();
     renderReplayControl();
   } catch {
@@ -2113,6 +2310,7 @@ async function startCampusReplay({ reset = false } = {}) {
   }
   await applySnapshotToCampus();
   renderPowerChart();
+  renderCsvCostComparison();
   renderDailyLedger();
   renderReplayControl();
   state.replayTimer = window.setInterval(refreshReplayClock, 1200);
@@ -2132,6 +2330,7 @@ async function setReplayCursor(cursor) {
   localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
   await applySnapshotToCampus();
   renderPowerChart();
+  renderCsvCostComparison();
   renderDailyLedger();
   renderReplayControl();
 }
@@ -2874,6 +3073,49 @@ function resetLeaderConversation() {
   renderAgentThread("team_leader");
 }
 
+async function startNewSession() {
+  if (state.replayTimer) window.clearInterval(state.replayTimer);
+  state.replayTimer = null;
+  [
+    "energymesh.savedSnapshot",
+    "energymesh.agentThreads",
+    "energymesh.runtimeSessionId",
+    "energymesh.agentteamsTaskId",
+    "energymesh.planLedger",
+    "energymesh.parallelState",
+    "energymesh.parallelHistory",
+  ].forEach((key) => window.localStorage.removeItem(key));
+  try { await request("/api/data/reset", { method: "POST" }); } catch {}
+  state.energySnapshot = null;
+  state.replayCursor = null;
+  state.chartTick = 0;
+  state.planLedger = [];
+  state.flowPreview = null;
+  state.lastCampusFlow = null;
+  state.campusSimulation = {
+    optimized: false,
+    time: "未接入真实数据",
+    balance: "等待 CSV",
+    load: "-- kW",
+    generation: "-- kW",
+    storage: "--",
+    storageFlow: "--",
+    gridImport: "-- kW",
+    todayLoad: 0, todayGen: 0, todayGrid: 0, todayCharge: 0, todayDischarge: 0, todayCost: 0,
+    totalLoad: 0, fromGen: 0, fromStorage: 0, fromGrid: 0, toLoad: 0, toStorageCharge: 0, toGridExport: 0,
+    wastedKwh: null,
+    extraCost: null,
+  };
+  resetLeaderConversation();
+  renderDailyLedger();
+  renderPowerChart();
+  renderCsvCostComparison();
+  renderPlanLedger();
+  renderReplayControl();
+  renderCampusSimulation();
+  toast("已开启新会话，等待上传园区数据");
+}
+
 function openNewWorkspace() {
   setAgentDirectory(false);
   $("#ops-drawer").hidden = true;
@@ -2944,6 +3186,7 @@ function formatEventChatText(event) {
 }
 
 function renderEventsToChat() {
+  return;
   const container = $("#chat-messages");
   if (!state.events?.length) return;
   if (container.querySelector("[data-run-marker]")) return;
@@ -2994,6 +3237,7 @@ async function refreshTask(taskId) {
   loadOpsEvidence();
   renderOpsReport();
   renderDailyLedger();
+  renderTaskCostComparison();
   renderEventsToChat();
 }
 
@@ -3510,6 +3754,7 @@ async function loadMonitorTask(taskId) {
   renderTask();
   renderCandidates();
   renderTrace();
+  renderTaskCostComparison(task);
   await applySnapshotToCampus();
 }
 
@@ -3665,6 +3910,7 @@ async function uploadEnergyCsv(file) {
     state.replayCursor = body.current_interval || 0;
     await applySnapshotToCampus();
     await startCampusReplay({ reset: true });
+    renderCsvCostComparison();
     renderDailyLedger();
     setConnectorStatus(
       `历史数据已上传：${body.environment_signals.raw_rows} 条测量已归一化，右侧园区按后端时钟回放`,
@@ -3828,6 +4074,7 @@ async function rollingReoptimizeMonitor() {
 
 function setupEvents() {
   $("#run-button")?.addEventListener("click", runDemo);
+  $("#new-session-button")?.addEventListener("click", startNewSession);
   $("#approve-b")?.addEventListener("click", approveCandidateB);
   $("#execute-b")?.addEventListener("click", executeCandidateB);
   $("#rollback-button")?.addEventListener("click", runRollback);
@@ -3979,6 +4226,7 @@ restoreEnergyDataConnection();
 localStorage.removeItem("energymesh.parallelState");
 renderPlanLedger();
 renderReplayControl();
+renderCsvCostComparison();
 restoreAgentTeamsTaskMirror();
 // Restore chat history from localStorage
 const savedThreads = localStorage.getItem("energymesh.agentThreads");

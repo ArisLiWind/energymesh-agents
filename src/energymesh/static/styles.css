@@ -177,6 +177,11 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   align-items: start;
 }
 
+#new-session-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .day-group {
   min-width: 0;
 }

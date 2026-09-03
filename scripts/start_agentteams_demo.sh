@@ -79,9 +79,11 @@ echo "$workers" | grep -Eq "Running|Ready|Active" || { echo "FAIL: no AgentTeams
     'set -eu
 controller_ip="$(docker inspect -f "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}" agentteams-controller)"
 cat >/tmp/em_at_proxy.py <<PY
-import socket, threading
+import os
+import socket
+import threading
 
-TARGET = "'${controller_ip}'"
+TARGET = os.environ["AGENTTEAMS_PROXY_TARGET"]
 PAIRS = ((28080, 8080), (28088, 8088))
 
 def pipe(src, dst):
@@ -116,7 +118,7 @@ for pair in PAIRS:
 threading.Event().wait()
 PY
 if ! curl -fsS http://127.0.0.1:28080/_matrix/client/versions >/dev/null 2>&1; then
-  nohup python3 /tmp/em_at_proxy.py >/tmp/em_at_proxy.log 2>&1 &
+  AGENTTEAMS_PROXY_TARGET="$controller_ip" nohup python3 /tmp/em_at_proxy.py >/tmp/em_at_proxy.log 2>&1 &
 fi
 for i in $(seq 1 45); do curl -fsS http://127.0.0.1:28080/_matrix/client/versions >/dev/null 2>&1 && curl -fsS http://127.0.0.1:28088 >/dev/null 2>&1 && exit 0; sleep 2; done
 cat /tmp/em_at_proxy.log 2>/dev/null || true

@@ -221,8 +221,9 @@ class EnergyMeshOrchestratorV2:
         from energymesh.agent_registry import make_skill_from_callable
 
         # Perception Skill
-        def perception_skill(scenario: Scenario) -> dict[str, Any]:
-            report = self.perception.inspect(scenario)
+        def perception_skill(scenario: Scenario | dict[str, Any]) -> dict[str, Any]:
+            scenario_obj = Scenario.model_validate(scenario)
+            report = self.perception.inspect(scenario_obj)
             return {
                 "data_complete": report.data_complete,
                 "missing_data": report.missing_data,
@@ -248,10 +249,11 @@ class EnergyMeshOrchestratorV2:
 
         # Dispatch Skill
         def dispatch_skill(
-            scenario: Scenario, objective_priority: str | None = None
+            scenario: Scenario | dict[str, Any], objective_priority: str | None = None
         ) -> dict[str, Any]:
-            baseline = self.optimizer.build_baseline(scenario)
-            plans = self.optimizer.optimize_candidates(scenario)
+            scenario_obj = Scenario.model_validate(scenario)
+            baseline = self.optimizer.build_baseline(scenario_obj)
+            plans = self.optimizer.optimize_candidates(scenario_obj)
             return {
                 "baseline_plan": baseline.model_dump(mode="json"),
                 "plans": [p.model_dump(mode="json") for p in plans],
@@ -274,14 +276,17 @@ class EnergyMeshOrchestratorV2:
 
         # Audit Skill
         def audit_skill(
-            scenario: Scenario, plans: list[dict[str, Any]], baseline_plan: dict[str, Any]
+            scenario: Scenario | dict[str, Any],
+            plans: list[dict[str, Any]],
+            baseline_plan: dict[str, Any],
         ) -> dict[str, Any]:
             from energymesh.models import DispatchPlan
 
+            scenario_obj = Scenario.model_validate(scenario)
             plan_objs = [DispatchPlan.model_validate(p) for p in plans]
             baseline_obj = DispatchPlan.model_validate(baseline_plan)
             audits = [
-                self.auditor.audit(scenario, plan, baseline_obj).model_dump(mode="json")
+                self.auditor.audit(scenario_obj, plan, baseline_obj).model_dump(mode="json")
                 for plan in plan_objs
             ]
             return {"audits": audits}
@@ -300,16 +305,17 @@ class EnergyMeshOrchestratorV2:
 
         # Execution Skill
         def execution_skill(
-            scenario: Scenario,
+            scenario: Scenario | dict[str, Any],
             selected_plan: dict[str, Any],
             baseline_plan: dict[str, Any],
             approval_id: str | None = None,
         ) -> dict[str, Any]:
             from energymesh.models import DispatchPlan
 
+            scenario_obj = Scenario.model_validate(scenario)
             selected_obj = DispatchPlan.model_validate(selected_plan)
             baseline_obj = DispatchPlan.model_validate(baseline_plan)
-            summary = self.executor.execute(scenario, selected_obj, baseline_obj, approval_id)
+            summary = self.executor.execute(scenario_obj, selected_obj, baseline_obj, approval_id)
             return summary
 
         self.skill_registry.register(
@@ -893,6 +899,7 @@ class EnergyMeshOrchestratorV2:
             "data_quality": perception_payload.get("data_quality", {}),
             "previous_plan_status": perception_payload.get("previous_plan_status", "unknown"),
             "automation_permission": perception_payload.get("automation_permission", "restricted"),
+            "constraint_set_version": "energymesh-core-safety-v1",
         }
         import hashlib, json
 

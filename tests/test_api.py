@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from energymesh.agentteams_runtime import (
@@ -537,6 +538,33 @@ def test_live_agentteams_matrix_payload_tolerates_circular_world_state(tmp_path,
     payload = captured["payload"]
     assert payload["energymesh"]["world_state"]["self"] == "[Circular]"
     assert json.dumps(payload, ensure_ascii=False)
+
+
+def test_live_agentteams_dispatch_event_extracts_real_cost_comparison(tmp_path) -> None:
+    runtime = LiveAgentTeamsRuntime(
+        EvidenceStore(tmp_path / "energymesh.db", tmp_path / "evidence"),
+        "energymesh-test-team",
+    )
+
+    event = runtime._standardize_event(
+        {"type": "agent_step"},
+        "dispatch-worker",
+        json.dumps(
+            {
+                "type": "dispatch_plan",
+                "baseline_metrics": {"total_cost_yuan": 839.0},
+                "optimized_metrics": {"total_cost_yuan": 692.0},
+                "waste_reduction_kwh": 31.5,
+                "manual_dispatch_cost_reduction_yuan": 120.0,
+            }
+        ),
+    )
+
+    assert event["type"] == "dispatch_plan"
+    assert event["impact"]["baseline_total_cost_yuan"] == 839.0
+    assert event["impact"]["optimized_total_cost_yuan"] == 692.0
+    assert event["impact"]["purchase_cost_savings_yuan"] == 147.0
+    assert event["impact"]["purchase_cost_savings_percent"] == pytest.approx(147.0 / 839.0 * 100)
 
 
 def test_remote_matrix_agentteams_runtime_ready(monkeypatch) -> None:

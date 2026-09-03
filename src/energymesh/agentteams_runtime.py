@@ -391,7 +391,7 @@ class LiveAgentTeamsRuntime:
             "index": 0,
             "agent_id": "agentteams_manager",
             "stage": "team_room_submit",
-            "message": "思考中：正在把操作员消息和右侧园区 world_state 发送到真实 AgentTeams Team Room。",
+            "message": "",
         }
         if safe_world_state:
             artifact = self.store.save_runtime_artifact(
@@ -882,6 +882,28 @@ class LiveAgentTeamsRuntime:
             "savings_yuan", "cost_savings_yuan", "purchase_cost_savings_yuan"
         )
         savings_percent = number_from("savings_percent", "cost_savings_percent")
+        baseline_cost = number_from(
+            "baseline_total_cost_yuan", "baseline_cost_yuan", "original_strategy_cost_yuan"
+        )
+        optimized_cost = number_from(
+            "optimized_total_cost_yuan", "optimized_cost_yuan", "agent_strategy_cost_yuan"
+        )
+        if baseline_cost is None:
+            baseline_metrics = source.get("baseline_metrics") or source.get("baseline_plan_metrics")
+            if isinstance(baseline_metrics, dict):
+                value = baseline_metrics.get("total_cost_yuan")
+                if isinstance(value, int | float):
+                    baseline_cost = float(value)
+        if optimized_cost is None:
+            optimized_metrics = source.get("optimized_metrics") or metrics
+            if isinstance(optimized_metrics, dict):
+                value = optimized_metrics.get("total_cost_yuan")
+                if isinstance(value, int | float):
+                    optimized_cost = float(value)
+        if savings_yuan is None and baseline_cost is not None and optimized_cost is not None:
+            savings_yuan = baseline_cost - optimized_cost
+        if savings_percent is None and baseline_cost and savings_yuan is not None:
+            savings_percent = savings_yuan / baseline_cost * 100
         waste_drop = number_from(
             "waste_reduction_kwh", "curtailment_reduction_kwh", "pv_waste_reduction_kwh"
         )
@@ -898,6 +920,8 @@ class LiveAgentTeamsRuntime:
         value = {
             "dispatch_plan": plan or None,
             "impact": {
+                "baseline_total_cost_yuan": baseline_cost,
+                "optimized_total_cost_yuan": optimized_cost,
                 "purchase_cost_savings_yuan": savings_yuan,
                 "purchase_cost_savings_percent": savings_percent,
                 "energy_waste_reduction_kwh": waste_drop,

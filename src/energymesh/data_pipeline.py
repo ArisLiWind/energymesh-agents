@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import statistics
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -16,6 +17,7 @@ from energymesh.models import (
     Scenario,
     SiteConfig,
     TaskRecord,
+    TaskState,
 )
 from energymesh.orchestrator import EnergyMeshOrchestrator
 
@@ -527,6 +529,20 @@ class ReplayMonitor:
                 scenario,
                 trigger="OPENCEM_MONITOR_PLAN_INVALIDATION",
             )
+            deadline = time.time() + 8.0
+            while time.time() < deadline:
+                refreshed = self.orchestrator.store.get(self.task.task_id)
+                if refreshed is not None:
+                    self.task = refreshed
+                if self.task.state in {
+                    TaskState.AWAITING_APPROVAL,
+                    TaskState.COMPLETED,
+                    TaskState.SAFE_FALLBACK,
+                    TaskState.HUMAN_HANDOFF,
+                    TaskState.FAILED,
+                } or self.task.audits:
+                    break
+                time.sleep(0.05)
             self.task.task_version = 2
             self.orchestrator.store.save(self.task)
             self._event(

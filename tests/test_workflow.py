@@ -44,6 +44,19 @@ def test_workflow_requires_approval_then_executes_simulation(
     assert evidence["safety_declaration"]["allow_production_write"] is False
 
 
+def test_workflow_records_real_multi_agent_task_and_costs(orchestrator, scenario) -> None:
+    task = orchestrator.run(scenario, trigger="operator_chat_dispatch_request")
+
+    actors = [event.actor for event in task.trace]
+    assert any(actor in actors for actor in ("perception_worker", "perception_agent"))
+    assert any(actor in actors for actor in ("dispatch_worker", "dispatch_agent"))
+    assert any(actor in actors for actor in ("audit_worker", "audit_agent"))
+    assert task.baseline_plan is not None
+    assert task.selected_plan_id is not None
+    selected = next(plan for plan in task.plans if plan.plan_id == task.selected_plan_id)
+    assert selected.metrics.total_cost_yuan < task.baseline_plan.metrics.total_cost_yuan
+
+
 def test_rejected_approval_never_executes(orchestrator, scenario) -> None:
     task = orchestrator.run(scenario)
     rejected = orchestrator.decide(

@@ -50,6 +50,7 @@ from energymesh.models import (
     RuntimeToolCall,
     Scenario,
     TaskRecord,
+    TaskState,
 )
 from energymesh.optimizer import DispatchOptimizer
 from energymesh.orchestrator import WorkflowError
@@ -306,6 +307,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_external_data(request: Request) -> ExternalDataSimulator:
         return cast(ExternalDataSimulator, request.app.state.external_data)
+
+    def cost_comparison_for_task(task: TaskRecord) -> dict[str, object]:
+        baseline = task.baseline_plan
+        selected = next(
+            (plan for plan in task.plans if plan.plan_id == task.selected_plan_id),
+            task.plans[0] if task.plans else None,
+        )
+        if baseline is None or selected is None:
+            raise WorkflowError("task does not have both baseline and Agent-generated plan costs")
+        baseline_cost = baseline.metrics.total_cost_yuan
+        optimized_cost = selected.metrics.total_cost_yuan
+        savings = baseline_cost - optimized_cost
+        return {
+            "task_id": task.task_id,
+            "task_version": task.task_version,
+            "source": "multi_agent_dispatch_plan",
+            "baseline_plan_id": baseline.plan_id,
+            "optimized_plan_id": selected.plan_id,
+            "optimized_profile": selected.profile,
+            "baseline_total_cost_yuan": baseline_cost,
+            "optimized_total_cost_yuan": optimized_cost,
+            "savings_yuan": savings,
+            "savings_percent": (savings / baseline_cost * 100) if baseline_cost > 0 else 0.0,
+            "baseline_metrics": baseline.metrics.model_dump(mode="json"),
+            "optimized_metrics": selected.metrics.model_dump(mode="json"),
+            "audit": next(
+                (
+                    audit.model_dump(mode="json")
+                    for audit in task.audits
+                    if audit.plan_id == selected.plan_id
+                ),
+                None,
+            ),
+        }
+
+    def wait_for_agent_task_result(
+        task: TaskRecord,
+        timeout_seconds: float = 8.0,
+        accepted_states: set[TaskState] | None = None,
+    ) -> TaskRecord:
+        deadline = time.time() + timeout_seconds
+        terminal_states = accepted_states or {
+            TaskState.AWAITING_APPROVAL,
+            TaskState.COMPLETED,
+            TaskState.SAFE_FALLBACK,
+            TaskState.HUMAN_HANDOFF,
+            TaskState.FAILED,
+        }
+        current = task
+        while time.time() < deadline:
+            stored = store.get(task.task_id)
+            if stored is not None:
+                current = stored
+            if current.state in terminal_states or (accepted_states is None and current.audits):
+                return current
+            time.sleep(0.05)
+        return current
 
     @app.get("/api/health")
     def health(request: Request) -> dict[str, object]:
@@ -581,6 +639,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         replay_status_for(snapshot)
         return snapshot
 
+    @app.post("/api/data/reset")
+    def reset_energy_data(request: Request) -> dict[str, object]:
+        request.app.state.uploaded_snapshot = None
+        request.app.state.replay_started_at = time.time()
+        request.app.state.replay_anchor_interval = 0
+        request.app.state.replay_speed_multiplier = 1.0
+        request.app.state.replay_paused = True
+        return {"ok": True, "replay": replay_status_for(None)}
+
     @app.post("/api/data/snapshot/restore", response_model=ExternalDataSnapshot)
     def restore_uploaded_snapshot(
         request: Request, snapshot: ExternalDataSnapshot
@@ -786,10 +853,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> TaskRecord:
         snapshot = simulator.snapshot(body.seed, body.current_interval, body.fault_mode)
         try:
-            return workflow.run(
+            task = workflow.run(
                 snapshot.scenario,
                 trigger=f"EXTERNAL_DATA_{body.fault_mode.upper()}",
             )
+            return wait_for_agent_task_result(task)
         except WorkflowError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -843,7 +911,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
     ) -> TaskRecord:
         try:
-            return workflow.execute_approved(task_id)
+            return wait_for_agent_task_result(
+                workflow.execute_approved(task_id),
+                timeout_seconds=12.0,
+                accepted_states={
+                    TaskState.COMPLETED,
+                    TaskState.SAFE_FALLBACK,
+                    TaskState.HUMAN_HANDOFF,
+                    TaskState.FAILED,
+                },
+            )
         except WorkflowError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409
@@ -886,7 +963,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workflow: Annotated[EnergyMeshOrchestrator, Depends(get_orchestrator)],
     ) -> TaskRecord:
         try:
-            return workflow.rolling_reoptimize(task_id, body)
+            return wait_for_agent_task_result(workflow.rolling_reoptimize(task_id, body))
         except WorkflowError as error:
             message = str(error)
             status = 404 if message == "task not found" else 409
@@ -908,11 +985,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="task not found")
         changed = apply_operational_change(parent.scenario_snapshot, body)
         try:
-            return workflow.run(
+            task = workflow.run(
                 changed,
                 trigger=body.trigger,
                 parent_task_id=parent.task_id,
             )
+            return wait_for_agent_task_result(task)
         except WorkflowError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -932,6 +1010,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return task
+
+    @app.get("/api/tasks/{task_id}/cost-comparison")
+    def get_task_cost_comparison(
+        task_id: str,
+        evidence_store: Annotated[EvidenceStore, Depends(get_store)],
+    ) -> dict[str, object]:
+        task = evidence_store.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        try:
+            return cost_comparison_for_task(task)
+        except WorkflowError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.get("/api/tasks/{task_id}/events")
     def get_task_events(

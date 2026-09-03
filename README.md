@@ -96,7 +96,7 @@ AgentTeams Matrix / Team Room
   RAG 只用于解释已确认的历史偏差、约束触发、人工调整和最终结果，不直接决定调度功率。
 - PolarDB 目标架构承载园区持续产生的遥测质量、负荷/光伏预测、电价、储能状态、生产约束、
   调度版本、下发结果和后续观测，并按同一决策时点形成完整快照。
-- MCP 鉴权、工具失败处理、Agent/Skill 版本管理、评测发布、运行告警、SLO、容量和灾备方案
+- MCP 鉴权、工具失败处理、Agent/Skill 版本管理、运行验证、运行告警、SLO、容量和灾备方案
   是工程化验收项；当前仓库提供可核验源码、AgentTeams/Skill 资源、调度工具和外部接口契约。
 - EnergyMesh 可以据此形成跨日滚动决策、执行后闭环验证和跨园区经验复用；跨园区策略必须按设备能力、
   生产约束和安全边界重新筛选，不能直接复用旧园区结论。
@@ -119,6 +119,7 @@ Worker 协作记录；真正调用模型的是 AgentTeams manager/worker 容器�
 ### Codespaces 最小演示环境
 
 本项目已经在 GitHub Codespaces 跑通真实 AgentTeams 最小环境。证据见 [`evidence/agentteams-codespaces-proof.md`](evidence/agentteams-codespaces-proof.md)。
+本地园区数据触发、多 Worker 调度链和成本改善证据见 [`evidence/cost-improvement-proof.md`](evidence/cost-improvement-proof.md)。
 
 已验证的最小结构：
 
@@ -556,7 +557,7 @@ flowchart TB
 
 上下文截断、检索失败、冲突信号和跨任务串扰都必须显式记录在 trace 中；不能让不同用户、任务或租户共享未经授权的上下文。
 
-### 可观测、评测与证据
+### 可观测、运行验证与证据
 
 同一次运行用 `run_id / trace_id / task_id / context_hash / plan_version_id` 关联：
 
@@ -582,7 +583,7 @@ flowchart TB
 | `energymesh-control` | Execution | 生成受限模拟命令，未来映射现场 adapter | 幂等键、最小权限、审批 gate、偏差回退 |
 | RAG/经验库 | Perception/Dispatch 解释风险与相似案例 | 帮助识别历史风险和人工偏好 | 仅作解释和候选参考，不能直接输出功率设定 |
 
-MCP、RAG、数据库和云产品不按数量加分；本项目保留等价机制和迁移成本说明：上层 Agent/Skill 契约保持不变，
+MCP、RAG、数据库和云产品不是堆砌组件；本项目保留等价机制和迁移成本说明：上层 Agent/Skill 契约保持不变，
 替换工具连接层即可迁移到 Higress MCP、PolarDB/pgvector、RocketMQ 和 OpenTelemetry/AgentLoop。
 
 ## 安全、权限与审计
@@ -612,7 +613,7 @@ MCP、RAG、数据库和云产品不按数量加分；本项目保留等价机�
 | 审批流程 | 审批人、授权范围、值班规则、拒绝后的继续执行方式 |
 | 数据治理 | 租户隔离、保留周期、删除边界、脱敏策略、审计导出 |
 
-外部验证高分证据应包括真实用户验收、第二组织复现或第二类场景迁移。目前仓库已提供可复现本地证据；真实用户
+生产验收证据应包括真实用户验收、第二组织复现或第二类场景迁移。目前仓库已提供可复现本地证据；真实用户
 验收和第二组织复现仍是下一阶段必须补齐的材料，避免把 Demo 误写成生产上线。
 
 ## 本地运行
