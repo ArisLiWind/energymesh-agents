@@ -1,15 +1,22 @@
-# EnergyMesh Agents -超境创新
+# EnergyMesh Agents - 超境创新
 
-> GOAI Agent Infra｜新智基座
-> 
-> 面向工业园区、算力中心、微电网与储能场站的 多Agent 电力调度持系统。
+> **工业能源系统工程平台 | Physics + AI 混合建模 | 云—边—端部署**
+>
+> 面向工业园区、算力中心、微电网与储能场站的**能源运行优化与持续节能系统**。
+>
+> 以物理机理定义设备边界，以真实运行数据校准模型，以 AI 学习复杂工况的非线性关系，以确定性优化器下发可执行的控制指令。Agent 只负责发现、协调与通知人；**物理设定值由工程层计算，不由 LLM 决定。**
 
-> 项目以官方 `agentscope-ai/AgentTeams` 为协同底座，目的是使用 多Agent 调度更有效地使用能源，持续降低能源成本和调度工作中的人工成本。
-
+> 项目以官方 `agentscope-ai/AgentTeams` 为协同底座，持续利用多 Agent 协作降低能源调度成本与人工运营成本。
 
 [超境创新官网](https://transrealm.ltd/energymesh-official?view=solutions) ·
 [AgentTeams 资源](agentteams/) · [架构](ARCHITECTURE.md) · [当前状态](STATUS.md) ·
 [安全边界](SECURITY.md)
+
+---
+
+## 一句话定位
+
+**EnergyMesh 是工业能源领域的系统工程平台。** 它不是一套"用 Agent 做能源演示"的 Demo，而是一个具备**云—边—端稳定部署架构**、**五类异常工程化降级状态机**、**八层确定性控制计算链**的完整能源 AI 系统。
 
 
 
@@ -78,31 +85,101 @@ EnergyMesh 的一切建模和优化，最终必须回答一个问题：**这次�
 PhyAI 混合建模的价值，最终必须用成本降低来验证。模型精度是手段，成本优化是目的。
 
 
-## 我们是如何解决的
+## 我们是如何解决的：系统工程架构
 
- EnergyMesh Agents 采用 AgentTeams 作为协同底座，首先核心是Perception Agent读取数据定时监测园区，Team Leader 理解用户意图和生产需求，其余等等多个Agent分工，实现比如产生调度方案，审核，安全保障等等持续实现调度计划的更新，并且持续优化，达到降本的效果。
- 这个过程中，由于真实电力调度场景中，数据采集和集中分析的复杂性，调度方案制定的复杂性，审核和安全防范的硬性要求，导致单一Agent完成此任务较为复杂，而分工明确的多Agent团队恰好可以解决这一问题。
+EnergyMesh 不是一套"让 Agent 做能源演示"的实验系统。它有三个工程化的核心支柱，Agent 协作只是最顶层的一根：
 
-AgentTeams 在系统中承担任务组织和责任分离：
+| 层级 | 工程支柱 | 说明 | Agent 的作用 |
+|---|---|---|---|
+| **L3：稳定部署** | 云—边—端三层架构 | 边缘主机承载全部安全关键能力（采集、状态估计、优化、安全规则、控制回读）。**云挂了，现场不能跟着挂。** | 云端协调、发现异常、通知人、沉淀经验 |
+| **L2：确定性控制** | 数据—状态—模型—优化—安全—下发—回读 八层链 | 每一台设备的控制指令必须经过数据检查、状态计算、可用能力、控制边界、经济优化、安全审核、下发、回读验证。LLM/Agent **不直接产生物理设定值。** | 调用工具、组织任务、解释偏差、请求人工 |
+| **L1：协同治理** | AgentTeams 多 Agent 分工 | 5 个核心 Agent 分离权限：Team Leader 编排、Perception 只读感知、Dispatch 只生成计划、Audit 独立审核、Execution 只执行已批版本。 | 发现"发生了什么"、协调任务链、请求人介入 |
 
-- Team Leader 根据告警、上传数据或人工目标创建调度任务，维护任务 DAG、上下文版本和终态验收。
-- Perception Agent 只读 EMS/BMS/PCS/气象/MES 数据，判断旧计划是否失效，并输出可信 `context_hash`。
-- Dispatch Agent 在可信上下文上调用优化器生成候选计划，但无权审批或执行。
-- Audit Agent 独立复算 SOC、变压器、并网、生产连续性和收益，危险方案默认拒绝。
-- Human gate 只在高风险动作、柔性负荷影响或数据冲突时进入链路，审批绑定当前 `task_version` 和
-  `context_hash`。
-- Execution Agent 只执行当前获批版本，生成幂等命令、模拟回执和执行后偏差校验。
+**Agent 的正确位置是发现层和协调层，不是控制层。** 物理设定值由优化器和安全规则引擎确定性计算，Agent 只负责在条件变化时触发重新评估、在异常时通知人、在需要审批时组织流程。这样，即使 AgentTeams 或 LLM 掉线，边缘主机上的优化器和本地调度器仍然可以基于最后一版可信策略继续安全运行。
 
-这套结构让系统能动态协作：如果数据正常，Leader 保持监控而不打扰 Worker；如果天气、电价、负荷或设备状态
-突变，旧 plan_version 被废止，Dispatch 重新生成候选，Audit 重新审核，必要时再次请求人工审批；如果执行
-回读偏差超限，系统进入 rollback 并创建新的感知任务。
+### 三层部署架构
 
-当前仓库包含两层能力：
+```text
+                         EnergyMesh Cloud（非安全关键）
+                  ┌─────────────────────────────────────┐
+                  │ Web UI / AgentTeams / LLM / Analytics│
+                  │ 历史数据 / 模型训练 / 跨园区管理      │
+                  └──────────────────┬──────────────────┘
+                                     │ 非实时，容忍断网
+                  ┌──────────────────▼──────────────────┐
+                  │   EnergyMesh Edge Controller        │  ← 每台园区一台
+                  │   ◆ 数据采集与质量校验               │
+                  │   ◆ 状态估计与设备模型               │
+                  │   ◆ 优化器 / MPC                    │
+                  │   ◆ 安全规则引擎                     │
+                  │   ◆ 本地调度器（断网自治）            │
+                  │   ◆ 执行 adapter + 回读验证           │
+                  │   ◆ 本地数据库 + Watchdog             │
+                  └──────────────────┬──────────────────┘
+                                     │ OPC-UA / Modbus / MQTT
+                  ┌──────────────────▼──────────────────┐
+                  │   EMS / PCS / BMS / PLC / HVAC      │
+                  └──────────────────┬──────────────────┘
+                                     │
+                              Physical World
+```
 
-| 层级 | 当前实现 | 运行边界 |
-| --- | --- | --- |
-| AgentTeams 协作层 | `agentteams/` 中的 Worker/Human/Team 资源、Worker 包、Skill 契约和动态任务规则 | live 运行时由官方 AgentTeams、Matrix 房间、Human/admin 身份、Manager 和 Worker 共同产生协作记录 |
-| 能源领域工具层 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence、RAG 原型、3D 操作台 | 可在干净环境复现能源业务闭环，并作为 AgentTeams Worker 的业务工具和可视化客户端；不能替代 AgentTeams 协作证据 |
+边缘主机最小规格：x86 工业计算机 / NUC，16GB RAM，256GB SSD，双网口，Docker Compose 或 K3s 单节点部署。**LLM 掉线、AgentTeams 掉线、公网断网，都不影响现场数据采集、安全边界校验和基础优化运行。**
+
+### 异常处理：五类工程化状态机
+
+异常不是"扔给 Agent 处理"，而是每一类都有确定的降级策略：
+
+- **A 数据异常**：原始数据经过格式→范围→时间连续性→变化率→跨测点→物理一致性→可信度评分。例如 SOC 从 55% 突变到 5% 但 PCS 只放 100kW（物理上不可能），系统直接标记 `DATA_INVALID_PHYSICAL_INCONSISTENCY`，保留上一可信状态，禁止新策略，进入降级。
+- **B 设备异常**：PCS offline、逆变器过温 → 从可控资源集合删除 → 重新构造优化问题 → 重新求解。
+- **C 预测异常**：`forecast_error = |actual - forecast| / forecast` > 阈值 → 废止 `plan_version` → 重新预测 → 重新优化。
+- **D 控制执行异常**：`execution_error = |command - actual| / |command|` > 5% → `VERIFY_FAILED` → 停止扩大控制 → rollback。
+- **E 系统级异常**：LLM 不可达→优化器继续运行；AgentTeams 断→本地调度器接管；云断网→Edge Local Mode；优化器超时→回退最近安全策略；PCS 通讯失败→PLC 本地控制。
+
+> **核心原则：Fail-safe，不是 Fail-dead。** 每一个子系统都有独立降级策略。
+
+### 数据方案：八大分层 + 八层确定性控制链
+
+数据不是一个大 `world_state` 给 LLM 看，而是分八层：Telemetry（实时遥测）、Asset Model（静态参数）、Forecast、Tariff、Constraint、Command、Readback、Derived State（派生状态）。
+
+从原始数据到物理设定值，必须经过八层确定性计算：
+
+```
+① 数据检查（valid? online? range?）
+  → ② 状态计算（net_load = load - PV）
+  → ③ 可用能力（available = (SOC - SOC_min) × capacity）
+  → ④ 控制边界（P ≤ min{PCS_limit, battery_limit, transformer, available/Δt}）
+  → ⑤ 经济优化（min Σ tariff[t] × grid_import[t]）
+  → ⑥ 安全审核（SOC≥min, grid≤limit, demand≥protected）
+  → ⑦ 下发（PCS_SETPOINT = -500 kW）
+  → ⑧ 回读验证（actual = -487 kW, error = 2.6%, PASS）
+```
+
+这套链路保证：**Agent 看到的永远是经过校验和计算后的可信状态，输出的只是调用工具、组织任务和请求人工的指令；物理设定值由优化器和安全规则引擎产生。**
+
+---
+
+### AgentTeams 在系统中的角色
+
+在三层架构之上，AgentTeams 承担的是**协同治理层（L1）**的任务组织和责任分离：
+
+- **Team Leader** 根据告警、上传数据或人工目标创建调度任务，维护任务 DAG、上下文版本和终态验收。
+- **Perception Agent** 只读 EMS/BMS/PCS/气象/MES 数据，判断旧计划是否失效，并输出可信 `context_hash`。
+- **Dispatch Agent** 在可信上下文上调用优化器生成候选计划，但无权审批或执行。
+- **Audit Agent** 独立复算 SOC、变压器、并网、生产连续性和收益，危险方案默认拒绝。
+- **Human gate** 只在高风险动作、柔性负荷影响或数据冲突时进入链路，审批绑定当前 `task_version` 和 `context_hash`。
+- **Execution Agent** 只执行当前获批版本，生成幂等命令、模拟回执和执行后偏差校验。
+
+这套结构让系统能动态协作：如果数据正常，Leader 保持监控而不打扰 Worker；如果天气、电价、负荷或设备状态突变，旧 plan_version 被废止，Dispatch 重新生成候选，Audit 重新审核，必要时再次请求人工审批；如果执行回读偏差超限，系统进入 rollback 并创建新的感知任务。
+
+当前仓库包含三层能力：
+
+| 层级 | 工程支柱 | 当前实现 | 运行边界 |
+| --- | --- | --- | --- |
+| **L3 部署** | 云—边—端稳定架构 | Docker Compose 定义、边缘自治文档、Watchdog | 需现场 x86 主机或虚拟化环境；Codespace 仅做云端/协作层演示 |
+| **L2 确定性控制** | 数据分层、状态估计、优化、安全规则 | FastAPI、优化器、审核器、模拟执行器、SQLite/JSON evidence | 可在干净环境复现 96 点调度闭环；真实设备接入需 OPC-UA/Modbus adapter |
+| **L1 协同治理** | AgentTeams 多 Agent 分工 | `agentteams/` Worker/Human/Team 资源、Skill 契约、动态任务规则 | live 运行时由官方 AgentTeams、Matrix 房间、Manager/Worker 产生协作记录 |
+
 
 ## Live AgentTeams 深度接入
 
@@ -726,6 +803,4 @@ agt worker status --team energymesh-park-control
 - 维护机制：建议用 GitHub Issues 管理 bug/feature/security，按 SemVer 发布 release，并为高风险漏洞建立安全响应说明。
 
 
-EnergyMesh 的专业闭环标准很简单：一次任务能从真实输入开始，被 AgentTeams 正确拆解和动态协作，被 Skill
-确定性执行和审计，被 Human 在必要时授权，被执行回读验证，被失败分支回退，最后能用同一组 ID 追到每一份
-上下文、版本、证据和结果。
+EnergyMesh 的工程化验收标准：系统能在断网条件下安全自治运行，Agent 协作是发现与协调层而非控制层，每一次控制指令都有八层确定的校验链、五类异常的降级策略和成本降低的可量化验证。
