@@ -857,10 +857,20 @@ function renderTaskCostComparison(task = state.task) {
   const baseline = task?.baseline_plan;
   const selected = selectedTaskPlan(task);
   if (!baseline?.metrics || !selected?.metrics) return false;
+  const baselineCost = Number(baseline.metrics.total_cost_yuan || 0);
+  const optimizedCost = Number(selected.metrics.total_cost_yuan || 0);
   renderCostComparisonValues({
-    baseline: baseline.metrics.total_cost_yuan,
-    optimized: selected.metrics.total_cost_yuan,
+    baseline: baselineCost,
+    optimized: optimizedCost,
     status: `多Agent真实任务成本：${selected.profile}`,
+  });
+  drawCostChart({
+    cursor: 95,
+    interval_history: [
+      { interval: 0, baseline_cumulative_cost_yuan: 0, optimized_cumulative_cost_yuan: 0 },
+      { interval: 95, baseline_cumulative_cost_yuan: baselineCost, optimized_cumulative_cost_yuan: optimizedCost },
+    ],
+    reoptimization_events: [],
   });
   return true;
 }
