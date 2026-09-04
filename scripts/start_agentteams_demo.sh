@@ -74,58 +74,14 @@ if [[ "${need_gh}" == "true" ]]; then
 workers="$(docker exec agentteams-controller agt get workers || true)"
 echo "$teams" | grep -q Failed && { echo "FAIL: AgentTeams Team is Failed."; echo "$teams"; exit 2; }
 echo "$workers" | grep -Eq "Running|Ready|Active" || { echo "FAIL: no AgentTeams Worker is Running/Ready/Active."; echo "$workers"; exit 2; }'
-  echo "Starting Codespace AgentTeams host proxy..."
+  echo "Checking Codespace AgentTeams Matrix/Element ports..."
   gh codespace ssh -c "${CODESPACE_NAME}" -- \
-    'set -eu
-controller_ip="$(docker inspect -f "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}" agentteams-controller)"
-cat >/tmp/em_at_proxy.py <<PY
-import os
-import socket
-import threading
-
-TARGET = os.environ["AGENTTEAMS_PROXY_TARGET"]
-PAIRS = ((28080, 8080), (28088, 8088))
-
-def pipe(src, dst):
-    try:
-        while True:
-            data = src.recv(65536)
-            if not data:
-                break
-            dst.sendall(data)
-    except OSError:
-        pass
-    finally:
-        for sock in (src, dst):
-            try:
-                sock.close()
-            except OSError:
-                pass
-
-def serve(local_port, target_port):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("127.0.0.1", local_port))
-    server.listen(64)
-    while True:
-        client, _ = server.accept()
-        upstream = socket.create_connection((TARGET, target_port), timeout=10)
-        threading.Thread(target=pipe, args=(client, upstream), daemon=True).start()
-        threading.Thread(target=pipe, args=(upstream, client), daemon=True).start()
-
-for pair in PAIRS:
-    threading.Thread(target=serve, args=pair, daemon=True).start()
-threading.Event().wait()
-PY
-if ! curl -fsS http://127.0.0.1:28080/_matrix/client/versions >/dev/null 2>&1; then
-  AGENTTEAMS_PROXY_TARGET="$controller_ip" nohup python3 /tmp/em_at_proxy.py >/tmp/em_at_proxy.log 2>&1 &
-fi
-for i in $(seq 1 45); do curl -fsS http://127.0.0.1:28080/_matrix/client/versions >/dev/null 2>&1 && curl -fsS http://127.0.0.1:28088 >/dev/null 2>&1 && exit 0; sleep 2; done
-cat /tmp/em_at_proxy.log 2>/dev/null || true
+    'for i in $(seq 1 45); do curl -fsS http://127.0.0.1:18080/_matrix/client/versions >/dev/null 2>&1 && curl -fsSI http://127.0.0.1:18088/ >/dev/null 2>&1 && exit 0; sleep 2; done
+docker ps --format "table {{.Names}}\t{{.Ports}}" | grep agentteams-controller || true
 exit 2'
   if ! lsof -nP -iTCP:18080 -sTCP:LISTEN >/dev/null 2>&1; then
     echo "Forwarding AgentTeams Matrix and Element ports..."
-    gh codespace ports forward 28088:18088 28080:18080 -c "${CODESPACE_NAME}" \
+    gh codespace ports forward 18088:18088 18080:18080 -c "${CODESPACE_NAME}" \
       >"${LOG_DIR}/agentteams-port-forward.log" 2>&1 &
     echo $! >"${LOG_DIR}/agentteams-port-forward.pid"
     sleep 4
@@ -143,8 +99,8 @@ if ! curl -fsS "${AGENTTEAMS_MATRIX_BASE_URL}/_matrix/client/versions" >/dev/nul
 FAIL: AgentTeams Matrix is still unreachable:
   ${AGENTTEAMS_MATRIX_BASE_URL}/_matrix/client/versions
 
-Keep the Codespace running and make sure the proxy-backed port forwarding is active.
-Codespace proxy 28088 maps Element to local 18088; proxy 28080 maps Matrix to local 18080.
+Keep the Codespace running and make sure port forwarding is active.
+Codespace 18088 maps Element to local 18088; Codespace 18080 maps Matrix to local 18080.
 MSG
   exit 2
 fi
