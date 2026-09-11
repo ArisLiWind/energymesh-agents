@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
+from energymesh.auth import AuthConfig, install_auth
 from energymesh.agentteams_runtime import (
     LiveAgentTeamsRuntime,
     LiveAgentTeamsRuntimeError,
@@ -1085,6 +1086,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/app.js", include_in_schema=False)
     def root_app_script() -> FileResponse:
         return FileResponse(static_dir / "app.js")
+
+    install_auth(app, AuthConfig.from_env())
 
     return app
 
