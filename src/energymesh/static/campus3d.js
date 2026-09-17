@@ -20,12 +20,12 @@ const MODULES = [
 const SITE_PRESETS = {
   park: MODULES,
   coldchain: [
-    { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -4.05, z: .05, kind: "grid", pad: [1.36, 1.08] },
-    { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.45, z: 1.18, kind: "chiller", pad: [1.76, 1.02] },
-    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.65, z: -1.22, kind: "storage", pad: [1.3, 1.04] },
-    { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: .72, z: 1.22, kind: "coldstorage", pad: [2.05, 1.16] },
-    { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 2.48, z: .12, kind: "freezer", pad: [1.72, 1.12] },
-    { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: -.38, z: .05, kind: "chiller", pad: [1.28, .92] },
+    { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -3.75, z: .62, kind: "grid", pad: [1.34, 1.02] },
+    { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.35, z: -1.06, kind: "chiller", pad: [1.74, .98] },
+    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.35, z: -1.34, kind: "storage", pad: [1.28, .98] },
+    { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: -.25, z: .84, kind: "coldstorage", pad: [2.02, 1.12] },
+    { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 1.82, z: .48, kind: "freezer", pad: [1.7, 1.08] },
+    { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: 1.46, z: -1.22, kind: "chiller", pad: [1.24, .9] },
   ],
 };
 
@@ -37,13 +37,18 @@ const LABEL_OFFSETS = {
     load: { x: 78, y: 72 },
   },
   coldchain: {
-    grid: { x: -96, y: 50 },
-    solar: { x: -90, y: 78 },
+    grid: { x: -86, y: 48 },
+    solar: { x: -188, y: 128 },
     storage: { x: -12, y: 82 },
-    load: { x: 92, y: -22 },
-    factory: { x: 102, y: 42 },
-    charge: { x: -60, y: 60 },
+    load: { x: 132, y: -86 },
+    factory: { x: 60, y: 24 },
+    charge: { x: -66, y: 68 },
   },
+};
+
+const LAYOUT_BOUNDS = {
+  park: { minX: -4.7, maxX: 3.6, minZ: -1.9, maxZ: 2.05 },
+  coldchain: { minX: -4.25, maxX: 2.35, minZ: -1.58, maxZ: 1.62 },
 };
 
 const BUS_Z = -.28;
@@ -457,7 +462,7 @@ export function createCampus3D(canvas, onLabels) {
   let running = true;
 
   function layoutKey(presetId = currentPresetId) {
-    return `energymesh.campusLayout.${presetId}.v1`;
+    return `energymesh.campusLayout.${presetId}.v2`;
   }
 
   function savedPositions(presetId) {
@@ -493,6 +498,52 @@ export function createCampus3D(canvas, onLabels) {
     window.localStorage.setItem(layoutKey(), JSON.stringify(positions));
   }
 
+  function clampToBounds(x, z) {
+    const bounds = LAYOUT_BOUNDS[currentPresetId] || LAYOUT_BOUNDS.park;
+    return {
+      x: THREE.MathUtils.clamp(x, bounds.minX, bounds.maxX),
+      z: THREE.MathUtils.clamp(z, bounds.minZ, bounds.maxZ),
+    };
+  }
+
+  function footprintOf(module) {
+    const padSize = module?.userData?.pad || [1.38, 1.1];
+    return {
+      x: Math.max(.72, padSize[0] / 2),
+      z: Math.max(.62, padSize[1] / 2),
+    };
+  }
+
+  function resolveModulePosition(module, x, z) {
+    const candidate = clampToBounds(x, z);
+    const own = footprintOf(module);
+    for (let pass = 0; pass < 8; pass += 1) {
+      let moved = false;
+      modules.forEach((other) => {
+        if (other === module) return;
+        const otherSize = footprintOf(other);
+        const minX = own.x + otherSize.x + .18;
+        const minZ = own.z + otherSize.z + .14;
+        const dx = candidate.x - other.position.x;
+        const dz = candidate.z - other.position.z;
+        const overlapX = minX - Math.abs(dx);
+        const overlapZ = minZ - Math.abs(dz);
+        if (overlapX <= 0 || overlapZ <= 0) return;
+        if (overlapX < overlapZ) {
+          candidate.x += (dx >= 0 ? 1 : -1) * overlapX;
+        } else {
+          candidate.z += (dz >= 0 ? 1 : -1) * overlapZ;
+        }
+        const clamped = clampToBounds(candidate.x, candidate.z);
+        candidate.x = clamped.x;
+        candidate.z = clamped.z;
+        moved = true;
+      });
+      if (!moved) break;
+    }
+    return candidate;
+  }
+
   function syncRoutesToModules() {
     liveRoutes.forEach((route) => {
       const { from, to } = route.userData.def;
@@ -516,6 +567,45 @@ export function createCampus3D(canvas, onLabels) {
     camera.updateProjectionMatrix();
   }
 
+  function clampLabel(label, rect) {
+    const maxX = currentPresetId === "coldchain" ? rect.width - 220 : rect.width - 96;
+    const maxY = currentPresetId === "coldchain" ? rect.height - 150 : rect.height - 118;
+    label.x = THREE.MathUtils.clamp(label.x, 78, Math.max(78, maxX));
+    label.y = THREE.MathUtils.clamp(label.y, 70, Math.max(70, maxY));
+  }
+
+  function separateLabels(labels, rect) {
+    const ids = currentPresetId === "coldchain"
+      ? ["grid", "solar", "load", "factory"]
+      : Object.keys(labels);
+    const halfW = currentPresetId === "coldchain" ? 104 : 82;
+    const halfH = currentPresetId === "coldchain" ? 48 : 42;
+    ids.forEach((id) => { if (labels[id]) clampLabel(labels[id], rect); });
+    for (let pass = 0; pass < 6; pass += 1) {
+      let moved = false;
+      for (let i = 0; i < ids.length; i += 1) {
+        for (let j = i + 1; j < ids.length; j += 1) {
+          const a = labels[ids[i]];
+          const b = labels[ids[j]];
+          if (!a || !b) continue;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const overlapX = halfW * 2 + 10 - Math.abs(dx);
+          const overlapY = halfH * 2 + 10 - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          if (overlapX < overlapY) {
+            b.x += (dx >= 0 ? 1 : -1) * overlapX;
+          } else {
+            b.y += (dy >= 0 ? 1 : -1) * overlapY;
+          }
+          clampLabel(b, rect);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
   function updateLabels() {
     const labels = {};
     const rect = canvas.getBoundingClientRect();
@@ -527,8 +617,8 @@ export function createCampus3D(canvas, onLabels) {
       const x = (world.x * .5 + .5) * rect.width + offset.x;
       const y = (-world.y * .5 + .5) * rect.height + offset.y;
       labels[id] = {
-        x: THREE.MathUtils.clamp(x, 78, Math.max(78, rect.width - 96)),
-        y: THREE.MathUtils.clamp(y, 70, Math.max(70, rect.height - 118)),
+        x,
+        y,
         visible: true,
         placement: "below",
         selected: editMode && id === selectedId,
@@ -538,6 +628,7 @@ export function createCampus3D(canvas, onLabels) {
         note: module.userData.note,
       };
     });
+    separateLabels(labels, rect);
     onLabels?.(labels);
   }
 
@@ -624,8 +715,9 @@ export function createCampus3D(canvas, onLabels) {
     if (dragging.module) {
       const point = pointerOnGround(event);
       if (!point) return;
-      dragging.module.position.x = THREE.MathUtils.clamp(point.x + dragging.offsetX, -4.7, 3.8);
-      dragging.module.position.z = THREE.MathUtils.clamp(point.z + dragging.offsetZ, -1.9, 2.05);
+      const next = resolveModulePosition(dragging.module, point.x + dragging.offsetX, point.z + dragging.offsetZ);
+      dragging.module.position.x = next.x;
+      dragging.module.position.z = next.z;
       dragging.dirty = true;
       rebuildTopologyWire(topologyWire, modules);
       syncRoutesToModules();
@@ -814,6 +906,7 @@ export function createCampus3D(canvas, onLabels) {
 
   function reset() {
     window.localStorage.removeItem(layoutKey());
+    window.localStorage.removeItem(`energymesh.campusLayout.${currentPresetId}.v1`);
     currentDefinitions = SITE_PRESETS[currentPresetId];
     currentDefinitions.forEach((def) => {
       const module = modules.get(def.id);

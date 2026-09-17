@@ -2215,16 +2215,16 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   right: 12px;
   display: grid;
   gap: 6px;
-  max-width: 116px;
+  max-width: 98px;
 }
 
 .campus-tools button {
-  height: 34px;
+  min-height: 30px;
   border: 1px solid #c7d5df;
   border-radius: 8px;
   background: rgba(255, 255, 255, .92);
   color: #344054;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 850;
   box-shadow: 0 8px 18px rgba(20, 31, 42, .08);
   backdrop-filter: blur(12px);
