@@ -50,6 +50,7 @@ const state = {
   flowPreview: null,
   lastCampusFlow: null,
   planLedger: [],
+  demoWorkflow: null,
   agentTeamsTask: {
     taskId: window.localStorage.getItem("energymesh.agentteamsTaskId") || null,
     projectId: null,
@@ -3882,6 +3883,238 @@ function restoreParallelHistory() {
   localStorage.removeItem("energymesh.parallelHistory");
 }
 
+function buildDemoCostHistory() {
+  const baselineFinal = 4328.6;
+  const optimizedFinal = 3589.4;
+  const history = [];
+  for (let interval = 0; interval < 96; interval += 4) {
+    const day = interval / 95;
+    const productionBump = interval >= 64 && interval <= 72 ? 0.11 : 0;
+    const baseline = baselineFinal * (Math.pow(day, 1.18) + productionBump * day);
+    const optimizedBefore = baseline;
+    const optimizedAfter = optimizedFinal * Math.pow(day, 1.11) + (interval >= 64 ? 118 : 0);
+    history.push({
+      interval,
+      baseline_cumulative_cost_yuan: Number(Math.min(baselineFinal, baseline).toFixed(2)),
+      optimized_cumulative_cost_yuan: Number(Math.min(optimizedFinal, interval < 64 ? optimizedBefore : optimizedAfter).toFixed(2)),
+      actual_load_kw: interval >= 64 && interval <= 72 ? 760 : 520 + Math.sin(interval / 9) * 90,
+      actual_pv_kw: Math.max(0, 700 * Math.sin((interval - 20) / 52 * Math.PI)),
+      actual_grid_kw: interval >= 64 && interval <= 72 ? 410 : 260 + Math.cos(interval / 8) * 55,
+      optimized_grid_kw: interval >= 64 ? 310 : 260 + Math.cos(interval / 8) * 55,
+      actual_soc: interval < 64 ? 0.58 : 0.31 + Math.min(0.2, (interval - 64) * 0.006),
+      pv_deviation_percent: interval >= 60 ? 8.2 : 2.1,
+      load_deviation_percent: interval >= 64 && interval <= 72 ? 18.6 : 3.4,
+    });
+  }
+  return history;
+}
+
+function setDemoControls(stage = "waiting") {
+  const status = $("#demo-flow-status");
+  const approve = $("#demo-approve-v3");
+  const execute = $("#demo-execute-v3");
+  if (!status || !approve || !execute) return;
+  const map = {
+    waiting: "等待触发",
+    audited: "V3 等待人工批准",
+    approved: "Plan V3 已批准",
+    executed: "执行回读完成",
+  };
+  status.textContent = map[stage] || stage;
+  approve.disabled = stage !== "audited";
+  execute.disabled = stage !== "approved";
+}
+
+function demoEvents(stage = "audited") {
+  const now = Date.now();
+  const rows = [
+    ["Team Leader", "TASK_CREATED", "生产计划变更触发重规划：3号产线 16:00 连续运行 90 分钟，SOC 备用下限 30%。"],
+    ["Perception Agent", "CONTEXT_SNAPSHOT", "校验负荷、光伏、SOC、电价、PCS/BMS、MES 生产约束，生成 Context Snapshot。"],
+    ["Dispatch Agent", "PLAN_V2_GENERATED", "调用预测 Skill、设备状态 Skill 和确定性优化器，生成 Plan V2。"],
+    ["Audit Agent", "PLAN_V2_REJECTED", "REJECT：Plan V2 最低 SOC=27%，低于企业备用约束 30%。"],
+    ["Dispatch Agent", "PLAN_V3_REPLANNED", "重新求解 Plan V3：最低 SOC=31%，生产连续性满足，峰值购电下降。"],
+    ["Audit Agent", "PLAN_V3_PASSED", "PASS：SOC、PCS、变压器、并网、功率平衡和成本改善均通过。"],
+  ];
+  if (stage === "approved" || stage === "executed") rows.push(["Human Operator", "APPROVAL_GRANTED", "人工批准当前 Plan Version：仅授予 V3 有限执行权限。"]);
+  if (stage === "executed") rows.push(["Execution Agent", "EXECUTION_READBACK", "模拟 EMS 回读完成：储能指令 180kW，实际 176kW，偏差 2.2%，无需回滚。"]);
+  return rows.map(([actor, action, detail], index) => ({
+    event_id: `DEMO-${String(index + 1).padStart(2, "0")}`,
+    timestamp: new Date(now + index * 900).toISOString(),
+    actor,
+    action,
+    reason: action,
+    detail,
+    to_state: stage === "executed" ? "COMPLETED" : "AWAITING_APPROVAL",
+  }));
+}
+
+function demoPlanLedger(stage = "audited") {
+  const record = {
+    id: "DEMO-PLAN-V3",
+    action: stage === "executed" ? "adopted" : "rejected",
+    time: "2025-07-15 16:00",
+    title: stage === "executed" ? "Plan V3 已执行" : "Plan V2 被拒绝，Plan V3 待批",
+    reason: stage === "executed"
+      ? "Plan V3 在 SOC 下限、生产连续性和峰值约束内执行，回读偏差 2.2%，证据已封存。"
+      : "Audit 拒绝 SOC 27% 的 V2，Dispatch 重新生成最低 SOC 31% 的 V3。",
+    expected: {
+      grid: "4.8 → 3.9 MW",
+      storage: "120 → 180 kW",
+      waste: "0.36 → 0.08 MWh",
+    },
+  };
+  state.planLedger = [record];
+  window.localStorage.setItem("energymesh.planLedger", JSON.stringify(state.planLedger));
+  renderPlanLedger();
+}
+
+async function runProductionChangeDemo() {
+  try {
+    if (!state.energySnapshot) {
+      try {
+        state.energySnapshot = await request("/api/data/snapshot/current");
+      } catch {
+        state.energySnapshot = { source: "OpenCEM public microgrid replay", telemetry: [], current_interval: 64 };
+      }
+    }
+    const taskId = "DEMO-PROD-LINE3-REPLAN";
+    state.activeScenario = null;
+    state.task = {
+      task_id: taskId,
+      task_version: 3,
+      state: "AWAITING_APPROVAL",
+      trace_id: `TRACE-${taskId}`,
+      evidence_sha256: null,
+    };
+    state.context = {
+      context_hash: "ctx-line3-1600-soc30-opencem",
+      task_version: 3,
+    };
+    state.candidates = [
+      {
+        candidate_id: "Plan V1",
+        name: "原 EMS 预设策略",
+        cost_yuan: 4328.6,
+        max_power_kw: 4820,
+        soc_min_percent: 35,
+        soc_max_percent: 82,
+        transformer_load_percent: 78,
+      },
+      {
+        candidate_id: "Plan V2",
+        name: "初次重规划候选",
+        cost_yuan: 3446.1,
+        max_power_kw: 3610,
+        soc_min_percent: 27,
+        soc_max_percent: 84,
+        transformer_load_percent: 70,
+      },
+      {
+        candidate_id: "Plan V3",
+        name: "审核后可执行版本",
+        cost_yuan: 3589.4,
+        max_power_kw: 3890,
+        soc_min_percent: 31,
+        soc_max_percent: 83,
+        transformer_load_percent: 72,
+      },
+    ];
+    state.audit = [
+      { candidate_id: "Plan V1", verdict: "audit_approved", reason: "基线可运行，但没有响应生产提前变化，峰段购电和人工调度成本较高。" },
+      { candidate_id: "Plan V2", verdict: "rejected", reason: "REJECT：最低 SOC=27%，违反企业备用 SOC 不低于 30% 的硬约束。" },
+      { candidate_id: "Plan V3", verdict: "audit_approved", reason: "PASS：最低 SOC=31%，生产连续运行 90 分钟满足，PCS/变压器/并网约束均通过，成本低于 V1。" },
+    ];
+    state.events = demoEvents("audited");
+    state.evidence = {
+      task_id: taskId,
+      context_snapshot: "load/pv/soc/tariff/device/production",
+      plan_versions: ["V1 baseline", "V2 rejected", "V3 passed"],
+      audit_report: "V2 rejected for SOC 27%; V3 passed with SOC 31%.",
+      expected_impact: {
+        baseline_cost_yuan: 4328.6,
+        optimized_cost_yuan: 3589.4,
+        savings_yuan: 739.2,
+        peak_grid_kw_change: "4820 → 3890",
+        pv_waste_mwh_change: "0.36 → 0.08",
+      },
+    };
+    state.parallel = {
+      running: false,
+      cursor: 72,
+      agentteams_active: true,
+      baseline_cost_yuan: 4328.6,
+      optimized_cost_yuan: 3589.4,
+      savings_yuan: 739.2,
+      savings_percent: 17.08,
+      total_reoptimizations: 1,
+      last_event: "生产变化触发重规划；V2 Reject；V3 等待审批",
+      reoptimization_events: [{ interval: 64, reason: "Line 3 production moved to 16:00; SOC reserve >=30%" }],
+      interval_history: buildDemoCostHistory(),
+      agentteams_trace: [
+        { step: "perception_observation", interval: 64, status: "changed", reasons: ["生产计划提前", "负荷偏差 18.6%", "SOC 备用约束 30%"] },
+        { step: "plan_invalidated_and_reoptimized", interval: 64, new_plan_id: "Plan V3", agents: ["Perception", "Dispatch", "Audit"] },
+      ],
+    };
+    state.approval = null;
+    $("#demo-baseline-cost").textContent = "¥4,328.60";
+    $("#demo-v2-status").textContent = "REJECT";
+    $("#demo-v3-cost").textContent = "¥3,589.40";
+    $("#demo-readback").textContent = "待执行";
+    setDemoControls("audited");
+    renderTask();
+    renderCandidates();
+    renderTrace();
+    renderParallel();
+    demoPlanLedger("audited");
+    addChatMessage("user", "3 号产线今天由晚上 8 点提前到下午 4 点运行，连续运行 90 分钟，不允许中断；备用 SOC 仍然不得低于 30%。", "operator");
+    addChatMessage("agent", "Team Leader 已创建重规划任务。Perception 生成 Context Snapshot，Dispatch 生成 Plan V2，Audit 因 SOC=27% 拒绝；Dispatch 重新求解 Plan V3，Audit PASS，等待人工批准。", "team_leader");
+    await applySnapshotToCampus();
+    scrollWithin($("#nav-workspace"), ".demo-director");
+    toast("Demo 任务已生成：V2 Reject，V3 等待审批");
+  } catch (error) {
+    toast(error.message || "Demo 触发失败");
+  }
+}
+
+function approveProductionDemo() {
+  if (!state.task?.task_id?.includes("DEMO-PROD")) return;
+  state.approval = { approved: true, approver: "Human Operator", reason: "Plan V3 passed independent Audit and is approved for simulated EMS execution." };
+  state.task = { ...state.task, state: "AWAITING_APPROVAL", approval: state.approval };
+  state.events = demoEvents("approved");
+  $("#demo-readback").textContent = "已批准";
+  setDemoControls("approved");
+  renderTask();
+  renderTrace();
+  addChatMessage("agent", "Human Operator 已批准 Plan V3。Execution Worker 现在只获得这一版计划的有限执行权限。", "execution_agent");
+  toast("Plan V3 已批准");
+}
+
+async function executeProductionDemo() {
+  if (!state.task?.task_id?.includes("DEMO-PROD") || !state.approval) return;
+  state.task = { ...state.task, state: "COMPLETED", evidence_sha256: "demo-line3-v3-readback-sha256" };
+  state.events = demoEvents("executed");
+  state.evidence = {
+    ...state.evidence,
+    approval: state.approval,
+    execution_receipt: {
+      command: "battery_discharge_kw=180; line3_non_interruptible=true",
+      actual_battery_kw: 176,
+      deviation_percent: 2.2,
+      fallback: false,
+    },
+  };
+  $("#demo-readback").textContent = "偏差 2.2%";
+  setDemoControls("executed");
+  demoPlanLedger("executed");
+  renderTask();
+  renderTrace();
+  renderCandidates();
+  renderOpsReport();
+  addChatMessage("agent", "Execution Worker 已执行到数字孪生/模拟 EMS。回读：储能指令 180kW，实际 176kW，偏差 2.2%，未触发回滚；Evidence 已封存。", "execution_agent");
+  await applySnapshotToCampus();
+  toast("执行回读完成，证据已封存");
+}
+
 async function startParallelSimulation() {
   try {
     if (state.parallelTimer) window.clearInterval(state.parallelTimer);
@@ -4092,6 +4325,9 @@ function setupEvents() {
   $("#energy-csv-file").addEventListener("change", (event) => uploadEnergyCsv(event.target.files?.[0]));
   $("#test-demo-data").addEventListener("click", testDemoDataConnection);
   $("#test-live-data").addEventListener("click", testLiveDataConnection);
+  $("#demo-production-change")?.addEventListener("click", runProductionChangeDemo);
+  $("#demo-approve-v3")?.addEventListener("click", approveProductionDemo);
+  $("#demo-execute-v3")?.addEventListener("click", executeProductionDemo);
   $("#connect-energy-source").addEventListener("click", async () => {
     setConnectorStatus("正在测试真实园区数据连接...", [{ kind: "CONNECTING", detail: "检查 Monitor 当前是否有 EMS/BMS/PCS 遥测。" }]);
     try {

@@ -2791,6 +2791,108 @@ pre {
 }
 
 /* ===== power chart section ===== */
+.demo-director {
+  margin: 0 22px 16px;
+  padding: 14px 16px;
+  border: 1px solid #b8d7ce;
+  border-radius: 8px;
+  background: #f7fcfa;
+}
+
+.demo-director header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.demo-director header span {
+  display: block;
+  color: #138064;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.demo-director h2 {
+  margin: 3px 0 0;
+  color: #17352f;
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.demo-director header strong {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: #e4f6ef;
+  color: #13745c;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.demo-director p {
+  margin: 0 0 12px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.demo-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.demo-flow-grid article {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #d2e6df;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.demo-flow-grid span,
+.demo-flow-grid small {
+  display: block;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.demo-flow-grid strong {
+  display: block;
+  margin: 3px 0 2px;
+  color: #17202a;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.demo-flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.demo-flow-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #169b7c;
+  border-radius: 6px;
+  background: #169b7c;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.demo-flow-actions button.secondary {
+  border-color: #c9d8d3;
+  background: #ffffff;
+  color: #22554a;
+}
+
 .power-chart-section { margin: 0 22px 12px; }
 .power-chart-section header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .power-chart-section header h2 { font-size: 14px; font-weight: 780; color: var(--heading); }

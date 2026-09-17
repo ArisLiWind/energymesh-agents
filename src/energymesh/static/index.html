@@ -297,6 +297,28 @@
           </div>
         </section>
 
+        <section class="demo-director" aria-label="EnergyMesh demo workflow">
+          <header>
+            <div>
+              <span>DEMO FLOW</span>
+              <h2>真实园区变更 · V1 → V2 Reject → V3 PASS → 审批执行</h2>
+            </div>
+            <strong id="demo-flow-status">等待触发</strong>
+          </header>
+          <p>生产计划变化：3 号产线由 20:00 提前到 16:00，连续运行 90 分钟，备用 SOC 不低于 30%。系统使用同一份园区数据和约束重新规划，Audit 不能被 Dispatch 绕过。</p>
+          <div class="demo-flow-grid">
+            <article><span>Baseline V1</span><strong id="demo-baseline-cost">--</strong><small>原 EMS 预设策略</small></article>
+            <article><span>Rejected V2</span><strong id="demo-v2-status">--</strong><small>SOC 下探触发拒绝</small></article>
+            <article><span>Approved V3</span><strong id="demo-v3-cost">--</strong><small>硬约束全部通过</small></article>
+            <article><span>Readback</span><strong id="demo-readback">--</strong><small>模拟 EMS 回读</small></article>
+          </div>
+          <div class="demo-flow-actions">
+            <button id="demo-production-change" type="button">触发生产计划变化</button>
+            <button id="demo-approve-v3" class="secondary" type="button" disabled>批准 Plan V3</button>
+            <button id="demo-execute-v3" class="secondary" type="button" disabled>执行并回读</button>
+          </div>
+        </section>
+
         <section class="plan-ledger-section" aria-label="Adopted dispatch plan ledger">
           <header>
             <h2>方案留档</h2>
