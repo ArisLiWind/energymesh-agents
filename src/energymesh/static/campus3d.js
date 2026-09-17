@@ -126,26 +126,26 @@ function makeModule(def) {
   const group = new THREE.Group();
   group.position.set(def.x, 0, def.z);
   group.userData = { ...def };
-  const baseColor = def.kind === "solar" ? 0xdff8ef : def.kind === "grid" ? 0xf7f0e5 : def.kind === "storage" ? 0xe9efff : 0xf5f7fa;
+  const baseColor = def.kind === "solar" ? 0xeef2f4 : def.kind === "grid" ? 0xf1f2f5 : def.kind === "storage" ? 0xeff2f7 : 0xf2f3f6;
   group.add(pad(def.kind === "load" ? 1.75 : 1.38, def.kind === "load" ? 1.32 : 1.1, baseColor));
 
   if (def.kind === "solar") {
     for (let i = 0; i < 6; i += 1) {
-      const panel = box([.46, .05, .62], 0xecfaff);
+      const panel = box([.46, .05, .62], 0x69707a);
       panel.position.set(-.48 + (i % 3) * .5, .1, -.22 + Math.floor(i / 3) * .52);
       panel.rotation.y = -.18;
       group.add(panel);
     }
   } else if (def.kind === "grid") {
-    const mast = box([.16, 1.05, .16], 0xffffff);
+    const mast = box([.16, 1.05, .16], 0x575c64);
     mast.position.y = .53;
-    const top = box([.9, .12, .12], 0xffffff);
+    const top = box([.9, .12, .12], 0x575c64);
     top.position.y = 1.1;
-    const cross = box([.12, .12, .82], 0xffffff);
+    const cross = box([.12, .12, .82], 0x575c64);
     cross.position.y = .86;
     group.add(mast, top, cross);
   } else if (def.kind === "storage") {
-    const shell = box([.82, 1.35, .56], 0xffffff);
+    const shell = box([.82, 1.35, .56], 0x9aa1aa);
     shell.position.y = .68;
     shell.name = "storageShell";
     group.add(shell);
@@ -164,15 +164,15 @@ function makeModule(def) {
     fill.scale.y = .02;
     group.add(fill);
   } else if (def.kind === "load") {
-    const hall = box([1.26, .68, .96], 0xffffff);
+    const hall = box([1.26, .68, .96], 0x737b86);
     hall.position.y = .35;
-    const tower = box([.48, 1.36, .54], 0xf8fafc);
+    const tower = box([.48, 1.36, .54], 0x59616c);
     tower.position.set(-.42, .7, -.18);
-    const server = box([.4, 1.05, .44], 0xffffff);
+    const server = box([.4, 1.05, .44], 0x8d949e);
     server.position.set(.46, .54, .22);
     group.add(hall, tower, server);
   } else {
-    const unit = box([.8, .72, .72], 0xffffff);
+    const unit = box([.8, .72, .72], 0x9299a3);
     unit.position.y = .38;
     group.add(unit);
   }
@@ -347,14 +347,14 @@ function buildFlowState(state = {}) {
 }
 
 export function createCampus3D(canvas, onLabels) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0xf8fafc, 1);
+  renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf8fafc);
+  scene.background = null;
   const camera = new THREE.OrthographicCamera(-6, 6, 3.6, -3.6, .1, 100);
   camera.position.set(5.8, 5.4, 6.4);
   camera.lookAt(0, 0, 0);
@@ -367,7 +367,7 @@ export function createCampus3D(canvas, onLabels) {
   light.castShadow = true;
   scene.add(light);
 
-  const grid = new THREE.GridHelper(160, 160, 0xdde5ee, 0xf0f3f7);
+  const grid = new THREE.GridHelper(160, 160, 0xe7ebf2, 0xf3f5f8);
   grid.position.y = -.055;
   scene.add(grid);
 

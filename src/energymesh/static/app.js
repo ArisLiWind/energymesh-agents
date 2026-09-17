@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260902-replay-minute-v2";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-station-style";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
