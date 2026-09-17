@@ -6,6 +6,8 @@ const FLOW_DEFS = [
   { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x6976b7 },
   { id: "grid_load", from: "grid", to: "load", title: "电网购电", color: 0xd79a31 },
   { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x8799be },
+  { id: "grid_chiller", from: "grid", to: "solar", title: "电网供冷机", color: 0xd79a31 },
+  { id: "grid_freezer", from: "grid", to: "factory", title: "电网供冷冻库", color: 0xc9892b },
 ];
 
 const MODULES = [
@@ -22,7 +24,6 @@ const SITE_PRESETS = {
   coldchain: [
     { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -3.65, z: .82, kind: "grid", pad: [1.28, .96] },
     { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.55, z: -1.03, kind: "chiller", pad: [1.74, .96] },
-    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.72, z: -1.08, kind: "thermalstorage", pad: [1.34, .9] },
     { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: -.55, z: .58, kind: "coldstorage", pad: [2.36, .98] },
     { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 1.48, z: .58, kind: "freezer", pad: [1.92, .98] },
     { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: 1.58, z: -1.08, kind: "operator", pad: [1.18, .82] },
@@ -60,7 +61,7 @@ const FLOW_PATHS = {};
 
 const MUTED = 0xcbd5df;
 const INK = 0x1f2937;
-const ZERO_FLOW = { solar_load: 0, solar_storage: 0, storage_load: 0, grid_load: 0, solar_grid: 0, curtail: 0 };
+const ZERO_FLOW = { solar_load: 0, solar_storage: 0, storage_load: 0, grid_load: 0, solar_grid: 0, grid_chiller: 0, grid_freezer: 0, curtail: 0 };
 
 function makeCanvasTexture(draw) {
   const canvas = document.createElement("canvas");
@@ -415,6 +416,19 @@ function buildFlowState(state = {}) {
   const solarLoad = Math.max(0, Math.min(generation - solarStorage - curtailKw, load - storageLoad - gridLoad));
   const solarGrid = Math.max(0, Number(state.exportKw ?? 0));
   return { solar_load: solarLoad, solar_storage: solarStorage, storage_load: storageLoad, grid_load: gridLoad, solar_grid: solarGrid, curtail: curtailKw };
+}
+
+function buildColdchainFlowState(state = {}) {
+  const total = Math.max(valueNumber(state.gridImport), valueNumber(state.load));
+  const chiller = valueNumber(state.chillerLoad) || total * .48;
+  const coldStorage = valueNumber(state.coldStorageLoad) || total * .32;
+  const freezer = valueNumber(state.freezerLoad) || Math.max(0, total - chiller - coldStorage);
+  return {
+    ...ZERO_FLOW,
+    grid_chiller: chiller,
+    grid_load: coldStorage,
+    grid_freezer: freezer,
+  };
 }
 
 export function createCampus3D(canvas, onLabels) {
@@ -776,7 +790,6 @@ export function createCampus3D(canvas, onLabels) {
         ? {
             grid: { metric: "8-10万/月", note: "高峰月电费" },
             solar: { metric: "6 台", note: "冷藏库 3组 · 2台/组" },
-            storage: { metric: "SOC --", note: "等待接入" },
             load: { metric: "-- kW", note: "冷藏库主负荷" },
             factory: { metric: "-- kW", note: "冷冻库高峰负荷" },
             charge: { metric: "1 人", note: "现场电工值守" },
@@ -808,13 +821,16 @@ export function createCampus3D(canvas, onLabels) {
     const gridImport = valueNumber(state.gridImport);
     const storage = valueNumber(state.storage);
     const curtailKw = state.curtailKw ?? liveFlow.curtail ?? 0;
+    const coldchainGrid = Math.max(gridImport, load);
+    const chillerLoad = valueNumber(state.chillerLoad) || coldchainGrid * .48;
+    const coldStorageLoad = valueNumber(state.coldStorageLoad) || coldchainGrid * .32;
+    const freezerLoad = valueNumber(state.freezerLoad) || Math.max(0, coldchainGrid - chillerLoad - coldStorageLoad);
     const values = currentPresetId === "coldchain"
       ? {
-          grid: { metric: `${gridImport.toFixed(1)} kW`, note: "总表购电" },
-          solar: { metric: "6 台", note: "冷藏库 3组 · 2台/组" },
-          storage: { metric: storage ? `SOC ${storage.toFixed(0)}%` : "SOC --", note: state.storageFlow || "削峰预留" },
-          load: { metric: `${load.toFixed(1)} kW`, note: "冷藏库主负荷" },
-          factory: { metric: `${Math.max(load * .62, 0).toFixed(1)} kW`, note: "冷冻库高峰负荷" },
+          grid: { metric: `${coldchainGrid.toFixed(1)} kW`, note: "公共电网直供" },
+          solar: { metric: `${chillerLoad.toFixed(1)} kW`, note: "冷机组用电" },
+          load: { metric: `${coldStorageLoad.toFixed(1)} kW`, note: "电网直供冷藏" },
+          factory: { metric: `${freezerLoad.toFixed(1)} kW`, note: "电网直供冷冻" },
           charge: { metric: "1 人", note: "现场电工值守" },
         }
       : {
@@ -861,7 +877,7 @@ export function createCampus3D(canvas, onLabels) {
 
   function applyEnergyState(state = {}) {
     lastEnergyState = { ...state };
-    liveFlow = state.flows || buildFlowState(state);
+    liveFlow = state.flows || (currentPresetId === "coldchain" ? buildColdchainFlowState(state) : buildFlowState(state));
     previewFlow = state.previewFlows || null;
     syncModules({ ...state, curtailKw: liveFlow.curtail });
     applyFlows(liveFlow, previewFlow);

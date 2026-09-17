@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-classified-layout";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-coldchain-grid-direct-v3";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -2181,14 +2181,15 @@ function renderPowerChart() {
   const telemetry = state.energySnapshot?.telemetry || [];
   const cursor = Number(state.replayCursor) || 0;
   if (telemetry.length) {
+    const coldchain = isColdchainCampus();
     drawPowerChart({
       cursor,
       interval_history: telemetry.slice(0, Math.min(cursor + 1, telemetry.length)).map((point, index) => ({
         interval: index,
         actual_load_kw: point.load_kw,
-        actual_pv_kw: point.pv_kw,
-        actual_grid_kw: point.grid_import_kw,
-        optimized_grid_kw: point.grid_import_kw,
+        actual_pv_kw: coldchain ? Number(point.load_kw || 0) * .48 : point.pv_kw,
+        actual_grid_kw: coldchain ? point.load_kw : point.grid_import_kw,
+        optimized_grid_kw: coldchain ? point.load_kw : point.grid_import_kw,
       })),
     });
     return;
@@ -2418,6 +2419,10 @@ function currentCampusModel() {
   return campusModelOptions[index];
 }
 
+function isColdchainCampus() {
+  return currentCampusModel().id === "coldchain";
+}
+
 function renderCampusModelSwitch() {
   const model = currentCampusModel();
   const campus = $(".campus");
@@ -2426,6 +2431,8 @@ function renderCampusModelSwitch() {
   $("#campus-model-name").textContent = model.name;
   $("#campus-model-detail").textContent = model.detail;
   state.campus3d?.setSiteModel?.(model.id);
+  if (state.energySnapshot?.telemetry?.length) window.setTimeout(() => applySnapshotToCampus(), 0);
+  else renderCampusSimulation();
 }
 
 function shiftCampusModel(delta) {
@@ -2437,6 +2444,24 @@ function shiftCampusModel(delta) {
 
 function renderCampusSimulation() {
   const sim = state.campusSimulation;
+  const coldchain = isColdchainCampus();
+  const genCard = $("#campus-generation")?.closest("article");
+  const storageCard = $("#campus-storage")?.closest("article");
+  genCard?.querySelector("span") && (genCard.querySelector("span").textContent = coldchain ? "冷机功率" : "当前发电");
+  genCard?.querySelector("small") && (genCard.querySelector("small").textContent = coldchain ? "冷机组从公共电网取电的功率" : "此刻园区自有发电设备的总发电功率");
+  storageCard?.querySelector("span") && (storageCard.querySelector("span").textContent = coldchain ? "供电方式" : "当前储能");
+  $("[data-i18n='todayGen']").textContent = coldchain ? "今日冷机用电" : "今日累计发电";
+  $("[data-i18n='todayCharge']").textContent = coldchain ? "今日冷藏用电" : "今日储能充电";
+  $("[data-i18n='todayDischarge']").textContent = coldchain ? "今日冷冻用电" : "今日储能放电";
+  $("[data-i18n='fromGen']").textContent = coldchain ? "电网供冷机组" : "自有发电直接供电";
+  $("[data-i18n='fromStorage']").textContent = coldchain ? "电网供冷藏库" : "储能放电供电";
+  $("[data-i18n='fromGrid']").textContent = coldchain ? "电网供冷冻库" : "公共电网购电";
+  $("[data-i18n='balanceOutTitle']").textContent = coldchain ? "今日电网供电去向" : "今日自有发电去向";
+  $("[data-i18n='toLoad']").textContent = coldchain ? "公共电网合计供电" : "直接供园区使用";
+  $("[data-i18n='toStorage']").textContent = coldchain ? "冷藏库用电" : "给储能充电";
+  $("[data-i18n='toGrid']").textContent = coldchain ? "冷冻库用电" : "上网电量";
+  $(".legend-pv").textContent = coldchain ? "■ 冷机功率 (kW)" : "■ 光伏发电 (kW)";
+  $("#deviation-pv")?.previousElementSibling && ($("#deviation-pv").previousElementSibling.textContent = coldchain ? "冷机" : "PV");
   // Current status (kW)
   $("#campus-balance").textContent = state.energySnapshot ? sim.balance : "等待 CSV";
   $("#campus-load").textContent = sim.load;
@@ -2761,6 +2786,72 @@ async function applySnapshotToCampus() {
   const toStorageCharge = daily.storage_charge_kwh ?? 0;
   const pvCurtailmentKw = (world && typeof world.pv_curtailment_kw === 'number') ? world.pv_curtailment_kw : Math.max(0, pvKw - loadKw);
   const wastedKwh = daily.wasted_pv_kwh ?? daily.curtailment_kwh ?? (pvCurtailmentKw * dt);
+
+  if (isColdchainCampus()) {
+    const directGridKw = Math.max(loadKw, gridImportKw);
+    const chillerKw = directGridKw * .48;
+    const coldStorageKw = directGridKw * .32;
+    const freezerKw = Math.max(0, directGridKw - chillerKw - coldStorageKw);
+    const dailyDirectGrid = totalLoadKwh || totalGridImportKwh;
+    const dailyChiller = dailyDirectGrid * .48;
+    const dailyColdStorage = dailyDirectGrid * .32;
+    const dailyFreezer = Math.max(0, dailyDirectGrid - dailyChiller - dailyColdStorage);
+    const currentFlow = {
+      solar_load: 0,
+      solar_storage: 0,
+      storage_load: 0,
+      solar_grid: 0,
+      grid_chiller: chillerKw,
+      grid_load: coldStorageKw,
+      grid_freezer: freezerKw,
+      curtail: 0,
+    };
+
+    state.campusSimulation = {
+      time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),
+      balance: `¥${Math.max(0, 10000 - totalCost).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      load: `${directGridKw.toFixed(2)} kW`,
+      generation: `${chillerKw.toFixed(2)} kW`,
+      storage: "无储能",
+      storageFlow: "公共电网直供",
+      gridImport: `${directGridKw.toFixed(2)} kW`,
+      socPercent: 0,
+
+      todayLoad: dailyDirectGrid,
+      todayGen: dailyChiller,
+      todayGrid: dailyDirectGrid,
+      todayCharge: dailyColdStorage,
+      todayDischarge: dailyFreezer,
+      todayCost: totalCost,
+
+      totalLoad: dailyDirectGrid,
+      fromGen: dailyChiller,
+      fromStorage: dailyColdStorage,
+      fromGrid: dailyFreezer,
+      toLoad: dailyDirectGrid,
+      toStorageCharge: dailyColdStorage,
+      toGridExport: dailyFreezer,
+      wastedKwh: 0,
+      extraCost: totalCost,
+    };
+    renderCampusSimulation();
+    state.lastCampusFlow = currentFlow;
+    state.campus3d?.applyEnergyState?.({
+      optimized: false,
+      gridImport: `${directGridKw.toFixed(2)} kW`,
+      generation: "0.00 kW",
+      storage: "无储能",
+      storageFlow: "公共电网直供",
+      load: `${directGridKw.toFixed(2)} kW`,
+      chillerLoad: `${chillerKw.toFixed(2)} kW`,
+      coldStorageLoad: `${coldStorageKw.toFixed(2)} kW`,
+      freezerLoad: `${freezerKw.toFixed(2)} kW`,
+      flows: currentFlow,
+      previewFlows: null,
+    });
+    clearCampusPlanPreview(false);
+    return;
+  }
 
   state.campusSimulation = {
     time: formatSnapshotTime(state.energySnapshot?.simulated_time || point.timestamp),

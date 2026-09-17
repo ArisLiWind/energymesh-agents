@@ -4492,6 +4492,11 @@ dialog {
   opacity: .92;
 }
 
+.campus[data-site-model="coldchain"] .campus-add[data-campus-add="generation"],
+.campus[data-site-model="coldchain"] .campus-add[data-campus-add="storage"] {
+  display: none;
+}
+
 #campus-3d[data-editing="true"] ~ .asset {
   color: #10141c;
   text-shadow: 0 8px 18px rgba(49, 95, 168, .12);
