@@ -29,6 +29,23 @@ const SITE_PRESETS = {
   ],
 };
 
+const LABEL_OFFSETS = {
+  park: {
+    grid: { x: -86, y: 42 },
+    solar: { x: -78, y: 66 },
+    storage: { x: 0, y: 78 },
+    load: { x: 78, y: 72 },
+  },
+  coldchain: {
+    grid: { x: -96, y: 50 },
+    solar: { x: -90, y: 78 },
+    storage: { x: -12, y: 82 },
+    load: { x: 92, y: -22 },
+    factory: { x: 102, y: 42 },
+    charge: { x: -60, y: 60 },
+  },
+};
+
 const BUS_Z = -.28;
 const BUS_LEFT = -4.55;
 const BUS_RIGHT = 3.35;
@@ -407,7 +424,7 @@ export function createCampus3D(canvas, onLabels) {
   scene.add(grid);
 
   let currentPresetId = "park";
-  let currentDefinitions = SITE_PRESETS.park;
+  let currentDefinitions = definitionsForPreset(currentPresetId);
   const modules = new Map();
   currentDefinitions.forEach((def) => {
     const module = makeModule(def);
@@ -439,6 +456,43 @@ export function createCampus3D(canvas, onLabels) {
   const hit = new THREE.Vector3();
   let running = true;
 
+  function layoutKey(presetId = currentPresetId) {
+    return `energymesh.campusLayout.${presetId}.v1`;
+  }
+
+  function savedPositions(presetId) {
+    try {
+      return JSON.parse(window.localStorage.getItem(layoutKey(presetId)) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function definitionsForPreset(presetId) {
+    const stored = savedPositions(presetId);
+    return (SITE_PRESETS[presetId] || SITE_PRESETS.park).map((def) => {
+      const saved = stored[def.id] || {};
+      const x = Number(saved.x);
+      const z = Number(saved.z);
+      return {
+        ...def,
+        x: Number.isFinite(x) ? x : def.x,
+        z: Number.isFinite(z) ? z : def.z,
+      };
+    });
+  }
+
+  function saveLayout() {
+    const positions = {};
+    modules.forEach((module, id) => {
+      positions[id] = {
+        x: Number(module.position.x.toFixed(3)),
+        z: Number(module.position.z.toFixed(3)),
+      };
+    });
+    window.localStorage.setItem(layoutKey(), JSON.stringify(positions));
+  }
+
   function syncRoutesToModules() {
     liveRoutes.forEach((route) => {
       const { from, to } = route.userData.def;
@@ -469,9 +523,12 @@ export function createCampus3D(canvas, onLabels) {
       const world = module.position.clone();
       world.y = .04;
       world.project(camera);
+      const offset = LABEL_OFFSETS[currentPresetId]?.[id] || { x: 0, y: 64 };
+      const x = (world.x * .5 + .5) * rect.width + offset.x;
+      const y = (-world.y * .5 + .5) * rect.height + offset.y;
       labels[id] = {
-        x: (world.x * .5 + .5) * rect.width,
-        y: (-world.y * .5 + .5) * rect.height,
+        x: THREE.MathUtils.clamp(x, 78, Math.max(78, rect.width - 96)),
+        y: THREE.MathUtils.clamp(y, 70, Math.max(70, rect.height - 118)),
         visible: true,
         placement: "below",
         selected: editMode && id === selectedId,
@@ -569,6 +626,7 @@ export function createCampus3D(canvas, onLabels) {
       if (!point) return;
       dragging.module.position.x = THREE.MathUtils.clamp(point.x + dragging.offsetX, -4.7, 3.8);
       dragging.module.position.z = THREE.MathUtils.clamp(point.z + dragging.offsetZ, -1.9, 2.05);
+      dragging.dirty = true;
       rebuildTopologyWire(topologyWire, modules);
       syncRoutesToModules();
       updateLabels();
@@ -592,7 +650,10 @@ export function createCampus3D(canvas, onLabels) {
     zoom = THREE.MathUtils.clamp(zoom * (event.deltaY > 0 ? .92 : 1.08), .62, 2.6);
     resize();
   }, { passive: false });
-  window.addEventListener("pointerup", () => { dragging = null; });
+  window.addEventListener("pointerup", () => {
+    if (dragging?.module && dragging.dirty) saveLayout();
+    dragging = null;
+  });
   window.addEventListener("resize", render);
 
   function setEditMode(next) {
@@ -752,6 +813,8 @@ export function createCampus3D(canvas, onLabels) {
   }
 
   function reset() {
+    window.localStorage.removeItem(layoutKey());
+    currentDefinitions = SITE_PRESETS[currentPresetId];
     currentDefinitions.forEach((def) => {
       const module = modules.get(def.id);
       if (module) module.position.set(def.x, 0, def.z);
@@ -763,13 +826,14 @@ export function createCampus3D(canvas, onLabels) {
     zoom = 1.22;
     selectedId = "load";
     syncRoutesToModules();
+    updateLabels();
   }
 
   function setSiteModel(next = "park") {
     const presetId = SITE_PRESETS[next] ? next : "park";
     if (presetId === currentPresetId && modules.size) return;
     currentPresetId = presetId;
-    currentDefinitions = SITE_PRESETS[presetId];
+    currentDefinitions = definitionsForPreset(presetId);
     modules.forEach((module) => scene.remove(module));
     modules.clear();
     currentDefinitions.forEach((def) => {

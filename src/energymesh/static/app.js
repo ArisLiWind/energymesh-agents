@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-coldchain-model";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-editable-layout";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {

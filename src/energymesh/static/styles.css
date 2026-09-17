@@ -4469,6 +4469,28 @@ dialog {
   transform: translate(0, 0);
 }
 
+.asset[data-anchor="grid"],
+.asset[data-anchor="solar"],
+.asset[data-anchor="storage"],
+.asset[data-anchor="load"],
+.campus[data-site-model="coldchain"] .asset[data-anchor="grid"],
+.campus[data-site-model="coldchain"] .asset[data-anchor="solar"],
+.campus[data-site-model="coldchain"] .asset[data-anchor="load"],
+.campus[data-site-model="coldchain"] .asset[data-anchor="factory"] {
+  left: var(--x, 50%);
+  top: var(--y, 50%);
+  transform: translate(-50%, -50%);
+}
+
+.campus-tools {
+  opacity: .92;
+}
+
+#campus-3d[data-editing="true"] ~ .asset {
+  color: #10141c;
+  text-shadow: 0 8px 18px rgba(49, 95, 168, .12);
+}
+
 .flow-deltas div,
 .today-grid article,
 .balance-in,
