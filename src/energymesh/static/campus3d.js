@@ -20,12 +20,12 @@ const MODULES = [
 const SITE_PRESETS = {
   park: MODULES,
   coldchain: [
-    { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -3.75, z: .62, kind: "grid", pad: [1.34, 1.02] },
-    { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.35, z: -1.06, kind: "chiller", pad: [1.74, .98] },
-    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.35, z: -1.34, kind: "storage", pad: [1.28, .98] },
-    { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: -.25, z: .84, kind: "coldstorage", pad: [2.02, 1.12] },
-    { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 1.82, z: .48, kind: "freezer", pad: [1.7, 1.08] },
-    { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: 1.46, z: -1.22, kind: "chiller", pad: [1.24, .9] },
+    { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -3.65, z: .82, kind: "grid", pad: [1.28, .96] },
+    { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.55, z: -1.03, kind: "chiller", pad: [1.74, .96] },
+    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.72, z: -1.08, kind: "thermalstorage", pad: [1.34, .9] },
+    { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: -.55, z: .58, kind: "coldstorage", pad: [2.36, .98] },
+    { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 1.48, z: .58, kind: "freezer", pad: [1.92, .98] },
+    { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: 1.58, z: -1.08, kind: "operator", pad: [1.18, .82] },
   ],
 };
 
@@ -37,18 +37,18 @@ const LABEL_OFFSETS = {
     load: { x: 78, y: 72 },
   },
   coldchain: {
-    grid: { x: -86, y: 48 },
-    solar: { x: -188, y: 128 },
+    grid: { x: -112, y: 44 },
+    solar: { x: -142, y: 112 },
     storage: { x: -12, y: 82 },
-    load: { x: 132, y: -86 },
-    factory: { x: 60, y: 24 },
+    load: { x: -126, y: -56 },
+    factory: { x: 72, y: 38 },
     charge: { x: -66, y: 68 },
   },
 };
 
 const LAYOUT_BOUNDS = {
   park: { minX: -4.7, maxX: 3.6, minZ: -1.9, maxZ: 2.05 },
-  coldchain: { minX: -4.25, maxX: 2.35, minZ: -1.58, maxZ: 1.62 },
+  coldchain: { minX: -4.15, maxX: 2.05, minZ: -1.46, maxZ: 1.5 },
 };
 
 const BUS_Z = -.28;
@@ -199,20 +199,22 @@ function makeModule(def) {
     fill.scale.y = .02;
     group.add(fill);
   } else if (def.kind === "coldstorage") {
-    const hall = box([1.62, .66, .92], 0x98a7b8);
-    hall.position.y = .35;
-    const roof = box([1.74, .08, 1.02], 0xdfe8f2);
-    roof.position.y = .74;
-    const door = box([.28, .42, .04], 0xf6f8fb);
-    door.position.set(.55, .25, -.48);
-    group.add(hall, roof, door);
+    const hall = box([1.94, .42, .72], 0xa7b4c4);
+    hall.position.y = .23;
+    const annex = box([.76, .36, .56], 0x8f9dad);
+    annex.position.set(.68, .2, .04);
+    const roof = box([2.06, .07, .82], 0xe4ecf5);
+    roof.position.y = .48;
+    const door = box([.24, .28, .04], 0xf6f8fb);
+    door.position.set(-.66, .17, -.38);
+    group.add(hall, annex, roof, door);
   } else if (def.kind === "freezer") {
-    const hall = box([1.35, .78, .86], 0x7d8998);
-    hall.position.y = .42;
-    const frost = box([1.44, .08, .94], 0xcbd8e7);
-    frost.position.y = .84;
-    const unit = box([.3, .28, .18], 0x525c69);
-    unit.position.set(-.46, .76, -.38);
+    const hall = box([1.5, .5, .72], 0x7d8998);
+    hall.position.y = .28;
+    const frost = box([1.6, .07, .82], 0xcbd8e7);
+    frost.position.y = .58;
+    const unit = box([.28, .22, .16], 0x525c69);
+    unit.position.set(-.48, .49, -.3);
     group.add(hall, frost, unit);
   } else if (def.kind === "chiller") {
     for (let i = 0; i < 6; i += 1) {
@@ -220,6 +222,18 @@ function makeModule(def) {
       unit.position.set(-.5 + (i % 3) * .5, .19, -.2 + Math.floor(i / 3) * .48);
       group.add(unit);
     }
+  } else if (def.kind === "thermalstorage") {
+    for (let i = 0; i < 3; i += 1) {
+      const tank = box([.36, .36, .56], i === 1 ? 0x8ea2b8 : 0xa8b7c8);
+      tank.position.set(-.42 + i * .42, .2, 0);
+      group.add(tank);
+    }
+  } else if (def.kind === "operator") {
+    const booth = box([.72, .38, .5], 0x9aa6b5);
+    booth.position.y = .22;
+    const roof = box([.82, .06, .58], 0xe4ecf5);
+    roof.position.y = .45;
+    group.add(booth, roof);
   } else if (def.kind === "load") {
     const hall = box([1.26, .68, .96], 0x737b86);
     hall.position.y = .35;
@@ -462,7 +476,7 @@ export function createCampus3D(canvas, onLabels) {
   let running = true;
 
   function layoutKey(presetId = currentPresetId) {
-    return `energymesh.campusLayout.${presetId}.v2`;
+    return `energymesh.campusLayout.${presetId}.v3`;
   }
 
   function savedPositions(presetId) {
@@ -568,7 +582,7 @@ export function createCampus3D(canvas, onLabels) {
   }
 
   function clampLabel(label, rect) {
-    const maxX = currentPresetId === "coldchain" ? rect.width - 220 : rect.width - 96;
+    const maxX = currentPresetId === "coldchain" ? rect.width - 360 : rect.width - 96;
     const maxY = currentPresetId === "coldchain" ? rect.height - 150 : rect.height - 118;
     label.x = THREE.MathUtils.clamp(label.x, 78, Math.max(78, maxX));
     label.y = THREE.MathUtils.clamp(label.y, 70, Math.max(70, maxY));
@@ -907,6 +921,7 @@ export function createCampus3D(canvas, onLabels) {
   function reset() {
     window.localStorage.removeItem(layoutKey());
     window.localStorage.removeItem(`energymesh.campusLayout.${currentPresetId}.v1`);
+    window.localStorage.removeItem(`energymesh.campusLayout.${currentPresetId}.v2`);
     currentDefinitions = SITE_PRESETS[currentPresetId];
     currentDefinitions.forEach((def) => {
       const module = modules.get(def.id);
