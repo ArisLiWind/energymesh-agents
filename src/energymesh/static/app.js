@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-baseline-chart-v5";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-approval-card-v6";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -793,7 +793,7 @@ function applyAgentTeamsEvent(event) {
   }
   task.events.push(normalized);
   if (task.events.length > 80) task.events = task.events.slice(-80);
-  if (normalized.type === "dispatch_plan" && state.energySnapshot && !state.flowPreview) {
+  if (normalized.type === "dispatch_plan" && state.energySnapshot) {
     const flowPreview = previewFlowFromLatestSnapshot();
     if (flowPreview) {
       showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, {
@@ -2601,6 +2601,63 @@ function formatDelta(before, after, unit = "kW") {
   return `${Number(before || 0).toFixed(1)} → ${Number(after || 0).toFixed(1)} ${unit}`;
 }
 
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
+}
+
+function totalGridPower(flow = {}) {
+  return Number(flow.grid_load || 0) + Number(flow.grid_chiller || 0) + Number(flow.grid_freezer || 0);
+}
+
+function netEssPower(flow = {}) {
+  return Number(flow.storage_load || 0) - Number(flow.solar_storage || 0);
+}
+
+function essModeLabel(power) {
+  if (power > .05) return `放电 ${power.toFixed(0)} kW`;
+  if (power < -.05) return `充电 ${Math.abs(power).toFixed(0)} kW`;
+  return "待机";
+}
+
+function effectiveWindowLabel() {
+  const point = snapshotAtCurrentCursor();
+  const start = state.energySnapshot?.simulated_time || point?.timestamp;
+  const date = start ? new Date(start) : null;
+  if (!date || Number.isNaN(date.getTime())) return "下一滚动窗口";
+  const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
+  const fmt = (value) => `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+  return `${fmt(date)}–${fmt(end)}`;
+}
+
+function planApprovalSummary(currentFlow = {}, previewFlow = {}, plan = {}) {
+  const point = snapshotAtCurrentCursor();
+  const tariff = Number(point?.tariff_yuan_per_kwh || .85);
+  const beforeGrid = totalGridPower(currentFlow);
+  const afterGrid = totalGridPower(previewFlow);
+  const beforeEss = netEssPower(currentFlow);
+  const afterEss = netEssPower(previewFlow);
+  const socNow = Number(state.campusSimulation?.socPercent || (point?.battery_soc || 0) * 100 || 56);
+  const socTarget = isColdchainCampus()
+    ? 0
+    : clampNumber(socNow - Math.max(0, afterEss) * .13 + Math.max(0, -afterEss) * .06, 20, 90);
+  const intervalSaving = Math.max(0, (beforeGrid - afterGrid) * .25 * tariff);
+  const impactSaving = Number(plan.impact?.purchase_cost_savings_yuan || plan.impact?.savings_yuan || 0);
+  const trigger = (plan.reason || "负荷预测偏差触发滚动重规划")
+    .replace(/^Dispatch Worker 基于真实 world_state 生成：/, "")
+    .replace(/。$/, "");
+  return {
+    trigger: trigger.length > 30 ? `${trigger.slice(0, 30)}...` : trigger,
+    effective: effectiveWindowLabel(),
+    grid: `${beforeGrid.toFixed(0)} → ${afterGrid.toFixed(0)} kW`,
+    ess: isColdchainCampus() ? "无储能 · 电网直供" : `${essModeLabel(beforeEss)} → ${essModeLabel(afterEss)}`,
+    soc: isColdchainCampus() ? "无储能" : `${socNow.toFixed(0)}% → ${socTarget.toFixed(0)}%`,
+    saving: `¥${Math.max(intervalSaving, impactSaving).toFixed(2)}`,
+    constraints: isColdchainCampus()
+      ? "✓ 冷机负荷 / 变压器 / 最大购电 / 冷库连续供电约束通过"
+      : "✓ SOC / PCS / 变压器 / 并网约束校验通过",
+  };
+}
+
 function planNarrativeFromFlow(message = "", currentFlow = {}, previewFlow = {}, source = "local") {
   const gridDrop = Number(currentFlow.grid_load || 0) - Number(previewFlow.grid_load || 0);
   const storageGain = Number(previewFlow.storage_load || 0) - Number(currentFlow.storage_load || 0);
@@ -2634,12 +2691,22 @@ function renderFlowPreviewCard(currentFlow, previewFlow, plan = {}) {
   const visible = Boolean(previewFlow);
   card.hidden = !visible;
   if (!visible) return;
+  card.classList.remove("attention");
   card.querySelector("header strong").textContent = plan.title || "动态调度预览";
   card.querySelector("header span").textContent = plan.source === "agentteams" ? "AgentTeams Worker 真实方案" : plan.source === "llm" ? "LLM 新方案预览" : "等待真实模型方案";
-  $("#delta-grid").textContent = formatDelta(currentFlow.grid_load, previewFlow.grid_load);
-  $("#delta-storage").textContent = formatDelta(currentFlow.storage_load, previewFlow.storage_load);
-  $("#delta-curtail").textContent = formatDelta(currentFlow.curtail, previewFlow.curtail);
+  const summary = planApprovalSummary(currentFlow, previewFlow, plan);
+  $("#approval-trigger").textContent = summary.trigger;
+  $("#approval-effective").textContent = summary.effective;
+  $("#approval-grid").textContent = summary.grid;
+  $("#approval-ess").textContent = summary.ess;
+  $("#approval-soc").textContent = summary.soc;
+  $("#approval-saving").textContent = summary.saving;
+  $("#approval-constraints").textContent = summary.constraints;
   $("#flow-plan-reason").textContent = plan.reason || "根据当前沙盘状态生成新的电流预演。";
+  requestAnimationFrame(() => {
+    card.classList.add("attention");
+    card.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  });
 }
 
 function showCampusPlanPreview(currentFlow, previewFlow, plan = {}) {

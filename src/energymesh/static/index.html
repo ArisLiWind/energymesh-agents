@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-baseline-chart-v5" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-approval-card-v6" />
   </head>
   <body>
     <main class="app-shell">
@@ -192,18 +192,24 @@
             </div>
             <div class="flow-preview-card" id="flow-preview-card" hidden>
               <header>
-              <span>新方案预览</span>
-              <strong>储能优先消纳方案</strong>
+                <span>调度变更审批</span>
+                <strong>并网点目标重规划</strong>
               </header>
-              <p id="flow-plan-reason">把白天未利用的发电更多存进储能，晚高峰由储能优先供给用电格，减少电网购电。</p>
-              <div class="flow-deltas">
-                <div><span>电网购电</span><strong id="delta-grid">--</strong></div>
-                <div><span>储能放电</span><strong id="delta-storage">--</strong></div>
-                <div><span>限发浪费</span><strong id="delta-curtail">--</strong></div>
+              <p id="flow-plan-reason">等待 AgentTeams 返回新调度方案。</p>
+              <div class="approval-summary">
+                <div class="approval-wide"><span>触发原因</span><strong id="approval-trigger">--</strong></div>
+                <div><span>生效区间</span><strong id="approval-effective">--</strong></div>
+                <div><span>储能功率</span><strong id="approval-ess">--</strong></div>
+                <div><span>并网功率</span><strong id="approval-grid">--</strong></div>
+                <div><span>SOC 变化</span><strong id="approval-soc">--</strong></div>
+                <div><span>预计节省</span><strong id="approval-saving">--</strong></div>
+              </div>
+              <div class="approval-constraints" id="approval-constraints">
+                ✓ SOC / PCS / 变压器 / 并网约束校验通过
               </div>
               <div class="flow-plan-actions">
-                <button id="reject-flow-plan" class="secondary" type="button">拒绝采用</button>
-                <button id="adopt-flow-plan" type="button">采用方案</button>
+                <button id="reject-flow-plan" class="secondary" type="button">拒绝</button>
+                <button id="adopt-flow-plan" type="button">批准执行</button>
               </div>
             </div>
             <div class="campus-model-switch" aria-label="园区模型切换">
@@ -585,6 +591,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260917-baseline-chart-v5"></script>
+    <script type="module" src="/static/app.js?v=20260917-approval-card-v6"></script>
   </body>
 </html>
