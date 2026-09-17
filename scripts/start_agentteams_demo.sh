@@ -51,8 +51,22 @@ export AGENTTEAMS_MATRIX_BASE_URL="${AGENTTEAMS_MATRIX_BASE_URL:-http://127.0.0.
 export ENERGYMESH_HOST=127.0.0.1
 export ENERGYMESH_PORT
 
+URL_PYTHON="${PYTHON_BIN}"
+if [[ ! -x "${URL_PYTHON}" ]]; then
+  URL_PYTHON="$(command -v python3 || true)"
+fi
+ELEMENT_ROOM_URL="$("${URL_PYTHON}" - <<'PY'
+import os
+from urllib.parse import quote
+
+room = os.getenv("AGENTTEAMS_TEAM_ROOM_ID") or "#agentteams-team-energymesh-park-control:matrix-local.agentteams.io:18080"
+print("http://127.0.0.1:18088/#/room/" + quote(room, safe=""))
+PY
+)"
+
 need_gh=false
-if ! curl -fsS "${AGENTTEAMS_MATRIX_BASE_URL}/_matrix/client/versions" >/dev/null 2>&1; then
+if ! curl -fsS "${AGENTTEAMS_MATRIX_BASE_URL}/_matrix/client/versions" >/dev/null 2>&1 \
+  || ! curl -fsSI "http://127.0.0.1:18088/" >/dev/null 2>&1; then
   need_gh=true
 fi
 
@@ -118,7 +132,9 @@ PY
 
 echo
 echo "Starting EnergyMesh white UI on http://127.0.0.1:${ENERGYMESH_PORT}"
-echo "AgentTeams Element proof UI: http://127.0.0.1:18088/#/login"
+echo "EnergyMesh demo UI: http://127.0.0.1:${ENERGYMESH_PORT}/?ui=station-style-20260917"
+echo "AgentTeams Element room: ${ELEMENT_ROOM_URL}"
+echo "AgentTeams Element login: http://127.0.0.1:18088/#/login"
 echo "Homeserver: http://127.0.0.1:18080"
 echo
 

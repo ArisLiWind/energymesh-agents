@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-coldchain-grid-direct-v3";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-agentteams-direct-v4";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -851,6 +851,66 @@ function renderAgentTeamsImpact(impact = {}) {
   });
 }
 
+function latestParallelPoint(parallel = state.parallel) {
+  const history = parallel?.interval_history || [];
+  return history.length ? history[history.length - 1] : null;
+}
+
+function gridDeltaText(value) {
+  const numeric = Number(value) || 0;
+  if (numeric > 0.01) return `购电减少 ${numeric.toFixed(2)} kW`;
+  if (numeric < -0.01) return `购电增加 ${Math.abs(numeric).toFixed(2)} kW`;
+  return "购电持平";
+}
+
+function renderDispatchEvidence(parallel = state.parallel) {
+  const intervalEl = $("#evidence-interval");
+  if (!intervalEl) return;
+  const point = latestParallelPoint(parallel);
+  const baseline = state.task?.baseline_plan;
+  const selected = selectedTaskPlan();
+  if (!point) {
+    if (baseline?.metrics && selected?.metrics) {
+      const saving = Number(baseline.metrics.total_cost_yuan || 0) - Number(selected.metrics.total_cost_yuan || 0);
+      $("#evidence-interval").textContent = "全天计划";
+      $("#evidence-tariff").textContent = "任务候选方案成本";
+      $("#evidence-grid-delta").textContent = `${Number(baseline.metrics.peak_grid_kw || 0).toFixed(0)} → ${Number(selected.metrics.peak_grid_kw || 0).toFixed(0)} kW`;
+      $("#evidence-grid-note").textContent = "峰值购电变化";
+      $("#evidence-cost-delta").textContent = `¥${Number(baseline.metrics.total_cost_yuan || 0).toFixed(2)} → ¥${Number(selected.metrics.total_cost_yuan || 0).toFixed(2)}`;
+      $("#evidence-cost-note").textContent = `累计改善 ¥${Math.max(0, saving).toFixed(2)}`;
+      $("#evidence-reason").textContent = selected.profile || "AgentTeams selected plan";
+      $("#evidence-plan-version").textContent = selected.plan_id || "selected";
+      return;
+    }
+    $("#evidence-interval").textContent = "等待";
+    $("#evidence-tariff").textContent = "等待 AgentTeams / CSV";
+    $("#evidence-grid-delta").textContent = "--";
+    $("#evidence-grid-note").textContent = "原策略 → Agent 优化";
+    $("#evidence-cost-delta").textContent = "--";
+    $("#evidence-cost-note").textContent = "15 分钟真实电价计算";
+    $("#evidence-reason").textContent = "等待触发";
+    $("#evidence-plan-version").textContent = "Plan V1";
+    return;
+  }
+  const interval = Number(point.interval ?? (parallel?.cursor || 0));
+  const timestamp = point.timestamp ? formatSnapshotTime(point.timestamp) : `时段 ${interval}`;
+  const tariff = Number(point.tariff_yuan_per_kwh || 0);
+  const gridDrop = Number(point.actual_grid_kw || 0) - Number(point.optimized_grid_kw || 0);
+  const intervalSaving = Number(point.baseline_interval_cost_yuan || 0) - Number(point.optimized_interval_cost_yuan || 0);
+  const reopt = (parallel?.reoptimization_events || []).find((event) => Number(event.interval) === interval);
+  const reason = point.plan_invalidated
+    ? (point.reoptimize_reason || reopt?.reason || "偏差超阈值，旧计划废止")
+    : parallel?.event || parallel?.last_event || "按当前 Agent 优化计划执行";
+  $("#evidence-interval").textContent = `${String(interval).padStart(2, "0")} · ${timestamp}`;
+  $("#evidence-tariff").textContent = tariff ? `电价 ¥${tariff.toFixed(3)}/kWh` : "CSV 15 分钟点";
+  $("#evidence-grid-delta").textContent = `${Number(point.actual_grid_kw || 0).toFixed(2)} → ${Number(point.optimized_grid_kw || 0).toFixed(2)} kW`;
+  $("#evidence-grid-note").textContent = gridDeltaText(gridDrop);
+  $("#evidence-cost-delta").textContent = `¥${Number(point.baseline_interval_cost_yuan || 0).toFixed(4)} → ¥${Number(point.optimized_interval_cost_yuan || 0).toFixed(4)}`;
+  $("#evidence-cost-note").textContent = `本时段节省 ¥${Math.max(0, intervalSaving).toFixed(4)}`;
+  $("#evidence-reason").textContent = reason.slice(0, 42);
+  $("#evidence-plan-version").textContent = point.new_plan_id ? `新计划 ${compactId(point.new_plan_id)}` : point.reoptimized ? "已重优化" : "当前计划有效";
+}
+
 function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = null, savingsPercent = null, status = "" } = {}) {
   const baselineCost = Number(baseline) || 0;
   const optimizedCost = Number(optimized) || 0;
@@ -863,6 +923,7 @@ function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = nul
   $("#cost-savings").textContent = `¥${savingValue.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
   $("#savings-percent").textContent = `节省 ${percentValue.toFixed(2)}%`;
   if (status) $("#parallel-status").textContent = status;
+  renderDispatchEvidence();
 }
 
 function selectedTaskPlan(task = state.task) {
@@ -2217,6 +2278,7 @@ function renderCsvCostComparison() {
     ["cost-baseline", "cost-optimized", "cost-savings"].forEach((id) => { const el = $(`#${id}`); if (el) el.textContent = "¥0.00"; });
     $("#savings-percent").textContent = "节省 0%";
     $("#parallel-status").textContent = "等待园区数据";
+    renderDispatchEvidence(null);
     const canvas = $("#cost-chart");
     if (canvas) {
       const { context, width, height } = resizeCanvas(canvas);
@@ -2256,6 +2318,7 @@ function renderCsvCostComparison() {
   $("#savings-percent").textContent = `节省 ${p.savings_percent.toFixed(2)}%`;
   $("#parallel-status").textContent = "CSV 实时基线对比";
   drawCostChart(p);
+  renderDispatchEvidence(p);
 }
 
 function startLiveCharts() {
@@ -3638,6 +3701,7 @@ async function renderParallel() {
   $("#reopt-count").textContent = `${p.total_reoptimizations || 0} 次`;
   const lastReopt = p.reoptimization_events?.[p.reoptimization_events.length - 1];
   $("#reopt-reason").textContent = lastReopt ? (lastReopt.reason || "").substring(0, 30) + "..." : "--";
+  renderDispatchEvidence(p);
 
   const curLoad = p.current_load_kw ?? lastPoint?.actual_load_kw ?? 0;
   const curPv = p.current_pv_kw ?? lastPoint?.actual_pv_kw ?? 0;

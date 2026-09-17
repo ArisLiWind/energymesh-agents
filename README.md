@@ -246,6 +246,45 @@ DeepSeek 或其他 OpenAI-compatible 模型配置在 AgentTeams Manager/Worker r
 Team Leader 网关中，不配置在 Element。Element 是 AgentTeams 的 Matrix 聊天客户端，只显示房间、消息和
 Worker 协作记录；真正调用模型的是 AgentTeams manager/worker 容器。
 
+### 本地 + Codespaces 快速启动
+
+推荐开两个终端窗口：
+
+```bash
+# 窗口 A：连接 GitHub Codespace 内的 AgentTeams、Matrix 和 Element
+bash scripts/connect_codespace.sh
+```
+
+成功后脚本会输出 `Element UI`、`Team Room` 和 `EnergyMesh` 三个地址。`Team Room`
+是可直接进入 AgentTeams 协作房间的 Element 链接。
+
+```bash
+# 窗口 B：启动 EnergyMesh 后端，并检查 AgentTeams runtime 是否 ready
+bash scripts/start_agentteams_demo.sh
+```
+
+启动脚本会保持 `SIMULATION_MODE=true`、`ALLOW_PRODUCTION_WRITE=false`，并要求
+`AGENTTEAMS_RUNTIME_MODE=remote_matrix` 与 `AGENTTEAMS_LIVE_REQUIRED=true`。调度类对话会进入真实
+AgentTeams/Matrix 房间；EnergyMesh 前端会同步显示 task、worker、world_state、dispatch_plan、
+audit 和执行回读事件。
+
+前端地址：
+
+```text
+http://127.0.0.1:8000/?ui=station-style-20260917
+```
+
+AgentTeams Element 房间地址由脚本按 `.env.agentteams.local` 中的 `AGENTTEAMS_TEAM_ROOM_ID` 自动生成。
+
+### 调度价值如何在界面上验证
+
+“平行时空对比”不是固定写死数字。上传 CSV 或连接数据后：
+
+- Timeline A 使用同一天真实回放数据中的原始 EMS / 基线购电功率和电价计算累计成本；
+- Timeline B 使用 AgentTeams 触发的 Perception → Dispatch → Audit → Execution 链路中选中的优化计划计算成本；
+- 每个 15 分钟点都会显示原策略购电、Agent 优化购电、单时段电费、累计节省、偏差和重优化原因；
+- 当预测偏差超过阈值，旧计划会被标记失效，系统记录重优化事件并把新 plan version 展示在证据条中。
+
 
 ### Codespaces 最小演示环境
 

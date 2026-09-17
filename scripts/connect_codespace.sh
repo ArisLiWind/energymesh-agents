@@ -107,11 +107,27 @@ fi
 echo ""
 
 if [[ "$MATRIX_OK" == true && "$ELEMENT_OK" == true ]]; then
+  ENV_FILE="${ROOT}/.env.agentteams.local"
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+  fi
+  ROOM_ID="${AGENTTEAMS_TEAM_ROOM_ID:-#agentteams-team-energymesh-park-control:matrix-local.agentteams.io:18080}"
+  ELEMENT_ROOM_URL="$(python3 - <<PY
+from urllib.parse import quote
+room = """${ROOM_ID}"""
+print("http://127.0.0.1:18088/#/room/" + quote(room, safe=""))
+PY
+)"
   echo "============================================"
   echo "🎉 All systems connected!"
   echo ""
   echo "Matrix API:  http://127.0.0.1:18080"
   echo "Element UI:  http://127.0.0.1:18088"
+  echo "Team Room:   $ELEMENT_ROOM_URL"
+  echo "EnergyMesh:  http://127.0.0.1:8000/?ui=station-style-20260917"
   echo ""
   echo "Port forward PID: $FORWARD_PID"
   echo "Log file: $LOG_FILE"

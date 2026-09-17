@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-coldchain-grid-direct-v3" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-agentteams-direct-v4" />
   </head>
   <body>
     <main class="app-shell">
@@ -301,6 +301,28 @@
               </div>
             </div>
           </div>
+          <div id="dispatch-evidence-strip" class="dispatch-evidence-strip" aria-label="Dispatch delta evidence">
+            <article>
+              <span>当前证据点</span>
+              <strong id="evidence-interval">等待</strong>
+              <small id="evidence-tariff">等待 AgentTeams / CSV</small>
+            </article>
+            <article>
+              <span>购电功率变化</span>
+              <strong id="evidence-grid-delta">--</strong>
+              <small id="evidence-grid-note">原策略 → Agent 优化</small>
+            </article>
+            <article>
+              <span>单时段电费</span>
+              <strong id="evidence-cost-delta">--</strong>
+              <small id="evidence-cost-note">15 分钟真实电价计算</small>
+            </article>
+            <article>
+              <span>调度原因</span>
+              <strong id="evidence-reason">等待触发</strong>
+              <small id="evidence-plan-version">Plan V1</small>
+            </article>
+          </div>
           <div class="compare-note">
             <p>Timeline A：原始策略累计电费；Timeline B：Agent 优化累计电费。偏差超阈值时自动重优化。</p>
           </div>
@@ -563,6 +585,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260917-coldchain-grid-direct-v3"></script>
+    <script type="module" src="/static/app.js?v=20260917-agentteams-direct-v4"></script>
   </body>
 </html>

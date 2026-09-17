@@ -88,12 +88,19 @@ cp .env.example .env.agentteams.local
 
 # 安装依赖并启动
 pip install -r requirements.txt
-python -m energymesh.api
+uvicorn energymesh.api:app --app-dir src --host 127.0.0.1 --port 8000
 ```
 
 或者运行：
 ```bash
 bash scripts/start_agentteams_demo.sh
+```
+
+脚本成功后会输出两个最常用地址：
+
+```text
+EnergyMesh demo UI: http://127.0.0.1:8000/?ui=station-style-20260917
+AgentTeams Element room: http://127.0.0.1:18088/#/room/<team-room>
 ```
 
 ---
