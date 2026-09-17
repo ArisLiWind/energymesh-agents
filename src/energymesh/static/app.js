@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-station-style";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-coldchain-model";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -19,6 +19,7 @@ const state = {
   replayTimer: null,
   replayCursor: null,
   replaySpeedIndex: Number(window.localStorage.getItem("energymesh.replaySpeedIndex.v2") || 0),
+  campusModelIndex: Number(window.localStorage.getItem("energymesh.campusModelIndex.v1") || 0),
   activeHistory: "new",
   activeScenario: null,
   agentThreads: {},
@@ -70,6 +71,21 @@ const replaySpeedOptions = [
   { label: "1秒=1分钟", multiplier: 60 },
   { label: "1秒=5分钟", multiplier: 300 },
   { label: "1秒=15分钟", multiplier: 900 },
+];
+
+const campusModelOptions = [
+  {
+    id: "park",
+    kicker: "当前模型",
+    name: "通用园区",
+    detail: "光伏、储能、电网、负荷一体化沙盘",
+  },
+  {
+    id: "coldchain",
+    kicker: "中柱冷链",
+    name: "冷库电力模型",
+    detail: "电工 1 人 · 月电费 8-10 万 · 冷藏/冷冻冷机共 12 台",
+  },
 ];
 
 try {
@@ -2396,6 +2412,29 @@ function updateAssetLabels(labels) {
   });
 }
 
+function currentCampusModel() {
+  const index = ((state.campusModelIndex % campusModelOptions.length) + campusModelOptions.length) % campusModelOptions.length;
+  state.campusModelIndex = index;
+  return campusModelOptions[index];
+}
+
+function renderCampusModelSwitch() {
+  const model = currentCampusModel();
+  const campus = $(".campus");
+  if (campus) campus.dataset.siteModel = model.id;
+  $("#campus-model-kicker").textContent = model.kicker;
+  $("#campus-model-name").textContent = model.name;
+  $("#campus-model-detail").textContent = model.detail;
+  state.campus3d?.setSiteModel?.(model.id);
+}
+
+function shiftCampusModel(delta) {
+  state.campusModelIndex += delta;
+  currentCampusModel();
+  window.localStorage.setItem("energymesh.campusModelIndex.v1", String(state.campusModelIndex));
+  renderCampusModelSwitch();
+}
+
 function renderCampusSimulation() {
   const sim = state.campusSimulation;
   // Current status (kW)
@@ -3382,6 +3421,7 @@ function setupCampus() {
   const canvas = $("#campus-3d");
   if (!canvas) return;
   state.campus3d = createCampus3D(canvas, updateAssetLabels);
+  renderCampusModelSwitch();
   renderCampusSimulation();
   $("#reset-camera").addEventListener("click", () => {
     state.campus3d?.reset?.();
@@ -3401,6 +3441,8 @@ function setupCampus() {
   $("#campus-delete").addEventListener("click", () => {
     state.campus3d?.deleteSelected?.();
   });
+  $("#campus-model-prev")?.addEventListener("click", () => shiftCampusModel(-1));
+  $("#campus-model-next")?.addEventListener("click", () => shiftCampusModel(1));
 }
 
 async function restoreLatestDemo() {

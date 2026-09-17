@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-station-style-v5" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-coldchain-v1" />
   </head>
   <body>
     <main class="app-shell">
@@ -205,6 +205,15 @@
                 <button id="reject-flow-plan" class="secondary" type="button">拒绝采用</button>
                 <button id="adopt-flow-plan" type="button">采用方案</button>
               </div>
+            </div>
+            <div class="campus-model-switch" aria-label="园区模型切换">
+              <button id="campus-model-prev" type="button" aria-label="上一个模型">‹</button>
+              <div>
+                <span id="campus-model-kicker">当前模型</span>
+                <strong id="campus-model-name">通用园区</strong>
+                <small id="campus-model-detail">光伏、储能、电网、负荷一体化沙盘</small>
+              </div>
+              <button id="campus-model-next" type="button" aria-label="下一个模型">›</button>
             </div>
             <div class="campus-hint">CSV 接入后，园区会自动运行；0 kW 线路熄灭，粗细和粒子速度表示当前功率。</div>
             <article class="asset metric-card" data-anchor="factory"><span data-i18n="assetFactory">园区用电</span><strong id="asset-factory">-- kW</strong><small data-i18n="assetFactoryNote">等待数据接入</small></article>
@@ -554,6 +563,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260917-station-style"></script>
+    <script type="module" src="/static/app.js?v=20260917-coldchain-v1"></script>
   </body>
 </html>

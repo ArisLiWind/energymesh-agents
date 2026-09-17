@@ -1,11 +1,11 @@
 import * as THREE from "/static/vendor/three.module.min.js";
 
 const FLOW_DEFS = [
-  { id: "solar_load", from: "solar", to: "load", title: "自发自用", color: 0x2ac7a5 },
-  { id: "solar_storage", from: "solar", to: "storage", title: "光伏充电", color: 0x27bfd0 },
-  { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x5b7cff },
+  { id: "solar_load", from: "solar", to: "load", title: "自发自用", color: 0x315fa8 },
+  { id: "solar_storage", from: "solar", to: "storage", title: "光伏充电", color: 0x4f73c1 },
+  { id: "storage_load", from: "storage", to: "load", title: "储能放电", color: 0x6976b7 },
   { id: "grid_load", from: "grid", to: "load", title: "电网购电", color: 0xd79a31 },
-  { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x8fcf70 },
+  { id: "solar_grid", from: "solar", to: "grid", title: "余电上网", color: 0x8799be },
 ];
 
 const MODULES = [
@@ -16,6 +16,18 @@ const MODULES = [
   { id: "factory", title: "厂房", device: "不可中断负荷", metric: "运行中", note: "主线供电", x: 2.75, z: .1, kind: "factory" },
   { id: "charge", title: "充电站", device: "柔性负荷", metric: "可移峰", note: "主线供电", x: .7, z: -1.25, kind: "charge" },
 ];
+
+const SITE_PRESETS = {
+  park: MODULES,
+  coldchain: [
+    { id: "grid", title: "电网购电", device: "总表 / 变压器", metric: "8-10万/月", note: "高峰月电费", x: -4.05, z: .05, kind: "grid", pad: [1.36, 1.08] },
+    { id: "solar", title: "冷机组", device: "冷藏库 3组", metric: "6 台", note: "2台/组", x: -2.45, z: 1.18, kind: "chiller", pad: [1.76, 1.02] },
+    { id: "storage", title: "蓄冷/储能", device: "削峰预留", metric: "SOC --", note: "等待接入", x: -.65, z: -1.22, kind: "storage", pad: [1.3, 1.04] },
+    { id: "load", title: "冷藏库", device: "3 组冷藏", metric: "-- kW", note: "库温联动", x: .72, z: 1.22, kind: "coldstorage", pad: [2.05, 1.16] },
+    { id: "factory", title: "冷冻库", device: "3组 * 2", metric: "-- kW", note: "高峰负荷", x: 2.48, z: .12, kind: "freezer", pad: [1.72, 1.12] },
+    { id: "charge", title: "电工值守", device: "现场 1 人", metric: "1 人", note: "人工调度压力", x: -.38, z: .05, kind: "chiller", pad: [1.28, .92] },
+  ],
+};
 
 const BUS_Z = -.28;
 const BUS_LEFT = -4.55;
@@ -55,7 +67,7 @@ function makeLabel(def) {
     ctx.fillStyle = "#667085";
     ctx.font = "500 18px Inter, PingFang SC, sans-serif";
     ctx.fillText(def.device || "", 54, 88);
-    ctx.fillStyle = def.kind === "solar" ? "#17a67f" : def.kind === "grid" ? "#b8751d" : "#2563eb";
+    ctx.fillStyle = def.kind === "grid" ? "#b8751d" : "#315fa8";
     ctx.font = "800 22px Inter, PingFang SC, sans-serif";
     ctx.fillText(def.metric || "--", 54, 120);
     ctx.fillStyle = "#7c8794";
@@ -85,7 +97,7 @@ function updateLabel(sprite, def) {
     ctx.fillStyle = "#667085";
     ctx.font = "500 18px Inter, PingFang SC, sans-serif";
     ctx.fillText(def.device || "", 54, 88);
-    ctx.fillStyle = def.kind === "solar" ? "#17a67f" : def.kind === "grid" ? "#b8751d" : "#2563eb";
+    ctx.fillStyle = def.kind === "grid" ? "#b8751d" : "#315fa8";
     ctx.font = "800 22px Inter, PingFang SC, sans-serif";
     ctx.fillText(def.metric || "--", 54, 120);
     ctx.fillStyle = "#7c8794";
@@ -126,8 +138,9 @@ function makeModule(def) {
   const group = new THREE.Group();
   group.position.set(def.x, 0, def.z);
   group.userData = { ...def };
-  const baseColor = def.kind === "solar" ? 0xeef2f4 : def.kind === "grid" ? 0xf1f2f5 : def.kind === "storage" ? 0xeff2f7 : 0xf2f3f6;
-  group.add(pad(def.kind === "load" ? 1.75 : 1.38, def.kind === "load" ? 1.32 : 1.1, baseColor));
+  const baseColor = def.kind === "solar" || def.kind === "chiller" ? 0xeef2f6 : def.kind === "grid" ? 0xf1f2f5 : def.kind === "storage" ? 0xeff2f7 : 0xf2f3f6;
+  const padSize = def.pad || [def.kind === "load" ? 1.75 : 1.38, def.kind === "load" ? 1.32 : 1.1];
+  group.add(pad(padSize[0], padSize[1], baseColor));
 
   if (def.kind === "solar") {
     for (let i = 0; i < 6; i += 1) {
@@ -157,12 +170,34 @@ function makeModule(def) {
     group.add(glass);
     const fill = new THREE.Mesh(
       new THREE.BoxGeometry(.62, 1, .05),
-      new THREE.MeshStandardMaterial({ color: 0xb6f023, transparent: true, opacity: .86, roughness: .38, emissive: 0x315c08, emissiveIntensity: .18 }),
+      new THREE.MeshStandardMaterial({ color: 0x6f8ed9, transparent: true, opacity: .86, roughness: .38, emissive: 0x172f6b, emissiveIntensity: .18 }),
     );
     fill.name = "socFill";
     fill.position.set(0, .12, -.32);
     fill.scale.y = .02;
     group.add(fill);
+  } else if (def.kind === "coldstorage") {
+    const hall = box([1.62, .66, .92], 0x98a7b8);
+    hall.position.y = .35;
+    const roof = box([1.74, .08, 1.02], 0xdfe8f2);
+    roof.position.y = .74;
+    const door = box([.28, .42, .04], 0xf6f8fb);
+    door.position.set(.55, .25, -.48);
+    group.add(hall, roof, door);
+  } else if (def.kind === "freezer") {
+    const hall = box([1.35, .78, .86], 0x7d8998);
+    hall.position.y = .42;
+    const frost = box([1.44, .08, .94], 0xcbd8e7);
+    frost.position.y = .84;
+    const unit = box([.3, .28, .18], 0x525c69);
+    unit.position.set(-.46, .76, -.38);
+    group.add(hall, frost, unit);
+  } else if (def.kind === "chiller") {
+    for (let i = 0; i < 6; i += 1) {
+      const unit = box([.34, .32, .42], i % 2 ? 0x788392 : 0x9aa6b5);
+      unit.position.set(-.5 + (i % 3) * .5, .19, -.2 + Math.floor(i / 3) * .48);
+      group.add(unit);
+    }
   } else if (def.kind === "load") {
     const hall = box([1.26, .68, .96], 0x737b86);
     hall.position.y = .35;
@@ -371,8 +406,10 @@ export function createCampus3D(canvas, onLabels) {
   grid.position.y = -.055;
   scene.add(grid);
 
+  let currentPresetId = "park";
+  let currentDefinitions = SITE_PRESETS.park;
   const modules = new Map();
-  MODULES.forEach((def) => {
+  currentDefinitions.forEach((def) => {
     const module = makeModule(def);
     modules.set(def.id, module);
     scene.add(module);
@@ -395,6 +432,7 @@ export function createCampus3D(canvas, onLabels) {
   let editMode = false;
   let previewFlow = null;
   let liveFlow = {};
+  let lastEnergyState = null;
   const pointer = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -567,12 +605,21 @@ export function createCampus3D(canvas, onLabels) {
 
   function syncModules(state = {}) {
     if (state.noData) {
-      const waitingValues = {
-        solar: { metric: "-- kW", note: "等待 CSV" },
-        storage: { metric: "SOC --", note: "等待 CSV 接入" },
-        load: { metric: "-- kW", note: "等待 CSV" },
-        grid: { metric: "-- kW", note: "0 kW 熄灭" },
-      };
+      const waitingValues = currentPresetId === "coldchain"
+        ? {
+            grid: { metric: "8-10万/月", note: "高峰月电费" },
+            solar: { metric: "6 台", note: "冷藏库 3组 · 2台/组" },
+            storage: { metric: "SOC --", note: "等待接入" },
+            load: { metric: "-- kW", note: "冷藏库主负荷" },
+            factory: { metric: "-- kW", note: "冷冻库高峰负荷" },
+            charge: { metric: "1 人", note: "现场电工值守" },
+          }
+        : {
+            solar: { metric: "-- kW", note: "等待 CSV" },
+            storage: { metric: "SOC --", note: "等待 CSV 接入" },
+            load: { metric: "-- kW", note: "等待 CSV" },
+            grid: { metric: "-- kW", note: "0 kW 熄灭" },
+          };
       Object.entries(waitingValues).forEach(([id, value]) => {
         const module = modules.get(id);
         if (!module) return;
@@ -594,12 +641,21 @@ export function createCampus3D(canvas, onLabels) {
     const gridImport = valueNumber(state.gridImport);
     const storage = valueNumber(state.storage);
     const curtailKw = state.curtailKw ?? liveFlow.curtail ?? 0;
-    const values = {
-      solar: { metric: `${generation.toFixed(1)} kW`, note: `限发 ${Number(curtailKw || 0).toFixed(1)} kW` },
-      storage: { metric: storage ? `SOC ${storage.toFixed(0)}%` : "SOC --", note: state.storageFlow || "待机" },
-      load: { metric: `${load.toFixed(1)} kW`, note: "正在用电" },
-      grid: { metric: `${gridImport.toFixed(1)} kW`, note: gridImport > .05 ? "购电中" : "0 kW 熄灭" },
-    };
+    const values = currentPresetId === "coldchain"
+      ? {
+          grid: { metric: `${gridImport.toFixed(1)} kW`, note: "总表购电" },
+          solar: { metric: "6 台", note: "冷藏库 3组 · 2台/组" },
+          storage: { metric: storage ? `SOC ${storage.toFixed(0)}%` : "SOC --", note: state.storageFlow || "削峰预留" },
+          load: { metric: `${load.toFixed(1)} kW`, note: "冷藏库主负荷" },
+          factory: { metric: `${Math.max(load * .62, 0).toFixed(1)} kW`, note: "冷冻库高峰负荷" },
+          charge: { metric: "1 人", note: "现场电工值守" },
+        }
+      : {
+          solar: { metric: `${generation.toFixed(1)} kW`, note: `限发 ${Number(curtailKw || 0).toFixed(1)} kW` },
+          storage: { metric: storage ? `SOC ${storage.toFixed(0)}%` : "SOC --", note: state.storageFlow || "待机" },
+          load: { metric: `${load.toFixed(1)} kW`, note: "正在用电" },
+          grid: { metric: `${gridImport.toFixed(1)} kW`, note: gridImport > .05 ? "购电中" : "0 kW 熄灭" },
+        };
     Object.entries(values).forEach(([id, value]) => {
       const module = modules.get(id);
       if (!module) return;
@@ -614,8 +670,8 @@ export function createCampus3D(canvas, onLabels) {
       const fillHeight = Math.max(.03, socRatio * 1.04);
       socFill.scale.y = fillHeight;
       socFill.position.y = .12 + fillHeight / 2;
-      socFill.material.color.set(socRatio > .55 ? 0xb6f023 : socRatio > .28 ? 0xf1d33b : 0xef6f62);
-      socFill.material.emissive.set(String(state.storageFlow || "").includes("充") ? 0x166c82 : 0x315c08);
+      socFill.material.color.set(socRatio > .55 ? 0x6f8ed9 : socRatio > .28 ? 0xf1d33b : 0xef6f62);
+      socFill.material.emissive.set(String(state.storageFlow || "").includes("充") ? 0x172f6b : 0x1b326a);
     }
   }
 
@@ -637,6 +693,7 @@ export function createCampus3D(canvas, onLabels) {
   }
 
   function applyEnergyState(state = {}) {
+    lastEnergyState = { ...state };
     liveFlow = state.flows || buildFlowState(state);
     previewFlow = state.previewFlows || null;
     syncModules({ ...state, curtailKw: liveFlow.curtail });
@@ -657,7 +714,7 @@ export function createCampus3D(canvas, onLabels) {
 
   function addModule(type = "factory") {
     const id = `${type}-${modules.size + 1}`;
-    const nextIndex = Math.max(0, modules.size - MODULES.length);
+    const nextIndex = Math.max(0, modules.size - currentDefinitions.length);
     const slots = [
       { x: -1.65, z: -1.25 },
       { x: 1.85, z: -1.25 },
@@ -695,7 +752,7 @@ export function createCampus3D(canvas, onLabels) {
   }
 
   function reset() {
-    MODULES.forEach((def) => {
+    currentDefinitions.forEach((def) => {
       const module = modules.get(def.id);
       if (module) module.position.set(def.x, 0, def.z);
     });
@@ -708,6 +765,26 @@ export function createCampus3D(canvas, onLabels) {
     syncRoutesToModules();
   }
 
+  function setSiteModel(next = "park") {
+    const presetId = SITE_PRESETS[next] ? next : "park";
+    if (presetId === currentPresetId && modules.size) return;
+    currentPresetId = presetId;
+    currentDefinitions = SITE_PRESETS[presetId];
+    modules.forEach((module) => scene.remove(module));
+    modules.clear();
+    currentDefinitions.forEach((def) => {
+      const module = makeModule(def);
+      modules.set(def.id, module);
+      scene.add(module);
+    });
+    selectedId = "load";
+    rebuildTopologyWire(topologyWire, modules);
+    syncRoutesToModules();
+    updateSelection();
+    applyEnergyState(lastEnergyState || { load: "-- kW", generation: "-- kW", storage: "SOC --", storageFlow: "等待 CSV 接入", gridImport: "-- kW", noData: true, flows: ZERO_FLOW });
+    render();
+  }
+
   function destroy() {
     running = false;
     window.removeEventListener("resize", render);
@@ -718,5 +795,5 @@ export function createCampus3D(canvas, onLabels) {
   syncRoutesToModules();
   updateSelection();
   window.requestAnimationFrame(loop);
-  return { addModule, deleteSelected, applyEnergyState, previewEnergyState, adoptPreview, reset, resize, destroy, setEditMode };
+  return { addModule, deleteSelected, applyEnergyState, previewEnergyState, adoptPreview, reset, resize, destroy, setEditMode, setSiteModel };
 }

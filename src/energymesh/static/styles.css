@@ -802,7 +802,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 
 .chat-message.tone-leader { border-left-color: #8aa4ff; }
-.chat-message.tone-perception { border-left-color: #43c7a5; }
+.chat-message.tone-perception { border-left-color: #4f73c1; }
 .chat-message.tone-dispatch { border-left-color: #6ba7ff; }
 .chat-message.tone-audit { border-left-color: #f2b15f; }
 .chat-message.tone-execution { border-left-color: #bb8cff; }
@@ -3479,7 +3479,7 @@ pre,
   --soft: #344054;
   --muted: #667085;
   --quiet: #98a2b3;
-  --blue: #27bfd0;
+  --blue: #315fa8;
   --blue-2: #0f91a3;
   --green: #24b88a;
   --amber: #c9872d;
@@ -3640,7 +3640,7 @@ dialog {
 }
 
 .chat-form input:focus {
-  border-color: #27bfd0;
+  border-color: #315fa8;
   box-shadow: 0 0 0 3px rgba(39, 191, 208, .14);
 }
 
@@ -3673,8 +3673,8 @@ dialog {
 .chat-action.primary,
 .flow-preview-card button,
 .monitor-gate button:not(:disabled):first-child {
-  background: #27bfd0;
-  border-color: #27bfd0;
+  background: #315fa8;
+  border-color: #315fa8;
   color: #ffffff;
 }
 
@@ -3883,7 +3883,7 @@ dialog {
 
 .energy-status .status-storage strong,
 .asset.critical strong {
-  color: #58bea4;
+  color: #315fa8;
 }
 
 .energy-main {
@@ -3940,7 +3940,7 @@ dialog {
   font-family: Inter, "PingFang SC", sans-serif;
   letter-spacing: 0;
 }
-.day-clock small { color: #58bea4; }
+.day-clock small { color: #315fa8; }
 .day-problems strong { color: #10141c; }
 
 .campus-tools {
@@ -3958,8 +3958,8 @@ dialog {
   box-shadow: 0 12px 24px rgba(70, 82, 100, .1);
 }
 .campus-tools button:hover {
-  border-color: #77ccb8;
-  color: #167b67;
+  border-color: #8ca8d8;
+  color: #315fa8;
   background: #fff;
 }
 
@@ -4140,8 +4140,8 @@ dialog {
 
 .rail-logo {
   border-radius: 9px;
-  background: #e7f6f5;
-  color: #398978;
+  background: #eef3ff;
+  color: #315fa8;
 }
 
 .rail-item {
@@ -4151,14 +4151,14 @@ dialog {
 
 .rail-item:hover {
   background: rgba(255,255,255,.88);
-  color: #167b67;
+  color: #315fa8;
 }
 
 .rail-item.active,
 .translate-item:hover,
 .translate-item.active {
   border-color: rgba(88, 190, 164, .22);
-  background: #e8f6f4;
+  background: #eef3ff;
   color: #347bc0;
   box-shadow: 0 10px 22px rgba(52, 123, 192, .12);
 }
@@ -4221,8 +4221,8 @@ dialog {
 }
 
 .mini-close:hover {
-  background: #e8f6f4;
-  color: #167b67;
+  background: #eef3ff;
+  color: #315fa8;
 }
 
 .chat-messages {
@@ -4268,8 +4268,8 @@ dialog {
 }
 
 .chat-message.user .chat-content {
-  background: #eefafa;
-  border-color: #cbecef;
+  background: #f6f9ff;
+  border-color: #d7e2f2;
 }
 
 .chat-speaker,
@@ -4315,15 +4315,158 @@ dialog {
 }
 
 .chat-form input:focus {
-  border-color: #77ccb8;
+  border-color: #8ca8d8;
   box-shadow: 0 0 0 3px rgba(119, 204, 184, .18);
 }
 
 .chat-form .action {
   border-radius: 14px;
   background: #ffffff;
-  color: #167b67;
-  border-color: #cbecef;
+  color: #315fa8;
+  border-color: #d7e2f2;
+}
+
+/* Cold-chain blue pass: replace the old pale-cyan accents with one model-wide blue. */
+.energy-status .status-storage strong,
+.asset.critical strong,
+.day-clock small {
+  color: #315fa8;
+}
+
+.rail-logo {
+  background: #eef3ff;
+  color: #315fa8;
+}
+
+.rail-item:hover,
+.mini-close:hover,
+.campus-tools button:hover,
+.chat-form .action {
+  color: #315fa8;
+}
+
+.rail-item.active,
+.translate-item:hover,
+.translate-item.active,
+.mini-close:hover {
+  border-color: rgba(49, 95, 168, .2);
+  background: #eef3ff;
+}
+
+.campus-tools button:hover,
+.chat-form input:focus {
+  border-color: #8ca8d8;
+}
+
+.chat-form input:focus {
+  box-shadow: 0 0 0 3px rgba(49, 95, 168, .14);
+}
+
+.chat-message.user .chat-content {
+  background: rgba(246, 249, 255, .94);
+  border-color: #d7e2f2;
+}
+
+.chat-form .action {
+  border-color: #d7e2f2;
+}
+
+.today-grid article::before,
+.today-grid article:nth-child(1)::before,
+.today-grid article:nth-child(3)::before,
+.today-grid article:nth-child(4)::before {
+  background: #f1f5ff;
+}
+
+.campus-model-switch {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 72px;
+  width: min(560px, calc(100% - 48px));
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.78);
+  border-radius: 28px;
+  background: rgba(255,255,255,.84);
+  box-shadow: 0 18px 42px rgba(70, 82, 100, .1);
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
+}
+
+.campus-model-switch button {
+  width: 46px;
+  height: 46px;
+  border: 1px solid #d7e2f2;
+  border-radius: 50%;
+  background: #f6f9ff;
+  color: #315fa8;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.campus-model-switch span,
+.campus-model-switch strong,
+.campus-model-switch small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.campus-model-switch span {
+  color: #7d8796;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.campus-model-switch strong {
+  margin-top: 2px;
+  color: #10141c;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.campus-model-switch small {
+  margin-top: 3px;
+  color: #6f7885;
+  font-size: 13px;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="factory"] {
+  display: block;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="grid"] {
+  left: 12%;
+  top: 54%;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="solar"] {
+  left: 13%;
+  top: 68%;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="storage"],
+.campus[data-site-model="coldchain"] .asset[data-anchor="charge"] {
+  display: none;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="load"] {
+  left: 69%;
+  top: 48%;
+}
+
+.campus[data-site-model="coldchain"] .asset[data-anchor="factory"] {
+  left: 80%;
+  top: 63%;
+  width: 190px;
+  transform: translate(0, 0);
 }
 
 .flow-deltas div,
