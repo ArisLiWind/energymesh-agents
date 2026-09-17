@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-agentteams-direct-v4" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-baseline-chart-v5" />
   </head>
   <body>
     <main class="app-shell">
@@ -262,14 +262,14 @@
 
         <section class="cost-compare" aria-label="Parallel simulation cost comparison">
           <header>
-            <h2>平行时空对比 · Agent Teams 决策效果</h2>
+            <h2>AgentTeams 决策效果基线对比</h2>
             <span id="parallel-status">等待数据</span>
           </header>
           <div class="cost-chart-layout">
             <div class="cost-chart-wrap">
               <canvas id="cost-chart" aria-label="Cumulative cost comparison: baseline vs Agent optimized"></canvas>
               <div class="chart-legend">
-                <span class="legend-baseline">— 原始策略累计电费</span>
+                <span class="legend-baseline">— 原始策略预测累计电费</span>
                 <span class="legend-optimized">— Agent 优化累计电费</span>
                 <span class="legend-savings">▩ 节省区间</span>
                 <span class="legend-reopt">◆ 计划重优化</span>
@@ -277,11 +277,11 @@
             </div>
             <div class="cost-metrics">
               <article class="compare-a">
-                <span>时空 A · 原始策略</span>
+                <span>Baseline · 原始策略</span>
                 <strong id="cost-baseline">¥0.00</strong>
               </article>
               <article class="compare-b">
-                <span>时空 B · Agent 优化</span>
+                <span>AgentTeams · 优化策略</span>
                 <strong id="cost-optimized">¥0.00</strong>
               </article>
               <article class="compare-save">
@@ -324,7 +324,7 @@
             </article>
           </div>
           <div class="compare-note">
-            <p>Timeline A：原始策略累计电费；Timeline B：Agent 优化累计电费。偏差超阈值时自动重优化。</p>
+            <p>红线是同一天原始 EMS / 基线策略预测累计电费；绿线是 AgentTeams 多 Worker 审核后的优化计划累计电费。每个点来自上传数据、实时电价和确定性优化结果。</p>
           </div>
         </section>
 
@@ -585,6 +585,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260917-agentteams-direct-v4"></script>
+    <script type="module" src="/static/app.js?v=20260917-baseline-chart-v5"></script>
   </body>
 </html>

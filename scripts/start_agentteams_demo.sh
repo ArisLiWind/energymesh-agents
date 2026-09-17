@@ -51,6 +51,32 @@ export AGENTTEAMS_MATRIX_BASE_URL="${AGENTTEAMS_MATRIX_BASE_URL:-http://127.0.0.
 export ENERGYMESH_HOST=127.0.0.1
 export ENERGYMESH_PORT
 
+resolve_codespace_name() {
+  local requested="$1"
+  local repo detected
+  if [[ -n "${requested}" ]]; then
+    if gh codespace list --json name --jq ".[] | select(.name == \"${requested}\") | .name" 2>/dev/null | grep -qx "${requested}"; then
+      printf '%s\n' "${requested}"
+      return 0
+    fi
+    echo "WARN: configured Codespace not found: ${requested}" >&2
+  fi
+  repo="$(git remote get-url origin 2>/dev/null | sed 's/.*github\.com[:/]//' | sed 's/\.git$//' || true)"
+  if [[ -n "${repo}" ]]; then
+    detected="$(gh codespace list --repo "${repo}" --json name,state --jq '.[] | select(.state == "Available" or .state == "Shutdown") | .name' 2>/dev/null | head -1 || true)"
+    if [[ -n "${detected}" ]]; then
+      printf '%s\n' "${detected}"
+      return 0
+    fi
+  fi
+  detected="$(gh codespace list --json name,state --jq '.[] | select(.state == "Available" or .state == "Shutdown") | .name' 2>/dev/null | head -1 || true)"
+  if [[ -n "${detected}" ]]; then
+    printf '%s\n' "${detected}"
+    return 0
+  fi
+  return 1
+}
+
 URL_PYTHON="${PYTHON_BIN}"
 if [[ ! -x "${URL_PYTHON}" ]]; then
   URL_PYTHON="$(command -v python3 || true)"
@@ -73,6 +99,18 @@ fi
 if [[ "${need_gh}" == "true" ]]; then
   if ! command -v gh >/dev/null 2>&1; then
     echo "FAIL: Matrix is unreachable and gh CLI is not available for Codespaces forwarding."
+    exit 2
+  fi
+  if ! CODESPACE_NAME="$(resolve_codespace_name "${CODESPACE_NAME:-}")"; then
+    cat <<MSG
+FAIL: Matrix/Element are unreachable and no GitHub Codespace is available for this account.
+
+Create or reopen a Codespace for ArisLiWind/energymesh-agents, then rerun:
+  bash scripts/start_agentteams_demo.sh
+
+If you know the exact Codespace name:
+  CODESPACE_NAME=<name> bash scripts/start_agentteams_demo.sh
+MSG
     exit 2
   fi
   echo "Starting Codespace ${CODESPACE_NAME} if needed..."

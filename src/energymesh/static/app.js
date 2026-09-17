@@ -1,4 +1,4 @@
-import { createCampus3D } from "/static/campus3d.js?v=20260917-agentteams-direct-v4";
+import { createCampus3D } from "/static/campus3d.js?v=20260917-baseline-chart-v5";
 import { renderMarkdown } from "/static/markdown.js?v=20260806a";
 
 const state = {
@@ -3724,9 +3724,8 @@ function firstReoptInterval(p) {
   return intervals.length ? Math.min(...intervals) : null;
 }
 
-function adjustedOptimizedAt(point, reoptStart) {
+function adjustedOptimizedAt(point, _reoptStart) {
   const baseline = point.baseline_cumulative_cost_yuan ?? 0;
-  if (reoptStart == null || Number(point.interval ?? 0) < reoptStart) return baseline;
   return point.optimized_cumulative_cost_yuan ?? baseline;
 }
 
@@ -3745,12 +3744,14 @@ function drawCostChart(p) {
   const history = p.interval_history;
   const reoptEvents = p.reoptimization_events || [];
 
-  const inset = { left: 50, top: 16, right: 16, bottom: 28 };
+  const inset = { left: 54, top: 18, right: 90, bottom: 30 };
   const plotW = width - inset.left - inset.right;
   const plotH = height - inset.top - inset.bottom;
 
-  // Background
-  context.fillStyle = "#ffffff";
+  const background = context.createLinearGradient(0, 0, 0, height);
+  background.addColorStop(0, "#f8fbff");
+  background.addColorStop(1, "#eef4fb");
+  context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
   // Find max cost for scaling
@@ -3765,8 +3766,9 @@ function drawCostChart(p) {
   const reoptStart = firstReoptInterval(p);
 
   // Grid lines
-  context.strokeStyle = "rgba(148, 163, 184, .2)";
+  context.strokeStyle = "rgba(130, 148, 170, .22)";
   context.lineWidth = 1;
+  context.setLineDash([2, 5]);
   for (let row = 0; row <= 4; row++) {
     const y = inset.top + (plotH * row) / 4;
     context.beginPath(); context.moveTo(inset.left, y); context.lineTo(width - inset.right, y); context.stroke();
@@ -3775,13 +3777,40 @@ function drawCostChart(p) {
     const x = inset.left + (plotW * col) / 4;
     context.beginPath(); context.moveTo(x, inset.top); context.lineTo(x, height - inset.bottom); context.stroke();
   }
+  context.setLineDash([]);
 
   // Helper: map interval to x
   function xAt(i) { return inset.left + (plotW * i) / (totalIntervals - 1); }
   function yAt(cost) { return inset.top + plotH * (1 - cost / maxCost); }
+  function drawSeries(keyFn, color, widthPx, dashed = false) {
+    context.beginPath();
+    context.strokeStyle = color;
+    context.lineWidth = widthPx;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    if (dashed) context.setLineDash([8, 5]);
+    for (let i = 0; i < count; i++) {
+      const x = xAt(history[i].interval ?? i);
+      const y = yAt(keyFn(history[i]));
+      if (i === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.stroke();
+    context.setLineDash([]);
+  }
+  function lastPointLabel(text, value, color, yOffset = 0) {
+    const last = history[count - 1];
+    if (!last) return;
+    const x = xAt(last.interval ?? count - 1) + 10;
+    const y = Math.min(height - inset.bottom - 8, Math.max(inset.top + 8, yAt(value) + yOffset));
+    context.fillStyle = color;
+    context.font = "700 11px Inter, sans-serif";
+    context.textAlign = "left";
+    context.fillText(text, x, y + 4);
+  }
 
   // Draw savings area (between curves)
-  context.fillStyle = "rgba(127, 197, 139, .18)";
+  context.fillStyle = "rgba(69, 197, 162, .18)";
   context.beginPath();
   context.moveTo(xAt(0), yAt((history[0].baseline_cumulative_cost_yuan ?? 0)));
   for (let i = 0; i < count; i++) {
@@ -3793,27 +3822,9 @@ function drawCostChart(p) {
   context.closePath();
   context.fill();
 
-  // Baseline curve (red)
-  context.beginPath();
-  context.strokeStyle = "#e07c78";
-  context.lineWidth = 2;
-  for (let i = 0; i < count; i++) {
-    const x = xAt(history[i].interval ?? i);
-    const y = yAt((history[i].baseline_cumulative_cost_yuan ?? 0));
-    if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
-  }
-  context.stroke();
-
-  // Optimized curve (green)
-  context.beginPath();
-  context.strokeStyle = "#7fc58b";
-  context.lineWidth = 2;
-  for (let i = 0; i < count; i++) {
-    const x = xAt(history[i].interval ?? i);
-    const y = yAt(adjustedOptimizedAt(history[i], reoptStart));
-    if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
-  }
-  context.stroke();
+  // Draw optimized first, then baseline as a dashed red rail so overlap never hides it.
+  drawSeries((point) => adjustedOptimizedAt(point, reoptStart), "#45c5a2", 3.2);
+  drawSeries((point) => point.baseline_cumulative_cost_yuan ?? 0, "#dd5965", 3, true);
 
   // Re-optimization markers (yellow diamonds)
   reoptEvents.forEach((event) => {
@@ -3853,6 +3864,15 @@ function drawCostChart(p) {
     context.setLineDash([3, 3]);
     context.beginPath(); context.moveTo(cx, inset.top); context.lineTo(cx, height - inset.bottom); context.stroke();
     context.setLineDash([]);
+  }
+
+  const last = history[count - 1];
+  if (last) {
+    const baselineFinal = last.baseline_cumulative_cost_yuan ?? 0;
+    const optimizedFinal = adjustedOptimizedAt(last, reoptStart);
+    const tooClose = Math.abs(yAt(baselineFinal) - yAt(optimizedFinal)) < 14;
+    lastPointLabel("原始策略", baselineFinal, "#dd5965", tooClose ? -7 : 0);
+    lastPointLabel("AgentTeams", optimizedFinal, "#289b7f", tooClose ? 8 : 0);
   }
 }
 
