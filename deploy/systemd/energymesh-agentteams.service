@@ -5,12 +5,12 @@ Wants=network-online.target docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/energymesh
-Environment=ENERGYMESH_ROOT=/opt/energymesh
+WorkingDirectory=/opt/energymesh-agents
+Environment=ENERGYMESH_ROOT=/opt/energymesh-agents
 Environment=AGENTTEAMS_DIR=/opt/AgentTeams
-Environment=ENV_FILE=/opt/energymesh/.env.agentteams.local
+Environment=ENV_FILE=/opt/energymesh-agents/.env.agentteams.local
 Environment=KEEPALIVE_INTERVAL=120
-ExecStart=/usr/bin/env bash /opt/energymesh/scripts/ecs_agentteams_keepalive.sh
+ExecStart=/usr/bin/env bash /opt/energymesh-agents/scripts/ecs_agentteams_keepalive.sh
 Restart=always
 RestartSec=15
 
