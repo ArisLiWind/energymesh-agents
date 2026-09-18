@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from energymesh.models import (
     ExternalDataSnapshot,
@@ -23,6 +24,7 @@ from energymesh.orchestrator import EnergyMeshOrchestrator
 
 OPEN_CEM_DATASET_URL = "https://github.com/OpenCEM-platform/opencem-dataset"
 OPEN_CEM_PAPER_URL = "https://arxiv.org/abs/2604.05429"
+ENERGYMESH_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class EnergyDataError(ValueError):
@@ -82,7 +84,9 @@ class SnapshotFactory:
             raw_timestamp = _number(row, "read_ts")
             if raw_timestamp is None:
                 continue
-            measured_at = datetime.fromtimestamp(raw_timestamp, UTC)
+            measured_at = datetime.fromtimestamp(raw_timestamp, UTC).astimezone(
+                ENERGYMESH_TIMEZONE
+            )
             rows_by_day[measured_at.date()].append(row)
         if not rows_by_day:
             raise EnergyDataError("CSV contains no valid read_ts measurements")
@@ -92,8 +96,13 @@ class SnapshotFactory:
             key=lambda item: len(
                 {
                     (
-                        datetime.fromtimestamp(float(row["read_ts"]), UTC).hour * 60
-                        + datetime.fromtimestamp(float(row["read_ts"]), UTC).minute
+                        datetime.fromtimestamp(float(row["read_ts"]), UTC)
+                        .astimezone(ENERGYMESH_TIMEZONE)
+                        .hour
+                        * 60
+                        + datetime.fromtimestamp(float(row["read_ts"]), UTC)
+                        .astimezone(ENERGYMESH_TIMEZONE)
+                        .minute
                     )
                     // 15
                     for row in rows_by_day[item]
@@ -105,7 +114,9 @@ class SnapshotFactory:
             lambda: defaultdict(list)
         )
         for row in day_rows:
-            measured_at = datetime.fromtimestamp(float(row["read_ts"]), UTC)
+            measured_at = datetime.fromtimestamp(float(row["read_ts"]), UTC).astimezone(
+                ENERGYMESH_TIMEZONE
+            )
             interval = (measured_at.hour * 60 + measured_at.minute) // 15
             bucket_rows[interval][row["inverter"]].append(row)
 
@@ -195,7 +206,12 @@ class SnapshotFactory:
             flexible_load_kw=min(1.2, max(0.2, peak_load * 0.12)),
             demand_charge_yuan_per_kw=8.0,
         )
-        start = datetime(replay_day.year, replay_day.month, replay_day.day, tzinfo=UTC)
+        start = datetime(
+            replay_day.year,
+            replay_day.month,
+            replay_day.day,
+            tzinfo=ENERGYMESH_TIMEZONE,
+        )
         telemetry: list[ExternalTelemetryPoint] = []
         forecast: list[ForecastPoint] = []
         for interval, point in enumerate(normalized):
@@ -221,6 +237,8 @@ class SnapshotFactory:
                     timestamp=timestamp,
                     load_kw=point["load_kw"],
                     pv_kw=point["pv_kw"],
+                    grid_import_kw=point["grid_kw"],
+                    battery_power_kw=point["battery_power_kw"],
                     battery_soc=min(1.0, max(0.0, point["soc"])),
                     tariff_yuan_per_kwh=tariff,
                     transformer_temperature_c=temperature,
@@ -266,8 +284,12 @@ class SnapshotFactory:
                 "load_kw": current.load_kw,
                 "pv_kw": current.pv_kw,
                 "battery_soc": current.battery_soc,
-                "grid_import_kw": normalized[current_interval]["grid_kw"],
-                "battery_power_kw": normalized[current_interval]["battery_power_kw"],
+                "grid_import_kw": current.grid_import_kw,
+                "battery_power_kw": current.battery_power_kw,
+                "timezone": "Asia/Shanghai",
+                "timestamp_semantics": "interval_start",
+                "step_minutes": 15,
+                "horizon_intervals": 96,
                 "raw_rows": len(day_rows),
                 "replay_date": replay_day.isoformat(),
                 "filename": Path(filename).name,
@@ -386,6 +408,8 @@ class SnapshotFactory:
                     timestamp=timestamp,
                     load_kw=load_kw,
                     pv_kw=pv_kw,
+                    grid_import_kw=max(0.0, load_kw - pv_kw),
+                    battery_power_kw=0.0,
                     battery_soc=initial_soc,
                     tariff_yuan_per_kwh=tariff,
                     transformer_temperature_c=temperature,
@@ -430,7 +454,12 @@ class SnapshotFactory:
                 "load_kw": current.load_kw,
                 "pv_kw": current.pv_kw,
                 "battery_soc": current.battery_soc,
-                "grid_import_kw": max(0.0, current.load_kw - current.pv_kw),
+                "grid_import_kw": current.grid_import_kw,
+                "battery_power_kw": current.battery_power_kw,
+                "timezone": "Asia/Shanghai",
+                "timestamp_semantics": "interval_start",
+                "step_minutes": 15,
+                "horizon_intervals": 96,
                 "raw_rows": len(rows),
                 "replay_date": replay_day.isoformat(),
                 "filename": Path(filename).name,

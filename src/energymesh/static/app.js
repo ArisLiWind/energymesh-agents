@@ -45,6 +45,7 @@ const state = {
   monitor: null,
   monitorTimer: null,
   parallel: null,
+  parallelStarting: false,
   speedMode: "normal",
   parallelTimer: null,
   opsEvidence: null,
@@ -1096,7 +1097,7 @@ function setStationView(view) {
 
 function renderDeviceDetail(deviceId = "pcs") {
   state.selectedDeviceId = deviceId;
-  const detail = deviceDetails[deviceId] || deviceDetails.pcs;
+  const detail = liveDeviceDetail(deviceId);
   $$("[data-device-id]").forEach((button) => {
     button.classList.toggle("active", button.dataset.deviceId === deviceId);
   });
@@ -1125,6 +1126,74 @@ function renderDeviceDetail(deviceId = "pcs") {
       <section><span>操作记录</span>${detail.operations.map((item) => `<small>${escapeHTML(item)}</small>`).join("")}</section>
     </div>
   `;
+}
+
+function liveDeviceDetail(deviceId = "pcs") {
+  const point = snapshotAtCurrentCursor();
+  const base = deviceDetails[deviceId] || deviceDetails.pcs;
+  if (!point) {
+    return {
+      ...base,
+      status: "等待数据",
+      metrics: base.metrics.map(([label]) => [label, "--"]),
+      runtime: "等待园区 telemetry 接入；不展示硬编码设备数值。",
+      alerts: ["等待真实数据"],
+      operations: ["未接入 telemetry"],
+    };
+  }
+  const gridKw = Number(point.grid_import_kw ?? Math.max(0, Number(point.load_kw || 0) - Number(point.pv_kw || 0)));
+  const batteryKw = Number(point.battery_power_kw || 0);
+  const soc = Number(point.battery_soc || 0) * 100;
+  const temp = Number(point.transformer_temperature_c || 0);
+  if (deviceId === "pv") {
+    return {
+      ...base,
+      status: Number(point.pv_kw || 0) > 0 ? "在线" : "低出力",
+      metrics: [
+        ["实时功率", `${Number(point.pv_kw || 0).toFixed(2)} kW`],
+        ["预测偏差", "--"],
+        ["日发电量", `${telemetryEnergyUntil(state.replayCursor || point.interval, "pv_kw").toFixed(2)} kWh`],
+        ["月发电量", "--"],
+        ["逆变器温度", temp ? `${temp.toFixed(1)}°C` : "--"],
+        ["可用率", "--"],
+      ],
+      runtime: "光伏状态来自当前 telemetry interval，不使用固定演示值。",
+      alerts: point.fault_code ? [point.fault_code] : ["无活动告警"],
+      operations: [`${formatSnapshotTime(point.timestamp)} telemetry interval ${point.interval}`],
+    };
+  }
+  if (deviceId === "dg") {
+    return {
+      ...base,
+      status: "未接入",
+      metrics: [
+        ["可用功率", "--"],
+        ["当前输出", "0.00 kW"],
+        ["日发电量", "--"],
+        ["月发电量", "--"],
+        ["缸套水温", "--"],
+        ["燃油余量", "--"],
+      ],
+      runtime: "当前数据集没有 DG 遥测；不展示硬编码发电机数值。",
+      alerts: ["DG telemetry 未接入"],
+      operations: [`${formatSnapshotTime(point.timestamp)} 无 DG 数据`],
+    };
+  }
+  return {
+    ...base,
+    status: point.battery_available ? "在线" : "不可用",
+    metrics: [
+      ["实时功率", `${batteryKw.toFixed(2)} kW`],
+      ["SOC", `${soc.toFixed(0)}%`],
+      ["日充电量", "--"],
+      ["日放电量", "--"],
+      ["电池温度", temp ? `${temp.toFixed(1)}°C` : "--"],
+      ["当前购电", `${gridKw.toFixed(2)} kW`],
+    ],
+    runtime: "PCS/BMS 数值来自当前 telemetry interval，不使用固定演示值。",
+    alerts: point.fault_code ? [point.fault_code] : ["无活动告警"],
+    operations: [`${formatSnapshotTime(point.timestamp)} telemetry interval ${point.interval}`],
+  };
 }
 
 function setDeviceMode(mode) {
@@ -2213,6 +2282,14 @@ function gridCostUntil(cursor) {
   ), 0);
 }
 
+function telemetryEnergyUntil(cursor, key) {
+  const telemetry = state.energySnapshot?.telemetry || [];
+  const end = Math.min(Math.max(Number(cursor) || 0, 0), telemetry.length - 1);
+  return telemetry.slice(0, end + 1).reduce((total, point) => (
+    total + Number(point[key] || 0) * 0.25
+  ), 0);
+}
+
 function batteryPowerAt(cursor) {
   const telemetry = state.energySnapshot?.telemetry || [];
   const point = telemetry[cursor];
@@ -2321,37 +2398,34 @@ function renderCsvCostComparison() {
     }
     return;
   }
-  let baseline = 0;
-  let optimized = 0;
-  const history = telemetry.slice(0, cursor + 1).map((point, index) => {
-    const tariff = Number(point.tariff_yuan_per_kwh ?? point.price_yuan_per_kwh ?? point.tariff ?? 0.85);
+  const baseline = telemetry.slice(0, cursor + 1).reduce((total, point) => {
+    const tariff = Number(point.tariff_yuan_per_kwh ?? point.price_yuan_per_kwh ?? point.tariff ?? 0);
     const gridKw = Math.max(0, Number(point.grid_import_kw ?? Math.max(0, Number(point.load_kw || 0) - Number(point.pv_kw || 0))));
-    const pvSurplus = Math.max(0, Number(point.pv_kw || 0) - Number(point.load_kw || 0));
-    const soc = Number(point.battery_soc ?? 0.5);
-    const dischargeKw = tariff > 1.0 && soc > 0.25 ? Math.min(gridKw, 0.18 * Math.max(Number(point.load_kw || 0), 1)) : 0;
-    const chargeSavingKw = tariff < 0.65 ? 0 : Math.min(pvSurplus, gridKw * 0.25);
-    const optGridKw = Math.max(0, gridKw - dischargeKw - chargeSavingKw);
-    baseline += gridKw * 0.25 * tariff;
-    optimized += optGridKw * 0.25 * tariff;
-    return {
-      interval: index,
-      baseline_cumulative_cost_yuan: baseline,
-      optimized_cumulative_cost_yuan: optimized,
-      actual_load_kw: Number(point.load_kw || 0),
-      actual_pv_kw: Number(point.pv_kw || 0),
-      actual_grid_kw: gridKw,
-      optimized_grid_kw: optGridKw,
-    };
-  });
-  const savings = baseline - optimized;
-  const p = { cursor, interval_history: history, baseline_cost_yuan: baseline, optimized_cost_yuan: optimized, savings_yuan: savings, savings_percent: baseline > 0 ? savings / baseline * 100 : 0, reoptimization_events: [] };
+    return total + gridKw * 0.25 * tariff;
+  }, 0);
   $("#cost-baseline").textContent = `¥${baseline.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#cost-optimized").textContent = `¥${optimized.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#cost-savings").textContent = `¥${savings.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
-  $("#savings-percent").textContent = `节省 ${p.savings_percent.toFixed(2)}%`;
-  $("#parallel-status").textContent = "CSV 实时基线对比";
-  drawCostChart(p);
-  renderDispatchEvidence(p);
+  $("#cost-optimized").textContent = "等待后端";
+  $("#cost-savings").textContent = "--";
+  $("#savings-percent").textContent = "后端计算中";
+  renderCostComparisonSource("optimizer", state.parallelStarting ? "正在启动后端 baseline/optimized 计算" : "等待后端 interval_history");
+  renderDispatchEvidence(null);
+  ensureBackendParallelComparison();
+}
+
+async function ensureBackendParallelComparison() {
+  if (!state.energySnapshot || state.parallelStarting || state.parallel?.interval_history?.length) return;
+  state.parallelStarting = true;
+  try {
+    state.parallel = await request("/api/parallel/start", { method: "POST" });
+    state.parallelTraceCursor = 0;
+    if (state.parallelTimer) window.clearInterval(state.parallelTimer);
+    state.parallelTimer = window.setInterval(pollParallelStep, state.speedMode === "normal" ? 15000 : 800);
+    await pollParallelStep();
+  } catch (error) {
+    renderCostComparisonSource("optimizer", `后端计算未就绪：${error.message}`);
+  } finally {
+    state.parallelStarting = false;
+  }
 }
 
 function startLiveCharts() {
@@ -4019,6 +4093,7 @@ function drawPowerChart(p) {
   drawLine(h, "actual_load_kw", "#ff5555");
   drawLine(h, "actual_pv_kw", "#ffdd33");
   drawLine(h, "actual_grid_kw", "#ff8822");
+  drawLine(h, "optimized_grid_kw", "#45c5a2");
   // axes
   context.fillStyle = "#6b7280"; context.font = "10px Inter, sans-serif"; context.textAlign = "right";
   for (let r = 0; r <= 4; r++) context.fillText(`${(maxP * (4 - r) / 4).toFixed(1)}`, inset.left - 6, inset.top + ph * r / 4 + 3);

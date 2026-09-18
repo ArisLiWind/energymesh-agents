@@ -17,7 +17,14 @@ def test_opencem_csv_normalizes_to_shared_snapshot() -> None:
     assert snapshot.scenario.site.site_id == "cuhk-sz-opencem-campus"
     assert len(snapshot.telemetry) == 96
     assert len(snapshot.scenario.forecast) == 96
-    assert snapshot.environment_signals["raw_rows"] == 717
+    assert snapshot.environment_signals["timezone"] == "Asia/Shanghai"
+    assert snapshot.environment_signals["timestamp_semantics"] == "interval_start"
+    assert snapshot.environment_signals["step_minutes"] == 15
+    assert snapshot.environment_signals["horizon_intervals"] == 96
+    assert snapshot.environment_signals["raw_rows"] == 765
+    assert snapshot.telemetry[0].timestamp.isoformat().endswith("+08:00")
+    assert snapshot.telemetry[20].grid_import_kw is not None
+    assert isinstance(snapshot.telemetry[20].battery_power_kw, float)
     assert max(point.pv_kw for point in snapshot.telemetry) > 1
     assert snapshot.scenario.production_plan["source"] == "opencem_context_adapter"
 
@@ -47,12 +54,12 @@ def test_monitor_wakes_agents_then_separates_approval_and_execution(settings) ->
         )
         assert uploaded.status_code == 200
 
-        started = client.post("/api/monitor/start?start_interval=20")
+        started = client.post("/api/monitor/start?start_interval=34")
         assert started.status_code == 200
         assert started.json()["agentteams_awake"] is False
 
         status = started.json()
-        for _ in range(12):
+        for _ in range(8):
             status = client.post("/api/monitor/step").json()
             if status["task_id"]:
                 break
@@ -91,9 +98,9 @@ def test_monitor_can_record_deepseek_rolling_decision(settings) -> None:
         monitor = ReplayMonitor(
             orchestrator, lambda payload: f"滚动决策点数 {len(payload['today_so_far'])}"
         )
-        monitor.start(snapshot, 20)
+        monitor.start(snapshot, 34)
         status = {}
-        for _ in range(6):
+        for _ in range(4):
             status = monitor.step()
         assert any(event["kind"] == "DEEPSEEK_DECISION" for event in status["events"])
 

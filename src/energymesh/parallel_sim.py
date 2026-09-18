@@ -70,26 +70,6 @@ class ParallelSimulator:
         self.slo = SLOMetrics()
         self.cb = ToolCircuitBreaker()
 
-    def _perturb_scenario(self, scenario: Scenario) -> Scenario:
-        """Create a perturbed scenario with slightly different forecast for demo purposes.
-        This simulates real-world imperfect forecasting."""
-        import random
-
-        random.seed(42)  # deterministic for reproducibility
-        perturbed_forecast = []
-        for point in scenario.forecast:
-            pv_noise = 1.0 + random.uniform(-0.18, 0.15)  # -18% to +15%
-            load_noise = 1.0 + random.uniform(-0.10, 0.12)  # -10% to +12%
-            perturbed_forecast.append(
-                point.model_copy(
-                    update={
-                        "pv_kw": max(0, point.pv_kw * pv_noise),
-                        "load_kw": max(0, point.load_kw * load_noise),
-                    }
-                )
-            )
-        return scenario.model_copy(update={"forecast": perturbed_forecast})
-
     def start(self, snapshot: ExternalDataSnapshot) -> ParallelSimulationState:
         self.state = ParallelSimulationState(
             running=True,
@@ -100,10 +80,10 @@ class ParallelSimulator:
             interval_ms=1000,
         )
         try:
-            # Use perturbed forecast for initial optimization (simulates imperfect forecast)
-            perturbed = self._perturb_scenario(snapshot.scenario)
+            # The uploaded dataset is the single source of truth. Do not perturb it:
+            # baseline, optimizer, audit, and UI must share the same 96-point timeline.
             task = self.orchestrator.run(
-                perturbed,
+                snapshot.scenario,
                 trigger="PARALLEL_SIM_OPTIMIZATION",
             )
             if task.state == TaskState.AWAITING_APPROVAL:

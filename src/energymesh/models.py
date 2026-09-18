@@ -125,6 +125,8 @@ class ExternalTelemetryPoint(BaseModel):
     timestamp: datetime
     load_kw: float = Field(ge=0)
     pv_kw: float = Field(ge=0)
+    grid_import_kw: float | None = Field(default=None, ge=0)
+    battery_power_kw: float = 0.0
     battery_soc: float = Field(ge=0, le=1)
     tariff_yuan_per_kwh: float = Field(ge=0)
     transformer_temperature_c: float = Field(ge=-30, le=150)

@@ -154,7 +154,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "load_kw": point.load_kw,
                 "pv_kw": point.pv_kw,
                 "battery_soc": point.battery_soc,
-                "grid_import_kw": max(0.0, point.load_kw - point.pv_kw),
+                "grid_import_kw": (
+                    point.grid_import_kw
+                    if point.grid_import_kw is not None
+                    else max(0.0, point.load_kw - point.pv_kw)
+                ),
+                "battery_power_kw": point.battery_power_kw,
                 "current_interval": cursor,
                 "current_timestamp": point.timestamp.isoformat(),
                 "simulated_time": simulated_time.isoformat(),
@@ -192,7 +197,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         load_kw = float(current.get("load_kw") or 0)
         pv_kw = float(current.get("pv_kw") or 0)
         battery_soc = float(current.get("battery_soc") or 0)
-        grid_import_kw = max(0.0, load_kw - pv_kw)
+        grid_import_kw = float(
+            current.get("grid_import_kw")
+            if current.get("grid_import_kw") is not None
+            else max(0.0, load_kw - pv_kw)
+        )
+        battery_power_kw = float(current.get("battery_power_kw") or 0)
         telemetry_window = []
         if snapshot and snapshot.telemetry:
             start = min(max(int(cursor or 0), 0), len(snapshot.telemetry) - 1)
@@ -219,7 +229,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for point in snapshot.telemetry[:stop]:
                 today_load_kwh += point.load_kw * 0.25
                 today_pv_kwh += point.pv_kw * 0.25
-                grid_kw = max(0.0, point.load_kw - point.pv_kw)
+                grid_kw = (
+                    point.grid_import_kw
+                    if point.grid_import_kw is not None
+                    else max(0.0, point.load_kw - point.pv_kw)
+                )
                 today_grid_kwh += grid_kw * 0.25
                 today_cost_yuan += grid_kw * 0.25 * point.tariff_yuan_per_kwh
         pv_curtailment_kw = max(0.0, pv_kw - load_kw)
@@ -234,6 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "current_load_mw": round(load_kw / 1000, 4),
             "pv_forecast_mw": round(pv_kw / 1000, 4),
             "storage_soc_percent": round(battery_soc * 100, 1),
+            "battery_power_kw": round(battery_power_kw, 3),
             "grid_import_mw": round(grid_import_kw / 1000, 4),
             "pv_curtailment_kw": round(pv_curtailment_kw, 3),
             "transformer_load_percent": round(min(100.0, grid_import_kw / 10), 1),
