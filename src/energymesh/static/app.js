@@ -13,6 +13,7 @@ const state = {
   campus3d: null,
   selectedAgent: "team_leader",
   gateways: {},
+  agentteamsRuntime: null,
   language: "en",
   chartTick: 56,
   liveTimer: null,
@@ -2215,6 +2216,12 @@ async function loadGateways() {
   } catch {
     state.gateways = state.gateways || {};
   }
+  try {
+    state.agentteamsRuntime = await request("/api/agentteams/runtime");
+  } catch {
+    state.agentteamsRuntime = null;
+  }
+  updateChatGatewayGate();
 }
 
 function resizeCanvas(canvas) {
@@ -2861,11 +2868,22 @@ function isFrustratedChatRequest(message) {
 }
 
 function hasReadyTeamLeaderGateway() {
+  if (hasAgentTeamsDispatchRuntime()) return true;
   const gateway = state.gateways?.team_leader || state.gateways?.[state.selectedAgent];
   return Boolean(gateway?.apiKey && gateway.connectionStatus === "正常");
 }
 
+function hasAgentTeamsDispatchRuntime() {
+  const runtime = state.agentteamsRuntime;
+  if (!runtime) return false;
+  if (runtime.ready) return true;
+  const hasTeam = Array.isArray(runtime.teams) && runtime.teams.length > 0;
+  const hasWorkers = Array.isArray(runtime.workers) && runtime.workers.length > 0;
+  return Boolean(runtime.controller_running && runtime.manager_running && hasTeam && hasWorkers);
+}
+
 function hasReadyAgentGateway(agentId = state.selectedAgent) {
+  if (agentId === "team_leader" && hasAgentTeamsDispatchRuntime()) return true;
   const gateway = state.gateways?.[agentId] || (agentId !== "team_leader" ? state.gateways?.team_leader : null);
   return Boolean(gateway?.apiKey && gateway.connectionStatus === "正常");
 }
@@ -2879,7 +2897,9 @@ function updateChatGatewayGate() {
   sendButton.disabled = !ready;
   input.placeholder = ready
     ? "例如：帮我减少购电和限发，先预览新流向"
-    : "请先点齿轮接入模型网关，测试成功后才能对话";
+    : (state.selectedAgent === "team_leader"
+      ? "AgentTeams 正在连接；请稍后重试或查看 Element 后台"
+      : "请先点齿轮接入模型网关，测试成功后才能对话");
 }
 
 function normalizeLegacyUserText(text) {
