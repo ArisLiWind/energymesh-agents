@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ENERGYMESH_ROOT:-/opt/energymesh}"
+ROOT="${ENERGYMESH_ROOT:-/opt/energymesh-agents}"
 AGENTTEAMS_DIR="${AGENTTEAMS_DIR:-/opt/AgentTeams}"
 ENV_FILE="${ENV_FILE:-${ROOT}/.env.agentteams.local}"
 LOG_FILE="${LOG_FILE:-${ROOT}/runs/ecs-agentteams-keepalive.log}"
@@ -70,7 +70,12 @@ ensure_restart_policy() {
 
 apply_resources() {
   if [[ -f "${RESOURCE_FILE}" ]] && docker ps --format '{{.Names}}' | grep -q '^agentteams-controller$'; then
-    docker exec agentteams-controller agt apply -f "${RESOURCE_FILE}" >>"${LOG_FILE}" 2>&1 || true
+    local container_resource="/tmp/energymesh-agentteams-resources.yaml"
+    log "APPLY ${RESOURCE_FILE}"
+    docker cp "${RESOURCE_FILE}" "agentteams-controller:${container_resource}" >>"${LOG_FILE}" 2>&1
+    docker exec agentteams-controller agt apply -f "${container_resource}" >>"${LOG_FILE}" 2>&1
+  else
+    log "WAIT resource file or controller missing resource=${RESOURCE_FILE}"
   fi
 }
 

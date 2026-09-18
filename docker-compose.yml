@@ -2,16 +2,25 @@ services:
   energymesh:
     build:
       context: .
+    env_file:
+      - .env
+      - .env.agentteams.local
     environment:
       SIMULATION_MODE: "true"
       ALLOW_PRODUCTION_WRITE: "false"
       ENERGYMESH_DB_PATH: /app/var/energymesh.db
       ENERGYMESH_EVIDENCE_DIR: /app/runs
+      AGENTTEAMS_ENABLED: "true"
+      AGENTTEAMS_LIVE_REQUIRED: "true"
+      AGENTTEAMS_MATRIX_BASE_URL: "${AGENTTEAMS_MATRIX_BASE_URL:-http://host.docker.internal:18080}"
+      AGENTTEAMS_EVENT_STREAM_URL: "${AGENTTEAMS_EVENT_STREAM_URL:-http://host.docker.internal:18888}"
     ports:
       - "8000:8000"
     volumes:
       - energymesh-data:/app/var
       - ./runs:/app/runs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs:
       - /tmp
@@ -23,4 +32,3 @@ services:
 
 volumes:
   energymesh-data:
-
