@@ -122,10 +122,10 @@ def _run(command: list[str]) -> str:
     return completed.stdout.strip()
 
 
-def _matrix_reachable(base_url: str, access_token: str) -> bool:
-    if not base_url or not access_token:
+def _matrix_reachable(base_url: str) -> bool:
+    if not base_url:
         return False
-    url = f"{base_url.rstrip('/')}/_matrix/client/versions?access_token={access_token}"
+    url = f"{base_url.rstrip('/')}/_matrix/client/versions"
     try:
         with urlrequest.urlopen(url, timeout=4) as response:
             return response.status < 300
@@ -153,7 +153,7 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
     team_room_configured = bool(os.getenv("AGENTTEAMS_TEAM_ROOM_ID"))
     matrix_bridge_configured = bool(matrix_base_url and matrix_access_token)
     if runtime_mode == "remote_matrix":
-        matrix_ok = _matrix_reachable(matrix_base_url, matrix_access_token)
+        matrix_ok = _matrix_reachable(matrix_base_url)
         bridge_user_id = _matrix_whoami(matrix_base_url, matrix_access_token) if matrix_ok else None
         remote_workers = [
             item.strip()
@@ -174,6 +174,8 @@ def probe_agentteams_runtime() -> AgentTeamsRuntimeStatus:
             )
         if matrix_bridge_configured and not matrix_ok:
             problems.append("Remote AgentTeams Matrix client API is not reachable.")
+        if matrix_ok and matrix_bridge_configured and not bridge_user_id:
+            problems.append("AGENTTEAMS_MATRIX_ACCESS_TOKEN cannot authenticate against Matrix.")
         if not remote_workers:
             problems.append("AGENTTEAMS_REMOTE_WORKERS must list at least one verified Running Worker.")
         ready = not problems

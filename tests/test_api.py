@@ -570,12 +570,16 @@ def test_live_agentteams_dispatch_event_extracts_real_cost_comparison(tmp_path) 
 def test_remote_matrix_agentteams_runtime_ready(monkeypatch) -> None:
     class FakeResponse:
         status = 200
+        body = b'{"versions":["v1.15"]}'
 
         def __enter__(self):
             return self
 
         def __exit__(self, exc_type, exc, tb):
             return False
+
+        def read(self):
+            return self.body
 
     monkeypatch.setenv("AGENTTEAMS_RUNTIME_MODE", "remote_matrix")
     monkeypatch.setenv("AGENTTEAMS_MATRIX_BASE_URL", "http://127.0.0.1:18080")
@@ -585,7 +589,13 @@ def test_remote_matrix_agentteams_runtime_ready(monkeypatch) -> None:
     monkeypatch.setenv("AGENTTEAMS_REMOTE_WORKERS", "energy-dispatcher")
     monkeypatch.setattr(
         "energymesh.agentteams_runtime.urlrequest.urlopen",
-        lambda req, timeout=0: FakeResponse(),
+        lambda req, timeout=0: type(
+            "WhoamiResponse" if "whoami" in str(req) else "VersionsResponse",
+            (FakeResponse,),
+            {"body": b'{"user_id":"@energymesh-team-leader:matrix-local.agentteams.io:18080"}'}
+            if "whoami" in str(req)
+            else {},
+        )(),
     )
 
     status = probe_agentteams_runtime()
