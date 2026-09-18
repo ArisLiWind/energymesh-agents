@@ -2965,6 +2965,22 @@ function setupWorkspaceResizer() {
   });
 }
 
+async function openAgentTeamsBackend() {
+  setActiveRail("nav-ops");
+  try {
+    const runtime = await request("/api/agentteams/runtime");
+    const readyText = runtime?.ready ? "READY" : (runtime?.mode || "CHECK");
+    toast(`AgentTeams ${readyText}；正在打开后台`);
+  } catch (error) {
+    toast(`AgentTeams 状态检查失败：${error.message || error}`);
+  }
+  const host = window.location.hostname;
+  const url = host.endsWith("gensphereai.xyz")
+    ? "http://agents.gensphereai.xyz/agentteams/"
+    : `${window.location.origin}/agentteams/`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function normalizeLegacyUserText(text) {
   return String(text || "")
     .replace(/(?:^|\s)(你\s*){1,3}Operator\s*/g, " ")
@@ -4866,10 +4882,7 @@ function setupEvents() {
     setAgentDirectory($("#agent-directory-drawer").hidden);
     setActiveRail("nav-agents");
   });
-  $("#nav-ops").addEventListener("click", () => {
-    setWorkspaceMode("nav-ops");
-    setOpsDrawer($("#ops-drawer").hidden);
-  });
+  $("#nav-ops").addEventListener("click", openAgentTeamsBackend);
   $("#nav-trace").addEventListener("click", () => {
     setWorkspaceMode("nav-trace");
     scrollWithin($("#nav-trace"), "#trace-list");
