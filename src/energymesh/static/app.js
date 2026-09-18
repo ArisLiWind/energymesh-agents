@@ -847,7 +847,8 @@ function renderAgentTeamsImpact(impact = {}) {
     renderCostComparisonValues({
       baseline: baselineFromEvent,
       optimized: optimizedFromEvent,
-      status: "AgentTeams dispatch_plan 已驱动",
+      status: "真实 AgentTeams dispatch_plan 已驱动",
+      source: "live_agentteams",
     });
     return;
   }
@@ -860,7 +861,8 @@ function renderAgentTeamsImpact(impact = {}) {
     optimized,
     savings,
     savingsPercent: Number(impact.purchase_cost_savings_percent || (savings / baseline * 100)),
-    status: "AgentTeams dispatch_plan 已驱动",
+    status: "真实 AgentTeams dispatch_plan 已驱动",
+    source: "live_agentteams",
   });
 }
 
@@ -924,7 +926,36 @@ function renderDispatchEvidence(parallel = state.parallel) {
   $("#evidence-plan-version").textContent = point.new_plan_id ? `新计划 ${compactId(point.new_plan_id)}` : point.reoptimized ? "已重优化" : "当前计划有效";
 }
 
-function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = null, savingsPercent = null, status = "" } = {}) {
+function costComparisonSourceLabel(source = "optimizer") {
+  if (source === "live_agentteams") {
+    return {
+      title: "AgentTeams 决策效果基线对比",
+      statusPrefix: "真实协作",
+    };
+  }
+  if (source === "demo") {
+    return {
+      title: "Demo 任务基线对比",
+      statusPrefix: "演示数据",
+    };
+  }
+  return {
+    title: "基线 / 优化器仿真对比",
+    statusPrefix: "确定性优化器",
+  };
+}
+
+function renderCostComparisonSource(source = "optimizer", status = "") {
+  const label = costComparisonSourceLabel(source);
+  const title = $("#cost-compare-title");
+  if (title) title.textContent = label.title;
+  const statusText = status || (source === "live_agentteams"
+    ? "等待真实 AgentTeams 事件"
+    : "等待 CSV 后运行确定性优化");
+  $("#parallel-status").textContent = `${label.statusPrefix} · ${statusText}`;
+}
+
+function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = null, savingsPercent = null, status = "", source = "optimizer" } = {}) {
   const baselineCost = Number(baseline) || 0;
   const optimizedCost = Number(optimized) || 0;
   const savingValue = savings === null ? baselineCost - optimizedCost : Number(savings) || 0;
@@ -935,7 +966,7 @@ function renderCostComparisonValues({ baseline = 0, optimized = 0, savings = nul
   $("#cost-optimized").textContent = `¥${optimizedCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
   $("#cost-savings").textContent = `¥${savingValue.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
   $("#savings-percent").textContent = `节省 ${percentValue.toFixed(2)}%`;
-  if (status) $("#parallel-status").textContent = status;
+  renderCostComparisonSource(source, status);
   renderDispatchEvidence();
 }
 
@@ -954,6 +985,7 @@ function renderTaskCostComparison(task = state.task) {
     baseline: baselineCost,
     optimized: optimizedCost,
     status: `多Agent真实任务成本：${selected.profile}`,
+    source: "live_agentteams",
   });
   drawCostChart({
     cursor: 95,
@@ -3756,11 +3788,15 @@ async function renderMonitor() {
 async function renderParallel() {
   const p = state.parallel;
   if (!p) return;
+  const trace = p.agentteams_trace || [];
+  const hasLiveAgentTeamsTrace = Boolean(p.agentteams_active && trace.length && trace.some((item) => item.source === "live_agentteams" || item.runtime === "agentteams" || item.task_id || item.team_room_id));
+  const isDemoTrace = Boolean(p.demo || trace.some((item) => item.source === "demo"));
+  const comparisonSource = hasLiveAgentTeamsTrace ? "live_agentteams" : isDemoTrace ? "demo" : "optimizer";
   $("#monitor-state").textContent = p.running ? "RUNNING" : "STOPPED";
   $("#monitor-plan").textContent = "PARALLEL";
-  $("#monitor-agents").textContent = p.agentteams_active ? "AWAKE" : "SLEEPING";
+  $("#monitor-agents").textContent = hasLiveAgentTeamsTrace ? "AWAKE" : "SLEEPING";
   $("#monitor-interval").textContent = `${String(p.cursor).padStart(2, "0")} / 95`;
-  $("#monitor-pulse").className = p.agentteams_active ? "live" : p.running ? "alert" : "";
+  $("#monitor-pulse").className = hasLiveAgentTeamsTrace ? "live" : p.running ? "alert" : "";
 
   const baselineCost = (p.baseline_cost_yuan ?? p.baseline_cumulative_cost_yuan ?? 0);
   const optimizedCost = adjustedOptimizedCost(p);
@@ -3770,7 +3806,7 @@ async function renderParallel() {
   $("#cost-optimized").textContent = `¥${optimizedCost.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
   $("#cost-savings").textContent = `¥${savingsYuan.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
   $("#savings-percent").textContent = `节省 ${savingsPct.toFixed ? savingsPct.toFixed(2) : savingsPct}%`;
-  $("#parallel-status").textContent = p.last_event || p.event || "";
+  renderCostComparisonSource(comparisonSource, p.last_event || p.event || "");
 
   // Deviation metrics
   const lastPoint = p.interval_history?.[p.interval_history.length - 1];
@@ -4128,7 +4164,7 @@ async function pollParallelStep() {
     if (!state.parallel.running && state.parallelTimer) {
       window.clearInterval(state.parallelTimer);
       state.parallelTimer = null;
-      toast("平行对比完成；Agent Teams 决策已跑完全天");
+      toast("平行对比完成；已生成可追溯的基线/优化器对比");
       saveParallelHistory();
     }
   } catch (error) {
@@ -4334,9 +4370,10 @@ async function runProductionChangeDemo() {
       },
     };
     state.parallel = {
+      demo: true,
       running: false,
       cursor: 72,
-      agentteams_active: true,
+      agentteams_active: false,
       baseline_cost_yuan: 4328.6,
       optimized_cost_yuan: 3589.4,
       savings_yuan: 739.2,
@@ -4346,8 +4383,8 @@ async function runProductionChangeDemo() {
       reoptimization_events: [{ interval: 64, reason: "Line 3 production moved to 16:00; SOC reserve >=30%" }],
       interval_history: buildDemoCostHistory(),
       agentteams_trace: [
-        { step: "perception_observation", interval: 64, status: "changed", reasons: ["生产计划提前", "负荷偏差 18.6%", "SOC 备用约束 30%"] },
-        { step: "plan_invalidated_and_reoptimized", interval: 64, new_plan_id: "Plan V3", agents: ["Perception", "Dispatch", "Audit"] },
+        { source: "demo", step: "perception_observation", interval: 64, status: "changed", reasons: ["生产计划提前", "负荷偏差 18.6%", "SOC 备用约束 30%"] },
+        { source: "demo", step: "plan_invalidated_and_reoptimized", interval: 64, new_plan_id: "Plan V3", agents: ["Perception", "Dispatch", "Audit"] },
       ],
     };
     state.approval = null;

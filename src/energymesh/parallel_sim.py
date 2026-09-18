@@ -126,6 +126,7 @@ class ParallelSimulator:
                 )
             self.state.agentteams_trace.append(
                 {
+                    "source": "optimizer_sim",
                     "step": "optimization_complete",
                     "task_id": task.task_id,
                     "plan_id": task.selected_plan_id,
@@ -139,6 +140,7 @@ class ParallelSimulator:
             self.state.last_event = f"AgentTeams优化失败: {error}"
             self.state.agentteams_trace.append(
                 {
+                    "source": "optimizer_sim",
                     "step": "optimization_failed",
                     "error": str(error),
                     "timestamp": datetime.now(UTC).isoformat(),
@@ -257,6 +259,7 @@ class ParallelSimulator:
         # Add dispatch detail trace so frontend can show what Agent decided
         self.state.agentteams_trace.append(
             {
+                "source": "optimizer_sim",
                 "step": "interval_dispatch",
                 "interval": point.interval,
                 "load_kw": round(point.load_kw, 2),
@@ -370,6 +373,7 @@ class ParallelSimulator:
         if not reasons:
             self.state.agentteams_trace.append(
                 {
+                    "source": "optimizer_sim",
                     "step": "perception_observation",
                     "interval": point.interval,
                     "pv_actual": round(point.pv_kw, 2),
@@ -389,6 +393,7 @@ class ParallelSimulator:
         # Threshold exceeded - perception reports anomaly
         self.state.agentteams_trace.append(
             {
+                "source": "optimizer_sim",
                 "step": "perception_observation",
                 "interval": point.interval,
                 "pv_actual": round(point.pv_kw, 2),
@@ -458,6 +463,7 @@ class ParallelSimulator:
                     self.state.reoptimization_events.append(event)
                     self.state.agentteams_trace.append(
                         {
+                            "source": "optimizer_sim",
                             "step": "plan_invalidated_and_reoptimized",
                             "interval": point.interval,
                             "reasons": reasons,
@@ -468,6 +474,7 @@ class ParallelSimulator:
                     )
                     self.state.agentteams_trace.append(
                         {
+                            "source": "optimizer_sim",
                             "step": "dispatch_reoptimization_complete",
                             "interval": point.interval,
                             "new_plan_id": new_plan.plan_id,
@@ -479,6 +486,7 @@ class ParallelSimulator:
             # Re-optimization failed, continue with existing plan but record the event
             self.state.agentteams_trace.append(
                 {
+                    "source": "optimizer_sim",
                     "step": "reoptimize_failed",
                     "interval": point.interval,
                     "error": str(error),

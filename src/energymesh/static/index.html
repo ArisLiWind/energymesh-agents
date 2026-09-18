@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260918-product-fix-v4" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260918-truthful-agentteams-v5" />
   </head>
   <body>
     <main class="app-shell">
@@ -259,8 +259,8 @@
 
         <section class="cost-compare" aria-label="Parallel simulation cost comparison">
           <header>
-            <h2>AgentTeams 决策效果基线对比</h2>
-            <span id="parallel-status">等待数据</span>
+            <h2 id="cost-compare-title">基线 / 优化器仿真对比</h2>
+            <span id="parallel-status">等待真实 CSV 或 AgentTeams 事件</span>
           </header>
           <div class="cost-chart-layout">
             <div class="cost-chart-wrap">
@@ -581,6 +581,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260918-product-fix-v4"></script>
+    <script type="module" src="/static/app.js?v=20260918-truthful-agentteams-v5"></script>
   </body>
 </html>
