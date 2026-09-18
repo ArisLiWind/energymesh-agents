@@ -33,10 +33,11 @@ button { font: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 
 .app-shell {
+  --brief-width: clamp(360px, 34vw, 560px);
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-columns: 42px 494px minmax(640px, 1fr);
+  grid-template-columns: 42px var(--brief-width) 10px minmax(0, 1fr);
   background: #eef3f7;
 }
 
@@ -45,8 +46,37 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 
 .app-shell.home-mode .brief-pane,
+.app-shell.home-mode .workspace-resizer,
 .app-shell.home-mode .visual-pane {
   display: none;
+}
+
+.workspace-resizer {
+  position: relative;
+  z-index: 20;
+  min-width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(90deg, rgba(164, 180, 198, .18), rgba(255, 255, 255, .7), rgba(164, 180, 198, .18));
+}
+
+.workspace-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  border-left: 1px solid rgba(126, 144, 164, .45);
+}
+
+.workspace-resizer:hover,
+.workspace-resizer:focus-visible,
+body.resizing-workspace .workspace-resizer {
+  background: linear-gradient(90deg, rgba(49, 95, 168, .10), rgba(255, 255, 255, .9), rgba(49, 95, 168, .10));
+  outline: none;
+}
+
+body.resizing-workspace {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .icon-rail {
@@ -5013,4 +5043,68 @@ pre {
 
 .history-metrics {
   margin-top: auto;
+}
+
+/* ===== cockpit/sandbox split final lock ===== */
+.app-shell {
+  --brief-width: clamp(360px, 34vw, 560px);
+  grid-template-columns: 42px var(--brief-width) 10px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.brief-pane {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.visual-pane {
+  min-width: 0;
+  overflow: auto;
+}
+
+.workspace-resizer {
+  display: block;
+  grid-column: 3;
+  grid-row: 1;
+  width: 10px;
+  min-width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(90deg, rgba(164, 180, 198, .16), rgba(255, 255, 255, .72), rgba(164, 180, 198, .16));
+}
+
+.workspace-resizer::before {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 100%;
+  margin: 0 auto;
+  background: rgba(126, 144, 164, .48);
+}
+
+.workspace-resizer:hover,
+.workspace-resizer:focus-visible,
+body.resizing-workspace .workspace-resizer {
+  background: linear-gradient(90deg, rgba(49, 95, 168, .12), rgba(255, 255, 255, .94), rgba(49, 95, 168, .12));
+  outline: none;
+}
+
+body.resizing-workspace {
+  cursor: col-resize;
+  user-select: none;
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .brief-pane,
+  .visual-pane {
+    grid-column: 2;
+  }
+
+  .workspace-resizer {
+    display: none;
+  }
 }

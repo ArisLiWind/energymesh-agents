@@ -2902,6 +2902,69 @@ function updateChatGatewayGate() {
       : "请先点齿轮接入模型网关，测试成功后才能对话");
 }
 
+function setupWorkspaceResizer() {
+  const shell = $(".app-shell");
+  const resizer = $("#workspace-resizer");
+  if (!shell || !resizer) return;
+
+  const storageKey = "energymesh.briefPaneWidth.v1";
+  const clampWidth = (value) => {
+    const viewport = window.innerWidth || 1280;
+    const min = 320;
+    const max = Math.max(min, Math.min(680, viewport - 560));
+    return Math.min(max, Math.max(min, value));
+  };
+  const applyWidth = (value) => {
+    const width = clampWidth(value);
+    shell.style.setProperty("--brief-width", `${width}px`);
+    return width;
+  };
+
+  const saved = Number(window.localStorage.getItem(storageKey));
+  if (Number.isFinite(saved) && saved > 0) applyWidth(saved);
+
+  let dragging = false;
+  const move = (event) => {
+    if (!dragging) return;
+    const pointerX = event.touches?.[0]?.clientX ?? event.clientX;
+    const railWidth = $(".icon-rail")?.getBoundingClientRect().width || 42;
+    const width = applyWidth(pointerX - railWidth);
+    window.localStorage.setItem(storageKey, String(width));
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove("resizing-workspace");
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", stop);
+  };
+
+  resizer.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    document.body.classList.add("resizing-workspace");
+    resizer.setPointerCapture?.(event.pointerId);
+    move(event);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  });
+  resizer.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") {
+      window.localStorage.removeItem(storageKey);
+      shell.style.removeProperty("--brief-width");
+      return;
+    }
+    const current = Number.parseFloat(getComputedStyle(shell).getPropertyValue("--brief-width")) || 460;
+    const next = applyWidth(current + (event.key === "ArrowRight" ? 24 : -24));
+    window.localStorage.setItem(storageKey, String(next));
+  });
+  window.addEventListener("resize", () => {
+    const current = Number.parseFloat(getComputedStyle(shell).getPropertyValue("--brief-width"));
+    if (Number.isFinite(current)) applyWidth(current);
+  });
+}
+
 function normalizeLegacyUserText(text) {
   return String(text || "")
     .replace(/(?:^|\s)(你\s*){1,3}Operator\s*/g, " ")
@@ -4877,6 +4940,7 @@ function setupEvents() {
 
 drawHomeCharts();
 setupCampus();
+setupWorkspaceResizer();
 setupEvents();
 renderDeviceDetail("pcs");
 loadGateways();
