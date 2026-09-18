@@ -8,7 +8,7 @@
     <script>
       if (window.location.protocol === "file:") window.location.replace("http://127.0.0.1:8000/");
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-approval-card-v6" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260918-product-fix-v4" />
   </head>
   <body>
     <main class="app-shell">
@@ -182,13 +182,16 @@
               </div>
             </div>
             <div class="campus-tools" aria-label="Campus editor tools">
-              <button id="reset-camera" class="camera-button" type="button" title="Reset camera" aria-label="Reset camera">⌂</button>
-              <button id="campus-edit-layout" type="button" aria-pressed="false">编辑布局</button>
-              <button class="campus-add" type="button" data-campus-add="datacenter">接入负荷资产</button>
-              <button class="campus-add" type="button" data-campus-add="factory">接入厂房资产</button>
-              <button class="campus-add" type="button" data-campus-add="generation">接入发电资产</button>
-              <button class="campus-add" type="button" data-campus-add="storage">接入储能资产</button>
-              <button id="campus-delete" type="button">移除资产</button>
+              <button id="campus-tools-toggle" class="camera-button" type="button" title="打开布局工具" aria-label="打开布局工具" aria-expanded="false">⌂</button>
+              <div class="campus-tools-menu" id="campus-tools-menu">
+                <button id="reset-camera" type="button">重置视角</button>
+                <button id="campus-edit-layout" type="button" aria-pressed="false">编辑布局</button>
+                <button class="campus-add" type="button" data-campus-add="datacenter">接入负荷资产</button>
+                <button class="campus-add" type="button" data-campus-add="factory">接入厂房资产</button>
+                <button class="campus-add" type="button" data-campus-add="generation">接入发电资产</button>
+                <button class="campus-add" type="button" data-campus-add="storage">接入储能资产</button>
+                <button id="campus-delete" type="button">移除资产</button>
+              </div>
             </div>
             <div class="flow-preview-card" id="flow-preview-card" hidden>
               <header>
@@ -221,7 +224,6 @@
               </div>
               <button id="campus-model-next" type="button" aria-label="下一个模型">›</button>
             </div>
-            <div class="campus-hint">CSV 接入后，园区会自动运行；0 kW 线路熄灭，粗细和粒子速度表示当前功率。</div>
             <article class="asset metric-card" data-anchor="factory"><span data-i18n="assetFactory">园区用电</span><strong id="asset-factory">-- kW</strong><small data-i18n="assetFactoryNote">等待数据接入</small></article>
             <article class="asset metric-card" data-anchor="solar"><span data-i18n="assetSolar">自有发电</span><strong id="asset-solar">-- kW</strong><small data-i18n="assetSolarNote">等待数据接入</small></article>
             <article class="asset metric-card critical" data-anchor="storage"><span data-i18n="assetStorageLabel">储能</span><strong id="asset-storage">SOC --%</strong><small data-i18n="assetStorageNote">等待数据接入</small></article>
@@ -230,17 +232,6 @@
         </div>
 
         <div class="energy-bottom">
-          <div class="energy-today">
-            <h3 data-i18n="todayTitle">今日累计</h3>
-            <div class="today-grid">
-              <article><span data-i18n="todayLoad">今日累计用电</span><strong id="today-load">0.0 度</strong></article>
-              <article><span data-i18n="todayGen">今日累计发电</span><strong id="today-gen">0.0 度</strong></article>
-              <article><span data-i18n="todayGrid">今日累计购电</span><strong id="today-grid">0.0 度</strong></article>
-              <article><span data-i18n="todayCharge">今日储能充电</span><strong id="today-charge">0.0 度</strong></article>
-              <article><span data-i18n="todayDischarge">今日储能放电</span><strong id="today-discharge">0.0 度</strong></article>
-              <article><span data-i18n="todayCost">今日购电支出</span><strong id="today-cost">¥0.00</strong></article>
-            </div>
-          </div>
           <div class="energy-balance">
             <h3 data-i18n="balanceTitle">今日园区能源收支</h3>
             <div class="balance-grid">
@@ -358,11 +349,11 @@
 
         <section class="plan-ledger-section" aria-label="Adopted dispatch plan ledger">
           <header>
-            <h2>方案留档</h2>
+            <h2>方案版本</h2>
             <span id="plan-ledger-count">0 条记录</span>
           </header>
           <div id="plan-ledger-list" class="plan-ledger-list">
-            <p class="empty">采用或拒绝 Agent 方案后，会在这里留下方案内容、理由和预期变化。</p>
+            <p class="empty">采用或拒绝调度方案后，会在这里按版本号记录方案内容、理由和预期变化。</p>
           </div>
         </section>
 
@@ -537,8 +528,7 @@
           <label><span data-i18n="gatewayApiKey">API Key</span><input id="gateway-api-key" type="password" placeholder="sk-..." autocomplete="off" /></label>
           <label><span data-i18n="gatewayModel">Model</span><input id="gateway-model" value="deepseek-chat" /></label>
           <div class="gateway-actions">
-            <button class="action" type="button" id="gateway-test" data-i18n="gatewayTest">Test</button>
-            <button class="action primary" type="submit" data-i18n="gatewaySave">Save gateway</button>
+            <button class="action primary" type="submit" id="gateway-test" data-i18n="gatewayTest">Save and test</button>
           </div>
           <p id="gateway-status" data-i18n="gatewayStored">Gateway settings are stored locally for now.</p>
         </div>
@@ -591,6 +581,6 @@
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="/static/app.js?v=20260917-approval-card-v6"></script>
+    <script type="module" src="/static/app.js?v=20260918-product-fix-v4"></script>
   </body>
 </html>

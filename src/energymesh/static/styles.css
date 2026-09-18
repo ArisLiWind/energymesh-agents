@@ -111,7 +111,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   grid-column: 2;
   overflow: auto;
   padding: 18px 26px 26px;
-  background: #111213;
+  background: var(--console-bg);
   scrollbar-color: #33363e transparent;
 }
 
@@ -3861,12 +3861,8 @@ dialog {
 }
 
 .visual-title h1::after {
-  content: "天气  --";
-  display: inline-block;
-  color: #222733;
-  font-size: 32px;
-  font-weight: 500;
-  line-height: 1.1;
+  content: none;
+  display: none;
 }
 
 .run-status {
@@ -3884,9 +3880,8 @@ dialog {
 }
 
 .run-status span::before {
-  content: "电站详情";
-  color: #5f6470;
-  font-size: 24px;
+  content: none;
+  display: none;
 }
 
 .run-status span::after {
@@ -4634,4 +4629,388 @@ pre {
   .energy-status {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ===== runtime console surface lock =====
+   Keep the Agent workspace aligned with the current cold-chain glass surface.
+   Older white sandbox passes above are still used by parts of the visual stage,
+   but they must not repaint the left operation console with mismatched blocks. */
+:root {
+  --console-bg: linear-gradient(180deg, #d7ebff 0%, #eef3fa 38%, #f4f5fa 100%);
+  --console-panel: rgba(255, 255, 255, .78);
+  --console-panel-2: rgba(246, 249, 255, .92);
+  --console-elevated: rgba(255, 255, 255, .94);
+  --console-line: rgba(190, 203, 218, .62);
+  --console-line-strong: #cbd7e4;
+  --console-ink: #111722;
+  --console-soft: #303744;
+  --console-muted: #6f7885;
+  --console-blue: #315fa8;
+}
+
+.app-shell {
+  background: linear-gradient(180deg, #d7ebff 0%, #eef3fa 38%, #f4f5fa 100%);
+}
+
+.icon-rail {
+  border-right-color: rgba(190, 203, 218, .54);
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 10px 0 32px rgba(76, 92, 112, .08);
+}
+
+.rail-logo {
+  border-radius: 9px;
+  background: #eef3ff;
+  color: var(--console-blue);
+}
+
+.rail-item {
+  border-radius: 10px;
+  color: #9299a5;
+}
+
+.rail-item:hover,
+.rail-item.active,
+.translate-item:hover,
+.translate-item.active {
+  border-color: rgba(49, 95, 168, .2);
+  background: #eef3ff;
+  color: var(--console-blue);
+  box-shadow: 0 10px 22px rgba(52, 123, 192, .12);
+}
+
+.brief-pane {
+  border-right-color: var(--console-line);
+  background: var(--console-bg);
+  color: var(--console-ink);
+}
+
+.workspace-title {
+  border-bottom: 0;
+  background: transparent;
+}
+
+.workspace-title strong,
+.chat-head strong,
+.station-kpis strong,
+.station-alert strong,
+.device-table span,
+.device-detail header strong,
+.chat-speaker,
+.chat-message.user .chat-speaker,
+.chat-message-body strong,
+.chat-message-body h3,
+.chat-message-body h4,
+.chat-message-body h5,
+.chat-message-body h6,
+.agentteams-task-panel header strong,
+.agentteams-task-grid strong {
+  color: var(--console-ink);
+}
+
+.workspace-title span,
+.chat-head span,
+.chat-role,
+.chat-message-body,
+.chat-message-body p,
+.device-detail p,
+.device-log-grid small,
+.agentteams-task-panel header span,
+.agentteams-task-grid span,
+.agentteams-task-log li {
+  color: var(--console-muted);
+}
+
+.station-tabs button,
+.station-equipment button,
+.station-signals button,
+.station-kpis article,
+.station-alert,
+.device-table button,
+.device-detail,
+.device-metrics div,
+.device-log-grid section,
+.chat-head,
+.chat-messages,
+.chat-content,
+.chat-form,
+.chat-form input,
+.agentteams-task-panel,
+.agentteams-task-grid div,
+.agentteams-task-log,
+.mini-action,
+.candidate,
+.trace-item,
+.directory-chat,
+.directory-gateway {
+  border-color: var(--console-line);
+  background: var(--console-panel);
+  color: var(--console-soft);
+  box-shadow: 0 12px 28px rgba(70, 82, 100, .08);
+}
+
+.station-tabs button.active,
+.device-table button.active,
+.chat-message.user .chat-content,
+.chat-message.actionable .chat-content,
+.mini-action:hover,
+.candidate:hover,
+.trace-item:hover,
+.directory-chat:hover,
+.directory-gateway:hover {
+  border-color: #3a4d91;
+  background: #f6f9ff;
+  color: var(--console-blue);
+}
+
+.ai-chat-panel {
+  background: transparent;
+}
+
+.chat-head,
+.chat-messages,
+.chat-form {
+  border-radius: 8px;
+}
+
+.chat-content {
+  border-radius: 7px;
+}
+
+.chat-avatar {
+  border-color: rgba(190, 203, 218, .8);
+  background: #ffffff;
+  color: var(--console-blue);
+  box-shadow: 0 8px 18px rgba(70, 82, 100, .1);
+}
+
+.chat-form .action,
+.action,
+.chat-action {
+  border-color: var(--console-line-strong);
+  background: var(--console-panel-2);
+  color: var(--console-soft);
+}
+
+.chat-form .action:hover,
+.action:hover,
+.chat-action:hover {
+  border-color: #8ca8d8;
+  background: #eef3ff;
+  color: var(--console-blue);
+}
+
+.action.primary,
+.chat-action.primary {
+  border-color: var(--console-blue);
+  background: var(--console-blue);
+  color: #ffffff;
+}
+
+.agentteams-task-panel {
+  box-shadow: 0 16px 36px rgba(70, 82, 100, .08);
+}
+
+.agentteams-task-panel header small {
+  color: var(--console-blue);
+}
+
+.agentteams-task-log {
+  border-radius: 6px;
+}
+
+.agent-directory-drawer,
+.ops-drawer {
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 18px 0 50px rgba(31, 41, 55, .16);
+}
+
+.drawer-head strong,
+.directory-list strong,
+.ops-status-strip strong,
+.ops-memory-grid strong,
+.ops-slo-list strong,
+.ops-panel header strong,
+.ops-agent-list strong,
+.ops-permission-list strong {
+  color: var(--console-ink);
+}
+
+.directory-list article,
+.directory-list article.active,
+.ops-status-strip article,
+.ops-memory-grid article,
+.ops-slo-list article,
+.ops-panel,
+.ops-agent-list article,
+.ops-permission-list article {
+  border-color: var(--console-line);
+  background: var(--console-panel);
+  color: var(--console-soft);
+}
+
+/* Product cleanup: compact tools, one daily summary, unified insight cards. */
+.energy-bottom {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.campus-tools {
+  width: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.campus-tools > .camera-button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-size: 20px;
+}
+
+.campus-tools-menu {
+  width: min(320px, calc(100vw - 96px));
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.78);
+  border-radius: 16px;
+  background: rgba(255,255,255,.86);
+  box-shadow: 0 16px 34px rgba(70, 82, 100, .12);
+  backdrop-filter: blur(14px);
+}
+
+.campus-tools.open .campus-tools-menu {
+  display: flex;
+}
+
+.campus-tools-menu button {
+  min-height: 30px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.home-view {
+  background: var(--console-bg);
+}
+
+.visual-title h1 {
+  margin-top: 0;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.visual-title h1::before,
+.visual-title h1::after,
+.run-status span::before,
+.run-status span::after {
+  content: none;
+  display: none;
+}
+
+.run-status {
+  align-self: center;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--console-line);
+  border-radius: 8px;
+  background: var(--console-panel);
+}
+
+.run-status span {
+  color: var(--console-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.run-status strong {
+  display: inline;
+  color: var(--console-ink);
+  font-size: 12px;
+}
+
+.energy-balance,
+.cost-compare,
+.agentteams-task-panel {
+  width: auto;
+  margin: 0 32px 18px;
+  border: 1px solid var(--console-line);
+  border-radius: 10px;
+  background: var(--console-panel);
+  box-shadow: 0 16px 36px rgba(70, 82, 100, .08);
+}
+
+.energy-balance {
+  padding: 16px;
+}
+
+.energy-balance h3,
+.cost-compare header h2,
+.agentteams-task-panel header strong {
+  color: var(--console-ink);
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.balance-grid {
+  gap: 10px;
+}
+
+.balance-in,
+.balance-out {
+  min-height: 150px;
+  border: 1px solid var(--console-line);
+  border-radius: 8px;
+  background: var(--console-panel-2);
+}
+
+.insight-board,
+.insight-board.daily-ledger {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.day-group {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.history-card {
+  min-height: 268px;
+  display: grid;
+  grid-template-rows: 132px minmax(0, 1fr);
+  border-radius: 10px;
+}
+
+.history-card.ledger-summary {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.history-card.ledger-summary .history-body {
+  min-height: 268px;
+}
+
+.history-card .mini-chart {
+  height: 132px;
+}
+
+.history-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-card h2 {
+  min-height: 42px;
+}
+
+.history-card p {
+  min-height: 52px;
+}
+
+.history-metrics {
+  margin-top: auto;
 }

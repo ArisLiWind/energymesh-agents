@@ -398,8 +398,8 @@ const translations = {
     gatewayBaseUrl: "Base URL",
     gatewayApiKey: "API Key",
     gatewayModel: "Model",
-    gatewayTest: "Test",
-    gatewaySave: "Save gateway",
+    gatewayTest: "Save and test",
+    gatewaySave: "Save and test",
     gatewayStored: "Gateway settings are stored locally for now.",
     you: "You",
     noTask: "not created",
@@ -489,8 +489,8 @@ const translations = {
     gatewayBaseUrl: "Base URL",
     gatewayApiKey: "API Key",
     gatewayModel: "模型",
-    gatewayTest: "测试",
-    gatewaySave: "保存网关",
+    gatewayTest: "保存并测试",
+    gatewaySave: "保存并测试",
     gatewayStored: "网关设置目前保存在本地。",
     you: "你",
     noTask: "未创建",
@@ -796,10 +796,11 @@ function applyAgentTeamsEvent(event) {
   if (normalized.type === "dispatch_plan" && state.energySnapshot) {
     const flowPreview = previewFlowFromLatestSnapshot();
     if (flowPreview) {
+      const reason = agentTeamsPlanReason(normalized) || normalized.message || "Dispatch Worker 已生成方案。";
       showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, {
-        title: "AgentTeams 真实调度方案",
+        title: dispatchPlanTitleFromReason(reason, normalized),
         source: "agentteams",
-        reason: agentTeamsPlanReason(normalized) || normalized.message || "Dispatch Worker 已生成方案。",
+        reason,
         impact: normalized.impact,
         dispatchPlan: normalized.dispatchPlan,
       });
@@ -825,6 +826,18 @@ function agentTeamsPlanReason(event = {}) {
   if (Number.isFinite(wasteDrop) && wasteDrop > 0) parts.push(`能源浪费下降 ${wasteDrop.toFixed(1)} kWh`);
   if (Number.isFinite(laborDrop) && laborDrop > 0) parts.push(`人工调度成本下降 ¥${laborDrop.toFixed(2)}`);
   return parts.length ? `Dispatch Worker 基于真实 world_state 生成：${parts.join("，")}。` : "";
+}
+
+function dispatchPlanTitleFromReason(reason = "", event = {}) {
+  const plan = event.dispatchPlan || event.dispatch_plan || {};
+  const text = `${reason} ${event.message || ""} ${JSON.stringify(plan)}`.toLowerCase();
+  if (/天气|云|cloud|pv|光伏|发电/.test(text)) return "天气变化重调度";
+  if (/储能|soc|battery|storage|充电|放电/.test(text)) return "储能策略调整";
+  if (/购电|电网|grid|峰|tariff|cost|成本|费用/.test(text)) return "降购电成本计划";
+  if (/冷机|冷藏|冷冻|cold|chiller/.test(text)) return "冷链负荷调度";
+  if (/生产|mes|负荷|load/.test(text)) return "生产负荷重排";
+  if (/限发|浪费|curtail|waste/.test(text)) return "弃电回收计划";
+  return "滚动调度计划";
 }
 
 function renderAgentTeamsImpact(impact = {}) {
@@ -2091,19 +2104,7 @@ async function testGatewayConnection() {
 
 async function saveGateway(event) {
   event.preventDefault();
-  const profile = agentProfiles[state.selectedAgent] || agentProfiles.team_leader;
-  $("#gateway-status").textContent = state.language === "zh" ? "正在保存模型网关..." : "Saving model gateway...";
-  let body;
-  try {
-    body = await saveGatewayConfigFromForm();
-  } catch (error) {
-    $("#gateway-status").textContent = error.message;
-    return;
-  }
-  $("#gateway-status").textContent = state.language === "zh"
-    ? `${agentName(state.selectedAgent)} 模型网关已保存，状态：${body.connection_status}。`
-    : `${profile.name} gateway saved. Status: ${body.connection_status}.`;
-  toast(state.language === "zh" ? `${agentName(state.selectedAgent)} 网关已保存` : `${profile.name} gateway saved`);
+  await testGatewayConnection();
 }
 
 async function loadGateways() {
@@ -2513,9 +2514,9 @@ function renderCampusSimulation() {
   genCard?.querySelector("span") && (genCard.querySelector("span").textContent = coldchain ? "冷机功率" : "当前发电");
   genCard?.querySelector("small") && (genCard.querySelector("small").textContent = coldchain ? "冷机组从公共电网取电的功率" : "此刻园区自有发电设备的总发电功率");
   storageCard?.querySelector("span") && (storageCard.querySelector("span").textContent = coldchain ? "供电方式" : "当前储能");
-  $("[data-i18n='todayGen']").textContent = coldchain ? "今日冷机用电" : "今日累计发电";
-  $("[data-i18n='todayCharge']").textContent = coldchain ? "今日冷藏用电" : "今日储能充电";
-  $("[data-i18n='todayDischarge']").textContent = coldchain ? "今日冷冻用电" : "今日储能放电";
+  if ($("[data-i18n='todayGen']")) $("[data-i18n='todayGen']").textContent = coldchain ? "今日冷机用电" : "今日累计发电";
+  if ($("[data-i18n='todayCharge']")) $("[data-i18n='todayCharge']").textContent = coldchain ? "今日冷藏用电" : "今日储能充电";
+  if ($("[data-i18n='todayDischarge']")) $("[data-i18n='todayDischarge']").textContent = coldchain ? "今日冷冻用电" : "今日储能放电";
   $("[data-i18n='fromGen']").textContent = coldchain ? "电网供冷机组" : "自有发电直接供电";
   $("[data-i18n='fromStorage']").textContent = coldchain ? "电网供冷藏库" : "储能放电供电";
   $("[data-i18n='fromGrid']").textContent = coldchain ? "电网供冷冻库" : "公共电网购电";
@@ -2536,13 +2537,6 @@ function renderCampusSimulation() {
   $("#campus-time-sync").textContent = state.energySnapshot ? "CSV 时间已校对" : "未对时";
   $("#campus-waste-kwh").textContent = sim.wastedKwh == null ? "-- kWh" : `${sim.wastedKwh.toFixed(1)} kWh`;
   $("#campus-extra-cost").textContent = sim.extraCost == null ? "--" : `¥${sim.extraCost.toFixed(1)}`;
-  // Today cumulative (度 / kWh)
-  $("#today-load").textContent = `${sim.todayLoad.toFixed(1)} 度`;
-  $("#today-gen").textContent = `${sim.todayGen.toFixed(1)} 度`;
-  $("#today-grid").textContent = `${sim.todayGrid.toFixed(1)} 度`;
-  $("#today-charge").textContent = `${sim.todayCharge.toFixed(1)} 度`;
-  $("#today-discharge").textContent = `${sim.todayDischarge.toFixed(1)} 度`;
-  $("#today-cost").textContent = `¥${sim.todayCost.toFixed(2)}`;
   // Energy balance
   $("#balance-total-load").textContent = sim.totalLoad.toFixed(1);
   $("#balance-from-gen").textContent = `${sim.fromGen.toFixed(1)} 度`;
@@ -2724,11 +2718,13 @@ function clearCampusPlanPreview(adopt = false) {
 function ledgerRecord(action, currentFlow = {}, previewFlow = {}) {
   const plan = state.flowPreview?.plan || {};
   const now = new Date();
+  const version = nextPlanVersion();
   const record = {
     id: `PLAN-${now.getTime()}`,
+    version,
     action,
     time: state.campusSimulation?.time || now.toLocaleString("zh-CN", { hour12: false }),
-    title: plan.title || "动态调度预览",
+    title: plan.title || dispatchPlanTitleFromReason(plan.reason || "") || "滚动调度计划",
     reason: plan.reason || "根据当前沙盘状态生成新的电流预演。",
     expected: {
       grid: formatDelta(currentFlow.grid_load, previewFlow.grid_load),
@@ -2740,6 +2736,14 @@ function ledgerRecord(action, currentFlow = {}, previewFlow = {}) {
   state.planLedger = state.planLedger.slice(0, 12);
   window.localStorage.setItem("energymesh.planLedger", JSON.stringify(state.planLedger));
   renderPlanLedger();
+}
+
+function nextPlanVersion() {
+  const maxPatch = state.planLedger.reduce((max, record) => {
+    const match = String(record.version || "").match(/^v1\.(\d{2})$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `v1.${String(maxPatch + 1).padStart(2, "0")}`;
 }
 
 function isFlowTuningRequest(message) {
@@ -2837,15 +2841,17 @@ function renderPlanLedger() {
     state.planLedger = [];
     window.localStorage.removeItem("energymesh.planLedger");
   }
-  $("#plan-ledger-count").textContent = `${state.planLedger.length} 条记录`;
+  $("#plan-ledger-count").textContent = `${state.planLedger.length} 个版本`;
   if (!state.planLedger.length) {
-    list.innerHTML = `<p class="empty">采用或拒绝 Agent 方案后，会在这里留下方案内容、理由和预期变化。</p>`;
+    list.innerHTML = `<p class="empty">采用或拒绝调度方案后，会在这里按版本号记录方案内容、理由和预期变化。</p>`;
     return;
   }
-  list.innerHTML = state.planLedger.map((record) => `
+  list.innerHTML = state.planLedger
+    .map((record, index) => ({ ...record, version: record.version || `v1.${String(state.planLedger.length - index).padStart(2, "0")}` }))
+    .map((record) => `
     <article class="plan-ledger-item ${record.action === "adopted" ? "adopted" : "rejected"}">
       <header>
-        <div><span>${record.action === "adopted" ? "已采用" : "已拒绝"}</span><strong>${escapeHTML(record.title)}</strong></div>
+        <div><span>${escapeHTML(record.version)} · ${record.action === "adopted" ? "已采用" : "已拒绝"}</span><strong>${escapeHTML(record.title)}</strong></div>
         <time>${escapeHTML(record.time)}</time>
       </header>
       <p>${escapeHTML(record.reason)}</p>
@@ -3644,6 +3650,11 @@ function setupCampus() {
   state.campus3d = createCampus3D(canvas, updateAssetLabels);
   renderCampusModelSwitch();
   renderCampusSimulation();
+  $("#campus-tools-toggle")?.addEventListener("click", (event) => {
+    const tools = $(".campus-tools");
+    const expanded = tools?.classList.toggle("open");
+    event.currentTarget.setAttribute("aria-expanded", expanded ? "true" : "false");
+  });
   $("#reset-camera").addEventListener("click", () => {
     state.campus3d?.reset?.();
   });
@@ -4688,7 +4699,6 @@ function setupEvents() {
     button.addEventListener("click", () => openGateway(button.closest("[data-agent-id]").dataset.agentId));
   });
   $("#gateway-form").addEventListener("submit", saveGateway);
-  $("#gateway-test").addEventListener("click", testGatewayConnection);
   $$("[data-station-tab]").forEach((button) => {
     button.addEventListener("click", () => setStationView(button.dataset.stationTab));
   });
