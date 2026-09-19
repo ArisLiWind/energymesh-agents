@@ -37,7 +37,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-columns: 42px var(--brief-width) 10px minmax(0, 1fr);
+  grid-template-columns: 42px var(--brief-width) 8px minmax(0, 1fr);
   background: #eef3f7;
 }
 
@@ -54,23 +54,27 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-resizer {
   position: relative;
   z-index: 20;
-  min-width: 10px;
+  min-width: 8px;
   cursor: col-resize;
   touch-action: none;
-  background: linear-gradient(90deg, rgba(164, 180, 198, .18), rgba(255, 255, 255, .7), rgba(164, 180, 198, .18));
+  background: linear-gradient(90deg, rgba(190, 203, 218, .08), rgba(255, 255, 255, .52), rgba(190, 203, 218, .08));
 }
 
 .workspace-resizer::before {
   content: "";
   position: absolute;
-  inset: 0 4px;
-  border-left: 1px solid rgba(126, 144, 164, .45);
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(164, 181, 199, .22);
 }
 
 .workspace-resizer:hover,
 .workspace-resizer:focus-visible,
 body.resizing-workspace .workspace-resizer {
-  background: linear-gradient(90deg, rgba(49, 95, 168, .10), rgba(255, 255, 255, .9), rgba(49, 95, 168, .10));
+  background: linear-gradient(90deg, rgba(100, 139, 184, .08), rgba(255, 255, 255, .68), rgba(100, 139, 184, .08));
   outline: none;
 }
 
@@ -5048,7 +5052,7 @@ pre {
 /* ===== cockpit/sandbox split final lock ===== */
 .app-shell {
   --brief-width: clamp(360px, 34vw, 560px);
-  grid-template-columns: 42px var(--brief-width) 10px minmax(0, 1fr);
+  grid-template-columns: 42px var(--brief-width) 8px minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -5066,11 +5070,11 @@ pre {
   display: block;
   grid-column: 3;
   grid-row: 1;
-  width: 10px;
-  min-width: 10px;
+  width: 8px;
+  min-width: 8px;
   cursor: col-resize;
   touch-action: none;
-  background: linear-gradient(90deg, rgba(164, 180, 198, .16), rgba(255, 255, 255, .72), rgba(164, 180, 198, .16));
+  background: linear-gradient(90deg, rgba(190, 203, 218, .08), rgba(255, 255, 255, .52), rgba(190, 203, 218, .08));
 }
 
 .workspace-resizer::before {
@@ -5079,13 +5083,13 @@ pre {
   width: 1px;
   height: 100%;
   margin: 0 auto;
-  background: rgba(126, 144, 164, .48);
+  background: rgba(164, 181, 199, .22);
 }
 
 .workspace-resizer:hover,
 .workspace-resizer:focus-visible,
 body.resizing-workspace .workspace-resizer {
-  background: linear-gradient(90deg, rgba(49, 95, 168, .12), rgba(255, 255, 255, .94), rgba(49, 95, 168, .12));
+  background: linear-gradient(90deg, rgba(100, 139, 184, .08), rgba(255, 255, 255, .68), rgba(100, 139, 184, .08));
   outline: none;
 }
 
