@@ -1,0 +1,104 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "EnergyMesh Agents 园区调度闭环演示",
+    "subtitle": "接入 API、连接园区、确认仿真、开始计算、审批部署、Agent 控制与 96 时段节能验证",
+    "locale": "zh-CN",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "operator-flow",
+        "label": "操作主线",
+        "focus": ["api_intake", "campus_link", "simulation_confirm", "agentteams_task", "calculate_plan", "audit_gate", "deploy_plan", "readback_96"],
+        "note": "从接入 API 到 Agent 控制园区，再到 96 个时段回读验证。"
+      },
+      {
+        "id": "agent-control",
+        "label": "Agent 控制",
+        "focus": ["agentteams_task", "calculate_plan", "audit_gate", "deploy_plan", "readback_96"],
+        "note": "Team Leader 组织感知、调度、审核和执行职责。"
+      },
+      {
+        "id": "savings-proof",
+        "label": "节能证明",
+        "focus": ["baseline", "calculate_plan", "readback_96"],
+        "note": "基线 15616.85 元，对比 Agent 方案 13628.21 元。"
+      }
+    ],
+    "output": "archify/energymesh-agent-control.html"
+  },
+  "lanes": [
+    { "id": "operator", "label": "园区操作员 / 白色 UI" },
+    { "id": "runtime", "label": "EnergyMesh API / AgentTeams" },
+    { "id": "agents", "label": "多 Agent 决策团队" },
+    { "id": "plant", "label": "园区设备与回读证据" }
+  ],
+  "phases": [
+    { "id": "connect", "label": "接入与连接", "fromCol": 0, "toCol": 1 },
+    { "id": "decide", "label": "仿真与计算", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "execute", "label": "部署与控制", "fromCol": 4, "toCol": 4, "variant": "security" }
+  ],
+  "groups": [
+    { "id": "agent_loop", "label": "AgentTeams 任务链", "lane": "agents", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "evidence_loop", "label": "设备命令与回读", "lane": "plant", "fromCol": 4, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["api_intake", "campus_link", "simulation_confirm", "agentteams_task", "calculate_plan", "audit_gate", "deploy_plan", "readback_96"],
+  "semanticChecks": {
+    "allowedRoots": ["api_intake", "baseline"],
+    "allowedTerminals": ["readback_96"],
+    "requiredPaths": [
+      { "from": "api_intake", "to": "readback_96" },
+      { "from": "baseline", "to": "readback_96" }
+    ]
+  },
+  "nodes": [
+    { "id": "api_intake", "lane": "operator", "col": 0, "type": "frontend", "label": "接入 API", "sublabel": "CSV / world_state", "tag": "FastAPI", "width": 124 },
+    { "id": "campus_link", "lane": "operator", "col": 1, "type": "cloud", "label": "连接园区", "sublabel": "EMS/BMS/PCS/MES", "width": 124 },
+    { "id": "simulation_confirm", "lane": "operator", "col": 2, "type": "security", "label": "确定仿真", "sublabel": "SIMULATION_MODE", "tag": "不写设备", "width": 124 },
+    { "id": "agentteams_task", "lane": "runtime", "col": 2, "type": "messagebus", "label": "创建任务", "sublabel": "task_0243d286235e", "tag": "AgentTeams", "width": 124 },
+    { "id": "deploy_plan", "lane": "runtime", "col": 4, "type": "backend", "label": "部署并控制", "sublabel": "288 条命令", "tag": "获批版本", "width": 124 },
+    { "id": "calculate_plan", "lane": "agents", "col": 3, "type": "backend", "label": "开始计算", "sublabel": "感知 + 调度", "tag": "HiGHS Optimal", "width": 124 },
+    { "id": "audit_gate", "lane": "agents", "col": 4, "type": "security", "label": "审核/审批", "sublabel": "约束 + 人工采用", "tag": "approval", "width": 124 },
+    { "id": "baseline", "lane": "plant", "col": 0, "type": "database", "label": "基线策略", "sublabel": "15616.85 元", "width": 124 },
+    { "id": "readback_96", "lane": "plant", "col": 4, "type": "database", "label": "96 时段节能", "sublabel": "96/96 确认", "tag": "12.7%", "width": 124 }
+  ],
+  "edges": [
+    { "id": "api-campus", "from": "api_intake", "to": "campus_link", "label": "接入数据", "variant": "default" },
+    { "id": "campus-sim", "from": "campus_link", "to": "simulation_confirm", "label": "设备边界", "variant": "security" },
+    { "id": "sim-task", "from": "simulation_confirm", "to": "agentteams_task", "label": "提交 world_state", "variant": "emphasis" },
+    { "id": "task-calculate", "from": "agentteams_task", "to": "calculate_plan", "label": "开始计算", "variant": "emphasis" },
+    { "id": "baseline-calculate", "from": "baseline", "to": "calculate_plan", "label": "原 EMS 回放", "variant": "dashed", "role": "branch" },
+    { "id": "calculate-audit", "from": "calculate_plan", "to": "audit_gate", "label": "候选计划", "variant": "security" },
+    { "id": "audit-deploy", "from": "audit_gate", "to": "deploy_plan", "label": "approval_d82ddcd31073", "variant": "emphasis" },
+    { "id": "deploy-readback", "from": "deploy_plan", "to": "readback_96", "label": "Agent 控制 + 回读", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "可核验证据",
+      "items": [
+        "source_run: runs/task_0243d286235e.json",
+        "96 个时段回放，288 条模拟命令，96/96 回读确认"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "节能效果",
+      "items": [
+        "总成本 15616.85 元 → 13628.21 元",
+        "峰值购电 787.91 kW → 594.03 kW，预计节省 1988.64 元"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "安全边界",
+      "items": [
+        "仿真模式不接触真实设备，真实部署需人工审批",
+        "SOC 边界保持，关键负荷服务率 100%"
+      ]
+    }
+  ]
+}

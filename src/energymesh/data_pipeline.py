@@ -50,6 +50,21 @@ class SnapshotFactory:
 
     required_columns = {"read_ts", "inverter", "outsumw", "pv1power", "battsoc"}
     emsx_columns = {"timestamp", "site_id", "actual_consumption", "actual_pv"}
+    timestamp_aliases = ("timestamp", "time", "datetime", "date_time", "read_time", "read_ts")
+    load_aliases = (
+        "load_kw",
+        "actual_load_kw",
+        "actual_consumption_kw",
+        "actual_consumption",
+        "consumption_kw",
+        "demand_kw",
+        "power_kw",
+        "outsumw",
+    )
+    pv_aliases = ("pv_kw", "actual_pv_kw", "actual_pv", "solar_kw", "pv1power")
+    grid_aliases = ("grid_import_kw", "grid_kw", "import_kw", "gridpowerw_a")
+    soc_aliases = ("battery_soc", "soc", "battsoc")
+    battery_power_aliases = ("battery_power_kw", "battchgpower", "battery_kw")
 
     def from_opencem_csv(
         self,
@@ -71,6 +86,12 @@ class SnapshotFactory:
                 reader.fieldnames
             ):
                 return self._from_emsx_rows(
+                    list(reader), filename, current_interval=current_interval
+                )
+            if reader.fieldnames is not None and self._looks_like_generic_csv(
+                reader.fieldnames
+            ):
+                return self._from_generic_rows(
                     list(reader), filename, current_interval=current_interval
                 )
             missing = sorted(self.required_columns.difference(reader.fieldnames or []))
@@ -308,6 +329,240 @@ class SnapshotFactory:
                     "CSV and future read-only connectors share this ExternalDataSnapshot contract",
                     "Simulation-only execution, rollback and SHA-256 evidence remain enforced",
                 ],
+            },
+        )
+
+    def _looks_like_generic_csv(self, fieldnames: list[str]) -> bool:
+        normalized = {field.strip().lower() for field in fieldnames}
+        return (
+            any(alias in normalized for alias in self.timestamp_aliases)
+            and any(alias in normalized for alias in self.load_aliases)
+            and any(alias in normalized for alias in self.pv_aliases)
+        )
+
+    @staticmethod
+    def _first_number(row: dict[str, str], aliases: tuple[str, ...]) -> float | None:
+        lower_row = {key.strip().lower(): value for key, value in row.items()}
+        for alias in aliases:
+            value = _number(lower_row, alias)
+            if value is not None:
+                return value
+        return None
+
+    @staticmethod
+    def _first_text(row: dict[str, str], aliases: tuple[str, ...]) -> str | None:
+        lower_row = {key.strip().lower(): value for key, value in row.items()}
+        for alias in aliases:
+            value = lower_row.get(alias, "").strip()
+            if value:
+                return value
+        return None
+
+    def _parse_generic_timestamp(self, value: str) -> datetime | None:
+        stripped = value.strip()
+        if not stripped:
+            return None
+        numeric = None
+        try:
+            numeric = float(stripped)
+        except ValueError:
+            pass
+        if numeric is not None:
+            if numeric > 10_000_000_000:
+                numeric /= 1000
+            return datetime.fromtimestamp(numeric, UTC).astimezone(ENERGYMESH_TIMEZONE)
+        for candidate in (
+            stripped,
+            stripped.replace("Z", "+00:00"),
+            stripped.replace("/", "-"),
+        ):
+            try:
+                parsed = datetime.fromisoformat(candidate)
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=ENERGYMESH_TIMEZONE)
+            return parsed.astimezone(ENERGYMESH_TIMEZONE)
+        return None
+
+    def _from_generic_rows(
+        self,
+        rows: list[dict[str, str]],
+        filename: str,
+        current_interval: int = 20,
+    ) -> ExternalDataSnapshot:
+        points_by_day: dict[date, list[tuple[datetime, dict[str, float]]]] = defaultdict(list)
+        for row in rows:
+            timestamp_text = self._first_text(row, self.timestamp_aliases)
+            if not timestamp_text:
+                continue
+            measured_at = self._parse_generic_timestamp(timestamp_text)
+            if measured_at is None:
+                continue
+            load_kw = self._first_number(row, self.load_aliases)
+            pv_kw = self._first_number(row, self.pv_aliases)
+            if load_kw is None or pv_kw is None:
+                continue
+            if load_kw > 10_000:
+                load_kw /= 1000
+            if pv_kw > 10_000:
+                pv_kw /= 1000
+            grid_kw = self._first_number(row, self.grid_aliases)
+            if grid_kw is not None and grid_kw > 10_000:
+                grid_kw /= 1000
+            soc = self._first_number(row, self.soc_aliases)
+            if soc is None:
+                soc = 0.62
+            elif soc > 1.5:
+                soc /= 100
+            battery_power_kw = self._first_number(row, self.battery_power_aliases) or 0.0
+            if abs(battery_power_kw) > 10_000:
+                battery_power_kw /= 1000
+            points_by_day[measured_at.date()].append(
+                (
+                    measured_at,
+                    {
+                        "load_kw": max(0.0, load_kw),
+                        "pv_kw": max(0.0, pv_kw),
+                        "grid_kw": (
+                            max(0.0, grid_kw)
+                            if grid_kw is not None
+                            else max(0.0, load_kw - pv_kw)
+                        ),
+                        "soc": min(1.0, max(0.0, soc)),
+                        "battery_power_kw": battery_power_kw,
+                    },
+                )
+            )
+        complete_days = {day: values for day, values in points_by_day.items() if len(values) >= 48}
+        if not complete_days:
+            raise EnergyDataError(
+                "Generic CSV needs timestamp plus load/PV columns and at least 48 rows in one day"
+            )
+        replay_day = max(complete_days, key=lambda day: len(complete_days[day]))
+        rows_for_day = sorted(complete_days[replay_day], key=lambda item: item[0])
+        bucketed: dict[int, list[dict[str, float]]] = defaultdict(list)
+        for measured_at, values in rows_for_day:
+            interval = (measured_at.hour * 60 + measured_at.minute) // 15
+            bucketed[min(max(interval, 0), 95)].append(values)
+
+        raw_points: list[dict[str, float] | None] = []
+        for interval in range(96):
+            values = bucketed.get(interval, [])
+            if not values:
+                raw_points.append(None)
+                continue
+            raw_points.append(
+                {
+                    "load_kw": _mean([v["load_kw"] for v in values], 0.0),
+                    "pv_kw": _mean([v["pv_kw"] for v in values], 0.0),
+                    "grid_kw": _mean([v["grid_kw"] for v in values], 0.0),
+                    "soc": _mean([v["soc"] for v in values], 0.62),
+                    "battery_power_kw": _mean([v["battery_power_kw"] for v in values], 0.0),
+                }
+            )
+        available = [point for point in raw_points if point is not None]
+        if len(available) < 48:
+            raise EnergyDataError("Generic CSV needs at least 48 populated quarter-hour intervals")
+        last = available[0]
+        normalized: list[dict[str, float]] = []
+        for point in raw_points:
+            if point is not None:
+                last = point
+            normalized.append(dict(last))
+
+        peak_load = max(point["load_kw"] for point in normalized)
+        transformer_capacity = max(peak_load * 1.35, peak_load + 50.0)
+        grid_limit = max(peak_load * 1.12, peak_load + 20.0)
+        battery_power = max(60.0, peak_load * 0.18)
+        initial_soc = min(0.90, max(0.30, normalized[current_interval]["soc"]))
+        site = SiteConfig(
+            site_id="generic-csv-park",
+            transformer_capacity_kw=transformer_capacity,
+            grid_interconnection_limit_kw=grid_limit,
+            battery_capacity_kwh=max(240.0, battery_power * 3),
+            battery_charge_max_kw=battery_power,
+            battery_discharge_max_kw=battery_power,
+            initial_soc=initial_soc,
+            safety_min_soc=0.20,
+            safety_max_soc=0.92,
+            flexible_load_kw=max(20.0, peak_load * 0.08),
+            demand_charge_yuan_per_kw=10.0,
+        )
+        start = datetime(replay_day.year, replay_day.month, replay_day.day, tzinfo=ENERGYMESH_TIMEZONE)
+        telemetry: list[ExternalTelemetryPoint] = []
+        forecast: list[ForecastPoint] = []
+        for interval, point in enumerate(normalized):
+            timestamp = start + timedelta(minutes=interval * 15)
+            tariff = self._industrial_demo_tariff(timestamp.hour)
+            production_min = point["load_kw"] * (0.70 if 8 <= timestamp.hour < 20 else 0.45)
+            temperature = min(74.0, 36.0 + point["load_kw"] / transformer_capacity * 30.0)
+            forecast.append(
+                ForecastPoint(
+                    timestamp=timestamp,
+                    load_kw=point["load_kw"],
+                    pv_kw=point["pv_kw"],
+                    production_min_load_kw=production_min,
+                    tariff_yuan_per_kwh=tariff,
+                    battery_temperature_c=temperature,
+                    transformer_temperature_c=temperature,
+                    transformer_redundant_temperature_c=temperature,
+                )
+            )
+            telemetry.append(
+                ExternalTelemetryPoint(
+                    interval=interval,
+                    timestamp=timestamp,
+                    load_kw=point["load_kw"],
+                    pv_kw=point["pv_kw"],
+                    grid_import_kw=point["grid_kw"],
+                    battery_power_kw=point["battery_power_kw"],
+                    battery_soc=point["soc"],
+                    tariff_yuan_per_kwh=tariff,
+                    transformer_temperature_c=temperature,
+                    transformer_limit_kw=transformer_capacity,
+                    grid_interconnection_limit_kw=grid_limit,
+                    battery_available=True,
+                    production_min_load_kw=production_min,
+                )
+            )
+        current_interval = min(max(current_interval, 0), 95)
+        current = telemetry[current_interval]
+        return ExternalDataSnapshot(
+            source="generic_csv_upload",
+            generated_at=datetime.now(UTC),
+            current_interval=current_interval,
+            scenario=Scenario(
+                scenario_id=f"generic-csv-{replay_day.isoformat()}",
+                name="通用园区 CSV 真实历史数据回放",
+                description="用户上传的园区负荷/光伏历史 CSV 被归一化为 96 个 15 分钟调度时段。",
+                site=site,
+                forecast=forecast,
+                alerts=[],
+                device_status={"meter": "available", "pv": "available", "battery": "derived", "transformer": "derived"},
+                production_plan={"source": "generic_csv_adapter", "policy": "business hours protected load"},
+                simulation_faults=[],
+            ),
+            telemetry=telemetry,
+            current=current,
+            environment_signals={
+                "load_kw": current.load_kw,
+                "pv_kw": current.pv_kw,
+                "battery_soc": current.battery_soc,
+                "grid_import_kw": current.grid_import_kw,
+                "battery_power_kw": current.battery_power_kw,
+                "timezone": "Asia/Shanghai",
+                "timestamp_semantics": "interval_start",
+                "step_minutes": 15,
+                "horizon_intervals": 96,
+                "raw_rows": len(rows_for_day),
+                "replay_date": replay_day.isoformat(),
+                "filename": Path(filename).name,
+            },
+            layer_summary={
+                "environment": ["Generic CSV normalized into the EnergyMesh snapshot contract"],
+                "strategy_generation": ["Baseline and optimized engines consume this same dataset"],
+                "deterministic_verification": ["Replay, audit, approval, execution and readback share one timeline"],
             },
         )
 

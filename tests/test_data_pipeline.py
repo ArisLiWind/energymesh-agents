@@ -41,9 +41,12 @@ def test_monitor_wakes_agents_then_separates_approval_and_execution(settings) ->
         assert page.text.count('id="upload-energy-data"') == 1
         assert page.text.count('id="connect-energy-source"') == 1
 
-        blocked = client.post("/api/monitor/start?start_interval=20")
-        assert blocked.status_code == 409
-        assert blocked.json()["detail"] == "no live or uploaded energy data is connected"
+        default_snapshot = client.get("/api/data/snapshot/current")
+        assert default_snapshot.status_code == 200
+        assert default_snapshot.json()["source"] == "opencem_csv_upload"
+
+        default_started = client.post("/api/monitor/start?start_interval=20")
+        assert default_started.status_code == 200
 
         root = Path(__file__).resolve().parents[1]
         path = root / "data" / "opencem" / "2025-07-a.csv"
@@ -70,6 +73,11 @@ def test_monitor_wakes_agents_then_separates_approval_and_execution(settings) ->
         assert any(event["kind"] == "AGENTTEAMS_WOKEN" for event in status["events"])
         task_id = status["task_id"]
         task = client.get(f"/api/tasks/{task_id}").json()
+        for _ in range(4):
+            if task["state"] == "AWAITING_APPROVAL":
+                break
+            client.post("/api/monitor/step")
+            task = client.get(f"/api/tasks/{task_id}").json()
         assert task["trigger"] == "OPENCEM_MONITOR_PLAN_INVALIDATION"
         assert task["state"] == "AWAITING_APPROVAL"
         assert task["execution_summary"] is None
@@ -136,6 +144,30 @@ def test_csv_upload_drives_replay_clock_world_state_and_current_snapshot(setting
         assert world_state["cursor"] == clock["current_interval"]
         assert world_state["replay_clock"]["speed_multiplier"] == 900.0
         assert world_state["current"]["interval"] == clock["current_interval"]
+
+
+def test_uploaded_csv_snapshot_survives_app_restart(settings) -> None:
+    root = Path(__file__).resolve().parents[1]
+    path = root / "data" / "opencem" / "2025-07-a.csv"
+    with TestClient(create_app(settings)) as client:
+        uploaded = client.post(
+            "/api/data/upload?filename=2025-07-a.csv",
+            content=path.read_bytes(),
+            headers={"Content-Type": "text/csv"},
+        )
+        assert uploaded.status_code == 200
+        assert uploaded.json()["environment_signals"]["filename"] == "2025-07-a.csv"
+
+    with TestClient(create_app(settings)) as client:
+        restored = client.get("/api/data/snapshot/current")
+        assert restored.status_code == 200
+        body = restored.json()
+        assert body["environment_signals"]["filename"] == "2025-07-a.csv"
+        assert body["environment_signals"]["raw_rows"] == 765
+
+        clock = client.get("/api/data/replay").json()
+        assert clock["running"] is True
+        assert clock["speed_multiplier"] == 900.0
 
 
 def test_replay_speed_multiplier_controls_clock_rate(settings) -> None:

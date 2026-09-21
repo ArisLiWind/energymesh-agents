@@ -4,10 +4,13 @@ from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, cast
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from energymesh.agentteams import AgentTeamsManifest, build_agentteams_manifest
@@ -93,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     scenario = load_demo_scenario()
     external_data = ExternalDataSimulator()
     snapshot_factory = SnapshotFactory()
+    snapshot_store_path = active_settings.evidence_dir / "current_energy_snapshot.json"
 
     def rolling_decision(payload: dict[str, object]) -> str | None:
         config = store.get_model_config("team_leader")
@@ -140,10 +144,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             simulated_time = snapshot.telemetry[cursor].timestamp
         else:
             elapsed = max(0.0, time.time() - started_at)
-            # The CSV rows are quarter-hourly, but the visible replay clock is continuous.
-            # speed=1 means one real second advances one simulated second.
-            simulated_seconds = (anchor * interval_seconds + elapsed * speed) % replay_seconds
-            cursor = int(simulated_seconds // interval_seconds) % total
+            # Keep the public replay monotonic: advance through the historical day
+            # once, then hold at the final interval instead of wrapping to midnight.
+            simulated_seconds = min(anchor * interval_seconds + elapsed * speed, replay_seconds - 1)
+            cursor = min(int(simulated_seconds // interval_seconds), total - 1)
             day_start = snapshot.telemetry[0].timestamp
             simulated_time = day_start + timedelta(seconds=simulated_seconds)
         snapshot.current_interval = cursor
@@ -280,6 +284,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         description="Audited 15-minute economic dispatch in simulation mode.",
     )
+
+    async def proxy_public_agentteams_service(
+        request: Request, upstream_origin: str
+    ) -> Response:
+        body = await request.body()
+        upstream_url = (
+            f"{upstream_origin.rstrip('/')}{request.url.path}"
+            + (f"?{request.url.query}" if request.url.query else "")
+        )
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in {"host", "content-length", "connection", "accept-encoding"}
+        }
+        proxied = UrlRequest(
+            upstream_url,
+            data=body if body else None,
+            headers=headers,
+            method=request.method,
+        )
+        try:
+            with urlopen(proxied, timeout=30) as upstream:
+                response_body = upstream.read()
+                response_headers = {
+                    key: value
+                    for key, value in upstream.headers.items()
+                    if key.lower()
+                    not in {
+                        "content-encoding",
+                        "content-length",
+                        "connection",
+                        "transfer-encoding",
+                    }
+                }
+                return Response(
+                    content=response_body,
+                    status_code=upstream.status,
+                    headers=response_headers,
+                    media_type=upstream.headers.get_content_type(),
+                )
+        except HTTPError as error:
+            return Response(
+                content=error.read(),
+                status_code=error.code,
+                media_type=error.headers.get_content_type(),
+            )
+        except URLError as error:
+            return Response(
+                content=(
+                    "AgentTeams public backend is not reachable from EnergyMesh. "
+                    f"Upstream={upstream_origin}; error={error}"
+                ),
+                status_code=502,
+                media_type="text/plain",
+            )
+
+    @app.middleware("http")
+    async def public_agentteams_host_router(request: Request, call_next):
+        host = request.headers.get("host", "").split(":", 1)[0].lower()
+        if host == "agents.gensphereai.xyz":
+            return await proxy_public_agentteams_service(request, "http://127.0.0.1:18088")
+        if host == "matrix.gensphereai.xyz":
+            return await proxy_public_agentteams_service(request, "http://127.0.0.1:18080")
+        return await call_next(request)
+
     app.state.settings = active_settings
     app.state.store = store
     app.state.compound_demo = compound_demo
@@ -293,8 +362,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.uploaded_snapshot = None
     app.state.replay_started_at = time.time()
     app.state.replay_anchor_interval = 0
-    app.state.replay_speed_multiplier = 1.0
+    app.state.replay_speed_multiplier = 900.0
     app.state.replay_paused = False
+    app.state.snapshot_store_path = snapshot_store_path
+    app.state.default_history_snapshot = None
     app.state.parallel_sim = ParallelSimulator(orchestrator, store)
     app.state.live_agentteams_runtime = LiveAgentTeamsRuntime(
         store, active_settings.agentteams_team_name, current_world_state
@@ -323,6 +394,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def get_external_data(request: Request) -> ExternalDataSimulator:
         return cast(ExternalDataSimulator, request.app.state.external_data)
+
+    def persist_uploaded_snapshot(request: Request) -> None:
+        snapshot: ExternalDataSnapshot | None = request.app.state.uploaded_snapshot
+        path: Path = request.app.state.snapshot_store_path
+        if snapshot is None:
+            if path.exists():
+                path.unlink()
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
+
+    def restore_persisted_snapshot() -> None:
+        path: Path = app.state.snapshot_store_path
+        if not path.exists():
+            return
+        try:
+            snapshot = ExternalDataSnapshot.model_validate_json(
+                path.read_text(encoding="utf-8")
+            )
+        except Exception:
+            return
+        if not snapshot.telemetry:
+            return
+        app.state.uploaded_snapshot = snapshot
+        app.state.replay_anchor_interval = min(
+            max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1
+        )
+        app.state.replay_started_at = time.time()
+        app.state.replay_speed_multiplier = 900.0
+        app.state.replay_paused = False
+        replay_status_for(snapshot)
+
+    def load_default_history_snapshot() -> ExternalDataSnapshot | None:
+        cached = getattr(app.state, "default_history_snapshot", None)
+        if cached is not None:
+            snapshot = cast(ExternalDataSnapshot, cached)
+            app.state.uploaded_snapshot = snapshot
+            app.state.replay_started_at = time.time()
+            app.state.replay_anchor_interval = min(
+                max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1
+            )
+            app.state.replay_speed_multiplier = 900.0
+            app.state.replay_paused = False
+            replay_status_for(snapshot)
+            return snapshot
+        sample_path = Path(__file__).parents[2] / "data" / "opencem" / "2025-07-a.csv"
+        if not sample_path.exists():
+            return None
+        try:
+            snapshot = snapshot_factory.from_opencem_csv(
+                sample_path.read_bytes(), "2025-07-a.csv"
+            )
+        except EnergyDataError:
+            return None
+        app.state.uploaded_snapshot = snapshot
+        app.state.replay_started_at = time.time()
+        app.state.replay_anchor_interval = min(
+            max(snapshot.current_interval, 0), len(snapshot.telemetry) - 1
+        )
+        app.state.replay_speed_multiplier = 900.0
+        app.state.replay_paused = False
+        replay_status_for(snapshot)
+        app.state.default_history_snapshot = snapshot
+        return snapshot
+
+    restore_persisted_snapshot()
+    if app.state.uploaded_snapshot is None:
+        load_default_history_snapshot()
 
     def cost_comparison_for_task(task: TaskRecord) -> dict[str, object]:
         baseline = task.baseline_plan
@@ -454,6 +593,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         config = evidence_store.get_model_config(normalized)
+        if config is None and normalized != "team_leader":
+            config = evidence_store.get_model_config("team_leader")
         if config is None:
             return AgentModelTestResponse(success=False, error="Model config not saved")
         try:
@@ -476,6 +617,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         config = evidence_store.get_model_config(normalized)
+        if config is None and normalized != "team_leader":
+            config = evidence_store.get_model_config("team_leader")
         if config is None:
             raise HTTPException(status_code=409, detail="Model config not saved")
         try:
@@ -538,16 +681,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def events() -> Iterator[str]:
             try:
                 settings: Settings = request.app.state.settings
-                if settings.agentteams_enabled and settings.agentteams_live_required:
-                    event_source = live_runtime.stream_chat(
-                        body.message, body.session_id, body.task_id
-                    )
-                elif not requires_agentteams_workers(body.message):
+                if not requires_agentteams_workers(body.message):
                     event_source = direct_runtime.stream_chat(
                         body.message,
                         body.session_id,
                         body.task_id,
                         current_world_state(),
+                    )
+                elif settings.agentteams_enabled and settings.agentteams_live_required:
+                    event_source = live_runtime.stream_chat(
+                        body.message, body.session_id, body.task_id
                     )
                 elif settings.agentteams_enabled:
                     event_source = live_runtime.stream_chat(
@@ -638,6 +781,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             filename="opencem-cuhk-shenzhen-2025-07-a.csv",
         )
 
+    @app.post("/api/data/opencem/load", response_model=ExternalDataSnapshot)
+    def load_opencem_sample(request: Request) -> ExternalDataSnapshot:
+        snapshot = load_default_history_snapshot()
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="OpenCEM sample CSV is not available")
+        persist_uploaded_snapshot(request)
+        return snapshot
+
     @app.post("/api/data/upload", response_model=ExternalDataSnapshot)
     async def upload_energy_csv(
         request: Request, filename: str = "upload.csv"
@@ -650,9 +801,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.app.state.uploaded_snapshot = snapshot
         request.app.state.replay_started_at = time.time()
         request.app.state.replay_anchor_interval = snapshot.current_interval
-        request.app.state.replay_speed_multiplier = 1.0
+        request.app.state.replay_speed_multiplier = 900.0
         request.app.state.replay_paused = False
         replay_status_for(snapshot)
+        persist_uploaded_snapshot(request)
         return snapshot
 
     @app.post("/api/data/reset")
@@ -660,8 +812,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.app.state.uploaded_snapshot = None
         request.app.state.replay_started_at = time.time()
         request.app.state.replay_anchor_interval = 0
-        request.app.state.replay_speed_multiplier = 1.0
+        request.app.state.replay_speed_multiplier = 900.0
         request.app.state.replay_paused = True
+        persist_uploaded_snapshot(request)
         return {"ok": True, "replay": replay_status_for(None)}
 
     @app.post("/api/data/snapshot/restore", response_model=ExternalDataSnapshot)
@@ -675,6 +828,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             0.0, float(getattr(request.app.state, "replay_speed_multiplier", 1.0))
         )
         request.app.state.replay_paused = False
+        replay_status_for(snapshot)
+        persist_uploaded_snapshot(request)
         return snapshot
 
     @app.get("/api/data/snapshot/current", response_model=ExternalDataSnapshot)
@@ -713,7 +868,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.app.state.replay_anchor_interval = int(current)
         request.app.state.replay_started_at = time.time()
         snapshot.current_interval = int(current)
-        return replay_status_for(snapshot)
+        clock = replay_status_for(snapshot)
+        persist_uploaded_snapshot(request)
+        return clock
 
     @app.post("/api/monitor/start")
     def start_monitor(request: Request, start_interval: int = 20) -> dict[str, object]:

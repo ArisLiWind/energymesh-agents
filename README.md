@@ -844,3 +844,63 @@ agt worker status --team energymesh-park-control
 
 
 EnergyMesh 的工程化验收标准：系统能在断网条件下安全自治运行，Agent 协作是发现与协调层而非控制层，每一次控制指令都有八层确定的校验链、五类异常的降级策略和成本降低的可量化验证。
+
+## 公网 ECS 运行入口与维护说明
+
+当前正式演示不再依赖 Codespace，也不要求本地端口转发。公网服务跑在阿里云 ECS 上，ECS 信息如下：
+
+- Region: `cn-guangzhou`
+- Instance ID: `i-7xv7jxpw75cv0br4p1xv`
+- Public IP: `8.134.72.133`
+- Instance name: `launch-advisor-20260708`
+- Key pair name: `WowBid-GZ-Server`
+
+两个必须同时保持在线的公网入口：
+
+- EnergyMesh 控制台: `https://energymesh.gensphereai.xyz/`
+- Element / AgentTeams 后台: `https://agents.gensphereai.xyz/`
+- Matrix Client API: `https://matrix.gensphereai.xyz/_matrix/client/versions`
+
+不要把 `agents.gensphereai.xyz` 当成 EnergyMesh 页面；它必须展示 Element，用来查看 AgentTeams Team Room 消息记录和多 Agent 协作过程。`energymesh.gensphereai.xyz` 才是 EnergyMesh UI。
+
+生产拓扑：
+
+- `nginx` 接管公网 `:80` / `:443`，按 Host 分流。
+- `energymesh.gensphereai.xyz` -> `http://127.0.0.1:8000`
+- `agents.gensphereai.xyz` -> `http://127.0.0.1:18088`
+- `matrix.gensphereai.xyz` -> `http://127.0.0.1:18080`
+- AgentTeams / Element / Matrix 由 ECS 上的 Docker 容器长期运行。
+- EnergyMesh 后端由 systemd 服务长期运行。
+
+重要注意：
+
+- 不使用 Codespace 作为正式演示后端。
+- 不使用本地 `127.0.0.1:18088` 或本地端口转发作为正式入口。
+- SSH 不要连 `energymesh.gensphereai.xyz`，该域名解析可能不是 ECS 公网 IP；如需 SSH，应连 ECS 公网 IP `8.134.72.133`。如果 22 端口不可用，优先使用阿里云 CLI + 云助手。
+
+常用阿里云 CLI 检查命令：
+
+```bash
+aliyun configure list
+aliyun ecs DescribeInstances --RegionId cn-guangzhou
+aliyun ecs DescribeCloudAssistantStatus --RegionId cn-guangzhou --InstanceId.1 i-7xv7jxpw75cv0br4p1xv
+aliyun ecs DescribeInvocations --RegionId cn-guangzhou --InstanceId i-7xv7jxpw75cv0br4p1xv --PageSize 5
+```
+
+ECS 上应满足：
+
+```bash
+systemctl is-active nginx docker energymesh-web.service energymesh-agentteams.service
+ss -lntp | grep -E ':80 |:8000 |:18080 |:18088 '
+curl -sI -H 'Host: energymesh.gensphereai.xyz' http://127.0.0.1/
+curl -sI -H 'Host: agents.gensphereai.xyz' http://127.0.0.1/
+curl -s -H 'Host: matrix.gensphereai.xyz' http://127.0.0.1/_matrix/client/versions
+```
+
+如果 `agents.gensphereai.xyz` 返回 EnergyMesh HTML，说明 nginx 没有按 Host 分流，通常是 `nginx` 未运行或 `:80` 被 uvicorn 直接占用。修复方向：
+
+1. 停止直接占用公网 `:80` 的 uvicorn/systemd 服务。
+2. 确保 EnergyMesh 只监听 `127.0.0.1:8000`。
+3. 确保 Element 映射在 `127.0.0.1:18088`。
+4. 确保 Matrix 映射在 `127.0.0.1:18080`。
+5. 启动 `nginx`，让三个公网域名按 Host 正确分流。

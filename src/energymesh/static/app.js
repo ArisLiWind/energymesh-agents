@@ -19,7 +19,7 @@ const state = {
   liveTimer: null,
   replayTimer: null,
   replayCursor: null,
-  replaySpeedIndex: Number(window.localStorage.getItem("energymesh.replaySpeedIndex.v2") || 0),
+  replaySpeedIndex: Number(window.localStorage.getItem("energymesh.replaySpeedIndex.v2") || 3),
   campusModelIndex: Number(window.localStorage.getItem("energymesh.campusModelIndex.v1") || 0),
   activeHistory: "new",
   activeScenario: null,
@@ -47,6 +47,7 @@ const state = {
   monitorTimer: null,
   parallel: null,
   parallelStarting: false,
+  autoOptimize: window.localStorage.getItem("energymesh.autoOptimize.v1") === "true",
   speedMode: "normal",
   parallelTimer: null,
   opsEvidence: null,
@@ -74,6 +75,15 @@ const replaySpeedOptions = [
   { label: "1秒=5分钟", multiplier: 300 },
   { label: "1秒=15分钟", multiplier: 900 },
 ];
+
+function currentSnapshotFileLabel(snapshot = state.energySnapshot) {
+  if (!snapshot) return "未接入 CSV";
+  const signals = snapshot.environment_signals || {};
+  const filename = signals.filename || snapshot.source || "uploaded.csv";
+  const rows = signals.raw_rows ? `${signals.raw_rows} 条` : `${snapshot.telemetry?.length || 0} 点`;
+  const date = signals.replay_date ? ` · ${signals.replay_date}` : "";
+  return `${filename} · ${rows}${date}`;
+}
 
 const campusModelOptions = [
   {
@@ -1449,8 +1459,8 @@ async function chatWithSelectedAgent(agentId, message, history = []) {
 function agentTeamsRuntimeProblemMessage(error) {
   const detail = error?.message || "Live AgentTeams runtime is not ready.";
   return state.language === "zh"
-    ? `AgentTeams 连接暂时不可用。\n\n${detail}\n\n请启动 Codespace AgentTeams，并保持 Matrix/Element 端口转发在线后重试。`
-    : `AgentTeams is temporarily unavailable.\n\n${detail}\n\nStart the Codespace AgentTeams runtime, keep Matrix/Element port forwarding online, then retry.`;
+    ? `AgentTeams 连接暂时不可用。\n\n${detail}\n\n线上应由 ECS 常驻运行 AgentTeams / Matrix / Element。请刷新 ECS 上的 Matrix access token 并重启 EnergyMesh 后重试。`
+    : `AgentTeams is temporarily unavailable.\n\n${detail}\n\nProduction should run AgentTeams / Matrix / Element on ECS. Refresh the Matrix access token on ECS, restart EnergyMesh, then retry.`;
 }
 
 function campusPromptContext() {
@@ -2020,7 +2030,8 @@ async function sendChatMessage(event) {
   const message = input.value.trim();
   if (!message) return;
   const agentId = state.selectedAgent || "team_leader";
-  if (!hasReadyAgentGateway(agentId)) {
+  const wantsWorkerFlow = agentId === "team_leader" && isFlowTuningRequest(message);
+  if (!hasReadyAgentGateway(agentId) && !wantsWorkerFlow) {
     toast(state.language === "zh" ? "请先接入并测试模型网关，成功后才能对话" : "Connect and test the model gateway before chatting");
     openGateway(agentId);
     return;
@@ -2038,19 +2049,30 @@ async function sendChatMessage(event) {
     runtimeStatus.hidden = false;
     runtimeStatus.querySelector("span").textContent = state.language === "zh" ? `${agentName(agentId)} 正在响应` : `${agentName(agentId)} is responding`;
     let reply = null;
-    const wantsWorkerFlow = isFlowTuningRequest(message);
-    if (agentId === "team_leader") {
+    if (agentId === "team_leader" && wantsWorkerFlow) {
       const visibleReplies = [];
       const seenAgentSteps = new Set();
       const shownAgentSteps = new Set();
+      const announceWorker = (workerId) => {
+        if (shownAgentSteps.has(workerId)) return;
+        shownAgentSteps.add(workerId);
+        seenAgentSteps.add(workerId);
+        const text = compactAgentTeamsWorkNote(workerId);
+        addChatMessage("agent", text, workerId, { meta: { model: "AgentTeams Team Room" } });
+        visibleReplies.push({ text, agent: workerId, model: "AgentTeams Team Room" });
+      };
       await chatWithRuntimeStream(routedMessage, {
         onRuntimeCheck: (event) => {
           const ready = event.status?.ready;
           if (!ready) appendRuntimeStatusMessage("team_leader", state.language === "zh" ? "AgentTeams 暂不可用。" : "AgentTeams is not ready.");
+          else appendRuntimeStatusMessage("team_leader", "AgentTeams runtime ready：Team Room、Matrix 和五个 Worker 已连接。");
         },
         onWorldState: (event) => console.log("[AgentTeams world_state]", event),
         onStage: (event) => console.log("[AgentTeams stage]", event.agent_id || "team_leader", event.message || event.stage),
         onWorkerJoined: (event) => console.log("[AgentTeams worker]", event.agent_id || "team_leader", event.message || "joined"),
+        onTeamRoomMessage: () => {
+          ["energymesh-team-leader", "perception-worker", "dispatch-worker", "audit-worker", "execution-worker"].forEach(announceWorker);
+        },
         onStep: (event) => {
           const step = event.step || {};
           const text = step.response || "";
@@ -2094,6 +2116,20 @@ async function sendChatMessage(event) {
     }
   } catch (error) {
     const missingGateway = isGatewayMissingError(error);
+    if (wantsWorkerFlow && state.energySnapshot) {
+      const flowPreview = previewFlowFromLatestSnapshot();
+      if (flowPreview) {
+        const plan = planNarrativeFromFlow(message, flowPreview.currentFlow, flowPreview.previewFlow, "llm");
+        plan.title = "人工审批：峰价负荷重调度";
+        plan.reason = `模型网关暂时失败，已基于当前 world_state 生成待审批预览：${plan.reason.replace(/^真实模型未接入，未生成可采用方案：|^LLM 根据当前沙盘和这轮对话生成：/, "")}`;
+        showCampusPlanPreview(flowPreview.currentFlow, flowPreview.previewFlow, plan);
+        addChatMessage(
+          "agent",
+          "模型网关本次调用失败，但调度请求已转成可审批的应急预览。请在右侧“调度变更审批”卡片确认触发原因、储能/并网/SOC/预计节省；批准后才会把预览流向采用到沙盘。",
+          "team_leader",
+        );
+      }
+    }
     addChatMessage("agent", agentId === "team_leader" && /AgentTeams|agt|Docker|Team Room|Matrix|runtime/i.test(error?.message || "")
       ? agentTeamsRuntimeProblemMessage(error)
       : gatewayFailureMessage(agentId, error), agentId);
@@ -2414,13 +2450,18 @@ function renderCsvCostComparison() {
   $("#cost-optimized").textContent = "等待后端";
   $("#cost-savings").textContent = "--";
   $("#savings-percent").textContent = "后端计算中";
-  renderCostComparisonSource("optimizer", state.parallelStarting ? "正在启动后端 baseline/optimized 计算" : "等待后端 interval_history");
+  renderCostComparisonSource(
+    "optimizer",
+    state.autoOptimize
+      ? (state.parallelStarting ? "正在启动后端 baseline/optimized 计算" : "等待后端 interval_history")
+      : "自主优化已关闭",
+  );
   renderDispatchEvidence(null);
-  ensureBackendParallelComparison();
+  if (state.autoOptimize) ensureBackendParallelComparison();
 }
 
 async function ensureBackendParallelComparison() {
-  if (!state.energySnapshot || state.parallelStarting || state.parallel?.interval_history?.length) return;
+  if (!state.autoOptimize || !state.energySnapshot || state.parallelStarting || state.parallel?.interval_history?.length) return;
   state.parallelStarting = true;
   try {
     state.parallel = await request("/api/parallel/start", { method: "POST" });
@@ -2432,6 +2473,30 @@ async function ensureBackendParallelComparison() {
     renderCostComparisonSource("optimizer", `后端计算未就绪：${error.message}`);
   } finally {
     state.parallelStarting = false;
+  }
+}
+
+function renderAutoOptimizeToggle() {
+  const toggle = $("#auto-optimize-toggle");
+  if (!toggle) return;
+  toggle.checked = Boolean(state.autoOptimize);
+}
+
+async function setAutoOptimize(enabled) {
+  state.autoOptimize = Boolean(enabled);
+  window.localStorage.setItem("energymesh.autoOptimize.v1", state.autoOptimize ? "true" : "false");
+  renderAutoOptimizeToggle();
+  if (state.autoOptimize) {
+    toast("自主优化已开启：普通优化器将在后台计算");
+    await ensureBackendParallelComparison();
+  } else {
+    toast("自主优化已关闭：不会自动计算");
+    if (state.parallelTimer) window.clearInterval(state.parallelTimer);
+    state.parallelTimer = null;
+    state.parallelStarting = false;
+    state.parallel = null;
+    localStorage.removeItem("energymesh.parallelState");
+    renderCsvCostComparison();
   }
 }
 
@@ -2477,15 +2542,29 @@ async function refreshReplayClock() {
     state.energySnapshot.current_interval = state.replayCursor;
     state.energySnapshot.simulated_time = clock.simulated_time || clock.timestamp;
     state.chartTick = state.replayCursor;
-    localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+    try {
+      localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+    } catch (error) {
+      console.warn("Cannot persist replay snapshot in browser storage:", error);
+    }
     await applySnapshotToCampus();
     renderPowerChart();
     renderCsvCostComparison();
     renderDailyLedger();
     renderReplayControl();
-  } catch {
-    if (state.replayTimer) window.clearInterval(state.replayTimer);
-    state.replayTimer = null;
+    renderEnergyDataConnectionStatus();
+  } catch (error) {
+    console.warn("Replay clock refresh failed; attempting to keep replay alive:", error);
+    try {
+      await updateReplayClock({
+        current_interval: state.replayCursor ?? state.energySnapshot.current_interval ?? 0,
+        speed_multiplier: currentReplaySpeed().multiplier,
+        paused: false,
+      });
+    } catch (restartError) {
+      console.error("Replay clock restart failed:", restartError);
+      renderEnergyDataConnectionStatus("后端回放钟暂时不可用，正在等待恢复");
+    }
   }
 }
 
@@ -2518,6 +2597,7 @@ async function startCampusReplay({ reset = false } = {}) {
   renderCsvCostComparison();
   renderDailyLedger();
   renderReplayControl();
+  renderEnergyDataConnectionStatus();
   state.replayTimer = window.setInterval(refreshReplayClock, 1200);
 }
 
@@ -2532,12 +2612,17 @@ async function setReplayCursor(cursor) {
   } catch {
     // Local preview still follows the user's scrub action.
   }
-  localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+  try {
+    localStorage.setItem("energymesh.savedSnapshot", JSON.stringify(state.energySnapshot));
+  } catch (error) {
+    console.warn("Cannot persist replay snapshot in browser storage:", error);
+  }
   await applySnapshotToCampus();
   renderPowerChart();
   renderCsvCostComparison();
   renderDailyLedger();
   renderReplayControl();
+  renderEnergyDataConnectionStatus();
 }
 
 function renderReplayControl() {
@@ -2560,6 +2645,19 @@ function renderReplayControl() {
     const displayTime = state.energySnapshot?.simulated_time || point?.timestamp;
     readout.textContent = point ? `${String(Number(state.replayCursor) + 1).padStart(2, "0")}/${telemetry.length} · ${formatSnapshotTime(displayTime)} · ${modeText}` : "等待 CSV";
   }
+}
+
+function renderEnergyDataConnectionStatus(extra = "") {
+  if (!state.energySnapshot) return;
+  const telemetry = state.energySnapshot.telemetry || [];
+  const cursor = Math.min(Number(state.replayCursor) || 0, Math.max(0, telemetry.length - 1));
+  const point = telemetry[cursor];
+  const time = formatSnapshotTime(state.energySnapshot.simulated_time || point?.timestamp);
+  const detail = extra || `当前 ${String(cursor + 1).padStart(2, "0")}/${telemetry.length} · ${time} · ${currentReplaySpeed().label}`;
+  setConnectorStatus(
+    `已接入：${currentSnapshotFileLabel(state.energySnapshot)}`,
+    [{ kind: "DATA_REPLAY_RUNNING", detail }],
+  );
 }
 
 function updateAssetLabels(labels) {
@@ -2860,7 +2958,7 @@ function nextPlanVersion() {
 }
 
 function isFlowTuningRequest(message) {
-  return /减少|降低|优化|改善|调|方案|预览|购电|限发|浪费|储能|放电|充电|grid|curtail|waste|battery|storage|optimi[sz]e/i.test(message);
+  return /减少|降低|优化|改善|调|方案|预览|购电|限发|浪费|储能|放电|充电|重新规划|重规划|新订单|新增三号产线|三号产线|3号产线|生产线|产线|用电配置|grid|curtail|waste|battery|storage|optimi[sz]e/i.test(message);
 }
 
 function isFrustratedChatRequest(message) {
@@ -2967,17 +3065,21 @@ function setupWorkspaceResizer() {
 
 async function openAgentTeamsBackend() {
   setActiveRail("nav-ops");
+  let backendUrl = null;
   try {
     const runtime = await request("/api/agentteams/runtime");
     const readyText = runtime?.ready ? "READY" : (runtime?.mode || "CHECK");
+    backendUrl = runtime?.element_url || null;
     toast(`AgentTeams ${readyText}；正在打开后台`);
   } catch (error) {
     toast(`AgentTeams 状态检查失败：${error.message || error}`);
   }
   const host = window.location.hostname;
-  const url = host.endsWith("gensphereai.xyz")
-    ? "http://agents.gensphereai.xyz/agentteams/"
+  const roomId = state.agentTeamsTask?.teamRoomId || "!jiIzpZSX1OlnCUDo3B:matrix-local.agentteams.io:18080";
+  const fallbackUrl = host.endsWith("gensphereai.xyz")
+    ? `http://agents.gensphereai.xyz/#/room/${encodeURIComponent(roomId)}`
     : `${window.location.origin}/agentteams/`;
+  const url = backendUrl || fallbackUrl;
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
@@ -4317,8 +4419,10 @@ let pollRetryCount = 0;
 const MAX_POLL_RETRIES = 5;
 
 async function pollParallelStep() {
+  if (!state.autoOptimize) return;
   try {
     state.parallel = await request("/api/parallel/step", { method: "POST" });
+    if (!state.autoOptimize) return;
     pollRetryCount = 0;
     state.chartTick = state.parallel.cursor;
     try { renderParallel(); } catch (e) { console.error("renderParallel error:", e); }
@@ -4641,6 +4745,38 @@ async function startParallelSimulation() {
   }
 }
 
+async function startUploadedDataMonitor() {
+  if (!state.energySnapshot?.telemetry?.length) return;
+  if (state.monitorTimer) window.clearInterval(state.monitorTimer);
+  state.monitorTimer = null;
+  try {
+    const startAt = Math.min(
+      Math.max(Number(state.replayCursor ?? state.energySnapshot.current_interval ?? 0), 0),
+      Math.max(0, state.energySnapshot.telemetry.length - 1),
+    );
+    state.monitor = await request(`/api/monitor/start?start_interval=${startAt}`, { method: "POST" });
+    await renderMonitor();
+    state.monitorTimer = window.setInterval(async () => {
+      try {
+        state.monitor = await request("/api/monitor/step", { method: "POST" });
+        if (state.monitor?.task_id) await loadMonitorTask(state.monitor.task_id);
+        await renderMonitor();
+        if (!state.monitor?.running && state.monitorTimer) {
+          window.clearInterval(state.monitorTimer);
+          state.monitorTimer = null;
+        }
+      } catch (error) {
+        console.warn("Monitor step failed:", error);
+      }
+    }, state.speedMode === "normal" ? 15000 : 1400);
+  } catch (error) {
+    setConnectorStatus(
+      "CSV 已上传，但 Monitor 暂未启动",
+      [{ kind: "MONITOR_START_FAILED", detail: error.message || "monitor/start 请求失败。" }],
+    );
+  }
+}
+
 async function uploadEnergyCsv(file) {
   if (!file) return;
   try {
@@ -4659,14 +4795,43 @@ async function uploadEnergyCsv(file) {
     state.replayCursor = body.current_interval || 0;
     await applySnapshotToCampus();
     await startCampusReplay({ reset: true });
+    await startUploadedDataMonitor();
+    await ensureBackendParallelComparison();
     renderCsvCostComparison();
     renderDailyLedger();
-    setConnectorStatus(
-      `历史数据已上传：${body.environment_signals.raw_rows} 条测量已归一化，右侧园区按后端时钟回放`,
-      [{ kind: "DATA_REPLAY_RUNNING", detail: "CSV 已成为当前 world_state；时段和速度由后端回放钟控制。" }],
-    );
-    toast("历史数据已上传，园区开始按 96 时段流动");
+    renderEnergyDataConnectionStatus("CSV 已保存为服务端当前园区数据，沙盘、Monitor 和优化器已开始跟随回放。");
+    toast("历史数据已上传，沙盘/Monitor/后端计算已启动");
   } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function loadBuiltInHistoryCsv() {
+  try {
+    setConnectorStatus("正在加载内置 2025-07 园区历史 CSV...", [
+      { kind: "CSV_LOADING", detail: "演示模式将直接接入已验证的 2025-07-a.csv 基线数据。" },
+    ]);
+    const response = await fetch("/api/data/opencem/load", {
+      method: "POST",
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "历史 CSV 加载失败");
+    if (state.parallelTimer) window.clearInterval(state.parallelTimer);
+    state.parallelTimer = null;
+    state.parallel = null;
+    localStorage.removeItem("energymesh.parallelState");
+    state.energySnapshot = body;
+    state.replayCursor = body.current_interval || 0;
+    await applySnapshotToCampus();
+    await startCampusReplay({ reset: true });
+    await startUploadedDataMonitor();
+    await ensureBackendParallelComparison();
+    renderCsvCostComparison();
+    renderDailyLedger();
+    renderEnergyDataConnectionStatus("2025-07-a.csv 已接入，沙盘、Monitor 和优化器正在跟随真实历史时序回放。");
+    toast("历史数据已接入，回放/Monitor/优化计算已启动");
+  } catch (error) {
+    setConnectorStatus("历史 CSV 加载失败", [{ kind: "CSV_LOAD_FAILED", detail: error.message || "请求失败。" }]);
     toast(error.message);
   }
 }
@@ -4684,16 +4849,21 @@ function setConnectorStatus(text, events = []) {
 
 async function testDemoDataConnection() {
   try {
-    const snapshot = await request("/api/data/snapshot/current");
+    let snapshot;
+    try {
+      snapshot = await request("/api/data/snapshot/current");
+    } catch {
+      snapshot = await request("/api/data/opencem/load", { method: "POST" });
+    }
     state.energySnapshot = snapshot;
     state.replayCursor = snapshot.current_interval || 0;
-    setConnectorStatus(
-      `测试数据连接成功：${snapshot.source}，${snapshot.telemetry.length} 个 15 分钟时段`,
-      [{ kind: "TEST_DATA_CONNECTED", detail: "历史 CSV 已归一化，右侧园区开始全天用电回放。" }],
-    );
     await applySnapshotToCampus();
     await startCampusReplay({ reset: true });
+    await startUploadedDataMonitor();
+    await ensureBackendParallelComparison();
+    renderCsvCostComparison();
     renderDailyLedger();
+    renderEnergyDataConnectionStatus("历史 CSV 已归一化，右侧园区开始全天用电回放。");
     toast("测试数据连接成功，开始全天运行");
     $("#connector-dialog").close();
   } catch {
@@ -4827,10 +4997,11 @@ function setupEvents() {
   $("#approve-b")?.addEventListener("click", approveCandidateB);
   $("#execute-b")?.addEventListener("click", executeCandidateB);
   $("#rollback-button")?.addEventListener("click", runRollback);
-  $("#upload-energy-data").addEventListener("click", () => $("#energy-csv-file").click());
+  $("#upload-energy-data").addEventListener("click", loadBuiltInHistoryCsv);
   $("#energy-csv-file").addEventListener("change", (event) => uploadEnergyCsv(event.target.files?.[0]));
   $("#test-demo-data").addEventListener("click", testDemoDataConnection);
   $("#test-live-data").addEventListener("click", testLiveDataConnection);
+  $("#auto-optimize-toggle")?.addEventListener("change", (event) => setAutoOptimize(event.currentTarget.checked));
   $("#demo-production-change")?.addEventListener("click", runProductionChangeDemo);
   $("#demo-approve-v3")?.addEventListener("click", approveProductionDemo);
   $("#demo-execute-v3")?.addEventListener("click", executeProductionDemo);
@@ -4955,6 +5126,7 @@ drawHomeCharts();
 setupCampus();
 setupWorkspaceResizer();
 setupEvents();
+renderAutoOptimizeToggle();
 renderDeviceDetail("pcs");
 loadGateways();
 renderSelectedAgent();

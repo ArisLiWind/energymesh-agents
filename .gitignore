@@ -12,6 +12,8 @@ htmlcov/
 .coverage
 var/
 runs/*.json
+runs/*.log
+runs/*.pid
 !runs/.gitkeep
 
 .vercel

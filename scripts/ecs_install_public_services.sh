@@ -27,7 +27,7 @@ if docker ps --format '{{.Names}}' | grep -q '^agentteams-controller$'; then
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "https://matrix.gensphereai.xyz",
+      "base_url": "http://matrix.gensphereai.xyz",
       "server_name": "gensphereai.xyz"
     }
   },

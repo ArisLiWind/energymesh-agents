@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,7 @@ from energymesh.models import (
     DispatchPlan,
     ExternalDataSnapshot,
     ExternalTelemetryPoint,
+    ForecastPoint,
     IntervalHistoryPoint,
     ParallelSimulationState,
     ParallelStepResponse,
@@ -80,15 +82,19 @@ class ParallelSimulator:
             interval_ms=1000,
         )
         try:
-            # The uploaded dataset is the single source of truth. Do not perturb it:
-            # baseline, optimizer, audit, and UI must share the same 96-point timeline.
+            self._append_collaboration_trace("team_leader", "delegate", "perception_worker", "读取上传 CSV 形成同一 run_id 的园区状态")
+            self._append_collaboration_trace("perception_worker", "ack", "team_leader", "已接入 ExternalDataSnapshot，开始生成 day-ahead 预测")
+            planning_scenario = self._planning_scenario(snapshot)
+            self._append_collaboration_trace("team_leader", "delegate", "dispatch_worker", "基于历史预测曲线生成 baseline/optimized 候选方案")
             task = self.orchestrator.run(
-                snapshot.scenario,
+                planning_scenario,
                 trigger="PARALLEL_SIM_OPTIMIZATION",
             )
+            task = self._wait_for_task(task.task_id)
             if task.state == TaskState.AWAITING_APPROVAL:
                 from energymesh.models import ApprovalRequest
 
+                self._append_collaboration_trace("audit_worker", "submit", "team_leader", "审计通过但需要人工/自动审批后才能执行")
                 task = self.orchestrator.approve_only(
                     task.task_id,
                     ApprovalRequest(
@@ -97,13 +103,16 @@ class ParallelSimulator:
                         reason="Parallel simulation auto-approval for cost comparison demo",
                     ),
                 )
+                self._append_collaboration_trace("approval_gate", "accept", "execution_worker", "审批通过，执行 Worker 获得一次性执行权限")
                 task = self.orchestrator.execute_approved(task.task_id)
+                task = self._wait_for_task(task.task_id)
             self.state.optimized_task = task
             if task.selected_plan_id and task.plans:
                 self.state.optimized_plan = next(
                     (p for p in task.plans if p.plan_id == task.selected_plan_id),
                     None,
                 )
+            self._append_collaboration_trace("execution_worker", "submit", "team_leader", "执行映射完成，等待回读逐时段校验")
             self.state.agentteams_trace.append(
                 {
                     "source": "optimizer_sim",
@@ -127,6 +136,77 @@ class ParallelSimulator:
                 }
             )
         return self.state
+
+    def _wait_for_task(self, task_id: str, timeout_s: float = 8.0) -> Any:
+        terminal = {
+            TaskState.AWAITING_APPROVAL,
+            TaskState.APPROVED,
+            TaskState.COMPLETED,
+            TaskState.FAILED,
+            TaskState.ROLLBACK,
+        }
+        deadline = time.time() + timeout_s
+        task = self.store.get(task_id)
+        while task is not None and task.state not in terminal and time.time() < deadline:
+            time.sleep(0.05)
+            task = self.store.get(task_id)
+        return task or self.store.get(task_id)
+
+    def _planning_scenario(self, snapshot: ExternalDataSnapshot) -> Scenario:
+        """Build the plan-time forecast from historical telemetry, then replay actual telemetry.
+
+        This keeps one uploaded dataset as the source of truth while separating what the
+        optimizer knew at plan time from what the plant actually did during replay.
+        """
+        telemetry = snapshot.telemetry
+        if not telemetry:
+            return snapshot.scenario
+        forecast: list[ForecastPoint] = []
+        for index, point in enumerate(telemetry):
+            lag = telemetry[max(0, index - 4)]
+            if index < 24:
+                load_kw = point.load_kw
+                pv_kw = point.pv_kw
+            else:
+                load_kw = max(0.0, lag.load_kw)
+                pv_kw = max(0.0, lag.pv_kw)
+            production_min = min(point.production_min_load_kw, load_kw * 0.72)
+            forecast.append(
+                ForecastPoint(
+                    timestamp=point.timestamp,
+                    load_kw=load_kw,
+                    pv_kw=pv_kw,
+                    production_min_load_kw=production_min,
+                    tariff_yuan_per_kwh=point.tariff_yuan_per_kwh,
+                    battery_temperature_c=point.transformer_temperature_c,
+                    transformer_temperature_c=point.transformer_temperature_c,
+                    transformer_redundant_temperature_c=point.transformer_temperature_c,
+                )
+            )
+        return snapshot.scenario.model_copy(
+            update={
+                "forecast": forecast,
+                "description": (
+                    f"{snapshot.scenario.description} Plan-time forecast is derived "
+                    "from prior observed intervals; actual replay still consumes the uploaded telemetry."
+                ),
+            }
+        )
+
+    def _append_collaboration_trace(
+        self, actor: str, step: str, target: str, message: str, **detail: Any
+    ) -> None:
+        self.state.agentteams_trace.append(
+            {
+                "source": "backend_run_state",
+                "actor": actor,
+                "step": step,
+                "target": target,
+                "message": message,
+                "timestamp": datetime.now(UTC).isoformat(),
+                **detail,
+            }
+        )
 
     def step(self) -> ParallelStepResponse:
         with self._lock:

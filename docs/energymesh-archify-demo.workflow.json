@@ -1,0 +1,95 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "EnergyMesh Agents 直观演示流程",
+    "locale": "zh-CN",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "operator-flow",
+        "label": "操作员主路径",
+        "focus": ["api", "connect", "approval", "simulation", "compute", "deploy", "agent_control", "savings"],
+        "note": "先确认园区设备、点位和物理模型，再进入仿真、计算、部署和 Agent 控制。"
+      },
+      {
+        "id": "model-proof",
+        "label": "模型与计算依据",
+        "focus": ["connect", "approval", "model", "baseline", "compute", "evidence"],
+        "note": "完整点位、设备机理、基线策略和全量 96 时段计算共同决定节能结论是否可信。"
+      },
+      {
+        "id": "agent-control",
+        "label": "Agent 控制闭环",
+        "focus": ["agents", "compute", "deploy", "agent_control", "evidence", "savings"],
+        "note": "Agent 只把验证有效的获批策略部署到园区控制闭环，并持续回读。"
+      }
+    ],
+    "output": "docs/energymesh-archify-demo.html"
+  },
+  "lanes": [
+    { "id": "operator", "label": "园区操作员" },
+    { "id": "energymesh", "label": "EnergyMesh 控制台" },
+    { "id": "agents", "label": "AgentTeams 多 Agent" },
+    { "id": "plant", "label": "园区数字孪生与设备" },
+    { "id": "proof", "label": "审计证据与节能结果" }
+  ],
+  "phases": [
+    { "id": "access", "label": "接入与建模", "fromCol": 0, "toCol": 1 },
+    { "id": "verify", "label": "仿真与验证", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "deploy", "label": "部署与控制", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "groups": [
+    { "id": "model_boundary", "label": "设备点位与物理机理边界", "lane": "plant", "fromCol": 1, "toCol": 3, "variant": "security" },
+    { "id": "agent_loop", "label": "多 Agent 调度责任链", "lane": "agents", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "result_proof", "label": "同一输入下的成本对比", "lane": "proof", "fromCol": 1, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["api", "connect", "approval", "simulation", "compute", "deploy", "agent_control", "savings"],
+  "nodes": [
+    { "id": "api", "lane": "operator", "col": 0, "type": "external", "label": "接入 API", "sublabel": "上传 CSV / EMSx / OpenCEM", "tag": "真实数据入口", "width": 156 },
+    { "id": "connect", "lane": "energymesh", "col": 1, "type": "frontend", "label": "连接园区", "sublabel": "采集设备点位与 96 点遥测", "tag": "world_state", "width": 174 },
+    { "id": "approval", "lane": "operator", "col": 2, "type": "security", "label": "人工确认", "sublabel": "确认点位 / 模型 / 控制边界", "tag": "建模验收", "width": 174 },
+    { "id": "simulation", "lane": "energymesh", "col": 2, "type": "cloud", "label": "确定仿真", "sublabel": "数字孪生沙盘可运行", "tag": "simulation_mode=true", "width": 156 },
+    { "id": "compute", "lane": "energymesh", "col": 3, "type": "backend", "label": "全量计算", "sublabel": "基线回放 + 96 时段优化", "tag": "验证节能有效", "width": 174 },
+    { "id": "deploy", "lane": "energymesh", "col": 4, "type": "messagebus", "label": "真正部署", "sublabel": "下发验证有效的获批策略", "tag": "上线控制", "width": 174 },
+    { "id": "agent_control", "lane": "plant", "col": 5, "type": "backend", "label": "Agent 控制园区", "sublabel": "按设备约束执行与回读", "tag": "闭环控制", "width": 174 },
+    { "id": "savings", "lane": "proof", "col": 5, "type": "database", "label": "节能结果", "sublabel": "节省 1988.64 元 / 12.7%", "tag": "明显低于基线", "width": 174 },
+    { "id": "model", "lane": "plant", "col": 2, "type": "security", "label": "物理模型", "sublabel": "储能 SOC / PCS / BMS / 变压器", "width": 174 },
+    { "id": "baseline", "lane": "proof", "col": 1, "type": "database", "label": "原 EMS 基线", "sublabel": "固定策略成本 15616.85 元", "width": 174 },
+    { "id": "agents", "lane": "agents", "col": 3, "type": "backend", "label": "AgentTeams", "sublabel": "Perception / Dispatch / Audit", "width": 174 },
+    { "id": "evidence", "lane": "proof", "col": 3, "type": "database", "label": "Evidence Store", "sublabel": "trace / 审批 / 回读 / 回滚", "tag": "可审计", "width": 174 }
+  ],
+  "edges": [
+    { "id": "api-connect", "from": "api", "to": "connect", "label": "接入遥测", "variant": "emphasis" },
+    { "id": "connect-approval", "from": "connect", "to": "approval", "label": "提交设备清单", "variant": "security" },
+    { "id": "approval-simulation", "from": "approval", "to": "simulation", "label": "确认后仿真", "variant": "security" },
+    { "id": "simulation-compute", "from": "simulation", "to": "compute", "label": "完整沙盘计算", "variant": "emphasis" },
+    { "id": "compute-deploy", "from": "compute", "to": "deploy", "label": "确认节能有效", "variant": "security" },
+    { "id": "deploy-control", "from": "deploy", "to": "agent_control", "label": "下发控制策略", "variant": "emphasis" },
+    { "id": "control-savings", "from": "agent_control", "to": "savings", "label": "回读 96 时段", "variant": "emphasis" },
+    { "id": "baseline-compute", "from": "baseline", "to": "compute", "label": "同一输入对比", "variant": "dashed" },
+    { "id": "agents-compute", "from": "agents", "to": "compute", "label": "生成并审核候选", "variant": "dashed" },
+    { "id": "compute-evidence", "from": "compute", "to": "evidence", "label": "保存计算证据", "variant": "dashed" },
+    { "id": "evidence-savings", "from": "evidence", "to": "savings", "label": "baseline_vs_agent_savings.csv", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "正确演示顺序",
+      "items": [
+        "接入 API -> 连接园区 -> 人工确认设备点位和物理模型 -> 确定仿真 -> 全量计算 -> 真正部署 -> Agent 控制",
+        "没有完成点位、设备机理和模型边界确认，就不能声称仿真节能有效"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "节能对比",
+      "items": [
+        "原 EMS 固定策略总成本 15616.85 元，峰值购电 787.91 kW",
+        "Agent 选中策略总成本 13628.21 元，峰值购电 594.03 kW，节省 1988.64 元 / 12.7%"
+      ]
+    }
+  ]
+}
